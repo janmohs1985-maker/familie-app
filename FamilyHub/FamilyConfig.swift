@@ -122,9 +122,28 @@ enum FamilyConfig {
     static let pointsScript = "punkte_buchen"                       // script.punkte_buchen
     static let recurringAutomation = "automation.familie_wiederkehrende_aufgaben_anlegen"
 
-    /// Diese Listen gehören zum Aufgaben-System und erscheinen nicht im Tab „Listen“.
+    static let pointsHistory = "todo.punkte_verlauf"
+    static let notifyScript = "familie_mitteilung"                  // script.familie_mitteilung (an: eltern/jan/vanessa/emma/leoni)
+    static func streakCounter(_ kid: String) -> String { "counter.serie_\(kid)" }
+    static func activityFlag(_ kid: String) -> String { "input_boolean.aufgabe_heute_\(kid)" }
+    static let streakBonusDays = 7                                   // muss zur Automation „Familie: Serien-Bonus“ passen
+    static let streakBonusPoints = 20
+
+    // MARK: Taschengeld
+
+    static let pointsPerEuro = 10
+    static let minPayoutEuro = 5
+
+    // MARK: Klingel
+
+    static let doorbellEvent = "event.doorbird_ture_knopf"
+    static let doorbellLastRing = "camera.doorbird_ture_letztes_klingeln"
+    static let doorbellLive = "camera.doorbird_ture_live"
+    static let doorbellHistory = "todo.klingel_verlauf"              // Bilder liegen unter /media/local/<datei>
+
+    /// Diese Listen gehören zu App-Funktionen und erscheinen nicht im Tab „Listen“.
     static var systemTodoLists: Set<String> {
-        Set(kids.map { choreList($0.id) } + [choreTemplates, rewards, rewardRequests])
+        Set(kids.map { choreList($0.id) } + [choreTemplates, rewards, rewardRequests, pointsHistory, doorbellHistory])
     }
 
     // MARK: Farben für Kalender (nach Reihenfolge)

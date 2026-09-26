@@ -196,6 +196,15 @@ actor HAClient {
         }
     }
 
+    /// Zustandsverlauf einer Entität inkl. Attributen
+    func history(entity: String, since: Date) async throws -> [JSONValue] {
+        let data = try await api("api/history/period/\(HADate.iso.string(from: since))", query: [
+            URLQueryItem(name: "filter_entity_id", value: entity),
+            URLQueryItem(name: "significant_changes_only", value: "0"),
+        ])
+        return (try JSONDecoder().decode(JSONValue.self, from: data)).array?.first?.array ?? []
+    }
+
     @discardableResult
     func call(_ domain: String, _ service: String, _ data: [String: Any] = [:]) async throws -> Data {
         try await api("api/services/\(domain)/\(service)", method: "POST", json: data)

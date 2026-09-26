@@ -46,6 +46,24 @@ struct RewardRequest: Identifiable, Hashable {
     var id: String { uid }
 }
 
+struct PointsEntry: Identifiable, Hashable {
+    let uid: String
+    let kid: String
+    let points: Int
+    let reason: String
+    let time: Date?
+    var id: String { uid }
+}
+
+struct DoorbellRing: Identifiable, Hashable {
+    let uid: String
+    let file: String         // z. B. familie_klingel_3.jpg
+    let time: Date?
+    let label: String
+    var id: String { uid }
+    var imagePath: String { "/media/local/\(file)?v=\(Int(time?.timeIntervalSince1970 ?? 0))" }
+}
+
 enum ChoreText {
     static let dayNames = ["Mo", "Di", "Mi", "Do", "Fr", "Sa", "So"]
 

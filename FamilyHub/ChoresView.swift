@@ -45,12 +45,13 @@ struct KidChoresView: View {
     var body: some View {
         List {
             Section {
-                PointsBanner(name: kid.name, points: store.points(kid.id), color: kid.color)
+                PointsBanner(name: kid.name, points: store.points(kid.id), color: kid.color,
+                             streak: store.streak(kid.id), daysToBonus: store.daysToBonus(kid.id))
             }
             .listRowInsets(EdgeInsets())
             .listRowBackground(Color.clear)
 
-            Section("Meine Aufgaben") {
+            Section {
                 if open.isEmpty && waiting.isEmpty {
                     Label("Alles erledigt – super!", systemImage: "party.popper.fill")
                         .foregroundStyle(.secondary)
@@ -72,7 +73,13 @@ struct KidChoresView: View {
                     }
                     .opacity(0.7)
                 }
+            } header: {
+                Text("Meine Aufgaben")
+            } footer: {
+                Text("🔥 Noch \(store.daysToBonus(kid.id)) \(store.daysToBonus(kid.id) == 1 ? "Tag" : "Tage") alles schaffen, dann gibt es +\(FamilyConfig.streakBonusPoints) Bonuspunkte.")
             }
+
+            PayoutSection(kid: kid)
 
             Section {
                 if store.rewards.isEmpty {
@@ -108,6 +115,45 @@ struct KidChoresView: View {
             }
         }
         .refreshable { await store.refreshAll() }
+    }
+}
+
+struct PayoutSection: View {
+    @Environment(AppStore.self) private var store
+    let kid: FamilyConfig.Kid
+    @State private var euro = FamilyConfig.minPayoutEuro
+
+    var body: some View {
+        let maxEuro = store.payableEuro(kid.id)
+        let pending = store.rewardRequests.contains { $0.kid == kid.id && $0.title.contains("Taschengeld") }
+        Section {
+            if maxEuro >= FamilyConfig.minPayoutEuro {
+                Stepper(value: $euro, in: FamilyConfig.minPayoutEuro...maxEuro) {
+                    Label("\(euro) €", systemImage: "eurosign.circle.fill").foregroundStyle(.green)
+                }
+                Button {
+                    let e = euro
+                    Task { await store.requestPayout(kid: kid.id, euro: e) }
+                } label: {
+                    Label("\(euro) € auszahlen lassen", systemImage: "banknote")
+                }
+                .disabled(pending)
+            } else {
+                let missing = FamilyConfig.minPayoutEuro * FamilyConfig.pointsPerEuro - max(store.availablePoints(kid.id), 0)
+                ProgressView(value: Double(max(store.availablePoints(kid.id), 0)),
+                             total: Double(FamilyConfig.minPayoutEuro * FamilyConfig.pointsPerEuro)) {
+                    Text("Noch \(ChoreText.pointsText(missing)) bis \(FamilyConfig.minPayoutEuro) €")
+                        .font(.subheadline)
+                }
+                .tint(.green)
+            }
+        } header: {
+            Text("Taschengeld")
+        } footer: {
+            Text("\(FamilyConfig.pointsPerEuro) Punkte = 1 € · auszahlbar ab \(FamilyConfig.minPayoutEuro) €" +
+                 (pending ? " · Eine Auszahlung wartet auf Bestätigung." : ""))
+        }
+        .onAppear { euro = min(max(euro, FamilyConfig.minPayoutEuro), max(maxEuro, FamilyConfig.minPayoutEuro)) }
     }
 }
 
@@ -149,7 +195,7 @@ struct ParentChoresView: View {
                                     .font(.caption).foregroundStyle(.secondary)
                             }
                             Spacer()
-                            Button { Task { await store.cancelRequest(r) } } label: {
+                            Button { Task { await store.rejectRequest(r) } } label: {
                                 Image(systemName: "xmark.circle.fill").font(.title)
                             }
                             .buttonStyle(.borderless).tint(.red)
@@ -173,7 +219,13 @@ struct ParentChoresView: View {
                                 .frame(width: 40, height: 40)
                             VStack(alignment: .leading, spacing: 2) {
                                 Text(kid.name).font(.headline)
-                                Text("\(list.filter { !$0.done }.count) offen").font(.caption).foregroundStyle(.secondary)
+                                HStack(spacing: 8) {
+                                    Text("\(list.filter { !$0.done }.count) offen")
+                                    if store.streak(kid.id) > 0 {
+                                        Label("\(store.streak(kid.id))", systemImage: "flame.fill").foregroundStyle(.orange)
+                                    }
+                                }
+                                .font(.caption).foregroundStyle(.secondary)
                             }
                             Spacer()
                             Label("\(store.points(kid.id))", systemImage: "star.fill")
@@ -219,7 +271,8 @@ struct KidDetailView: View {
     var body: some View {
         List {
             Section {
-                PointsBanner(name: kid.name, points: store.points(kid.id), color: kid.color)
+                PointsBanner(name: kid.name, points: store.points(kid.id), color: kid.color,
+                             streak: store.streak(kid.id), daysToBonus: store.daysToBonus(kid.id))
             }
             .listRowInsets(EdgeInsets())
             .listRowBackground(Color.clear)
@@ -259,7 +312,28 @@ struct KidDetailView: View {
             } header: {
                 Text("Punkte von Hand anpassen")
             } footer: {
-                Text("Z. B. für Extra-Hilfe oder als Abzug. Wird im Logbuch von Home Assistant festgehalten.")
+                Text("Z. B. für Extra-Hilfe oder als Abzug. Wird im Punkte-Verlauf festgehalten.")
+            }
+
+            let history = store.pointsHistory.filter { $0.kid == kid.id }
+            if !history.isEmpty {
+                Section("Verlauf") {
+                    ForEach(history.prefix(30)) { e in
+                        HStack {
+                            VStack(alignment: .leading, spacing: 2) {
+                                Text(e.reason)
+                                if let t = e.time {
+                                    Text("\(DayText.label(t)), \(t.formatted(date: .omitted, time: .shortened))")
+                                        .font(.caption).foregroundStyle(.secondary)
+                                }
+                            }
+                            Spacer()
+                            Text(e.points > 0 ? "+\(e.points)" : "\(e.points)")
+                                .font(.body.monospacedDigit().weight(.semibold))
+                                .foregroundStyle(e.points >= 0 ? Color.green : Color.red)
+                        }
+                    }
+                }
             }
         }
         .navigationTitle(kid.name)
@@ -451,6 +525,8 @@ struct PointsBanner: View {
     let name: String
     let points: Int
     let color: Color
+    var streak: Int = 0
+    var daysToBonus: Int = 0
 
     var body: some View {
         HStack(spacing: 16) {
@@ -466,7 +542,17 @@ struct PointsBanner: View {
             }
             .foregroundStyle(.white)
             Spacer()
-            Text(name).font(.title3.bold()).foregroundStyle(.white.opacity(0.9))
+            VStack(alignment: .trailing, spacing: 6) {
+                Text(name).font(.title3.bold())
+                Text("= \(points / FamilyConfig.pointsPerEuro) €").font(.subheadline)
+                if streak > 0 {
+                    Label("\(streak) \(streak == 1 ? "Tag" : "Tage")", systemImage: "flame.fill")
+                        .font(.subheadline.weight(.semibold))
+                        .padding(.horizontal, 8).padding(.vertical, 3)
+                        .background(.white.opacity(0.25), in: Capsule())
+                }
+            }
+            .foregroundStyle(.white.opacity(0.95))
         }
         .padding(20)
         .background(LinearGradient(colors: [color, color.opacity(0.7)], startPoint: .topLeading, endPoint: .bottomTrailing),

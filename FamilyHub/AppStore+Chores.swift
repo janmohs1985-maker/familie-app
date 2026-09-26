@@ -94,8 +94,36 @@ extension AppStore {
                       let kid = cfg["kind"]?.string else { return nil }
                 return RewardRequest(uid: uid, kid: kid, title: title, points: cfg["punkte"]?.int ?? 0)
             }
+
+            pointsHistory = try await items(FamilyConfig.pointsHistory).compactMap { i in
+                guard let uid = i["uid"]?.string, let cfg = ChoreText.json(i["description"]?.string),
+                      let kid = cfg["kind"]?.string else { return nil }
+                return PointsEntry(uid: uid, kid: kid, points: cfg["punkte"]?.int ?? 0,
+                                   reason: cfg["grund"]?.string ?? "", time: HADate.parse(cfg["zeit"]?.string))
+            }.sorted { ($0.time ?? .distantPast) > ($1.time ?? .distantPast) }
         } catch { report(error) }
     }
+
+    // MARK: Serie & Taschengeld
+
+    func streak(_ kid: String) -> Int {
+        Int(Double(states[FamilyConfig.streakCounter(kid)]?.state ?? "") ?? 0)
+    }
+    /// Tage bis zum nächsten Serien-Bonus
+    func daysToBonus(_ kid: String) -> Int {
+        let s = streak(kid) % FamilyConfig.streakBonusDays
+        return FamilyConfig.streakBonusDays - s
+    }
+    /// Auszahlbare volle Euro (nach Abzug offener Anfragen)
+    func payableEuro(_ kid: String) -> Int { max(availablePoints(kid), 0) / FamilyConfig.pointsPerEuro }
+
+    // MARK: Mitteilungen
+
+    /// Mitteilung über script.familie_mitteilung – Fehler werden ignoriert (Mitteilungen sind nur Zusatz).
+    func notify(_ to: String, _ title: String, _ message: String) async {
+        _ = try? await client.call("script", FamilyConfig.notifyScript, ["an": to, "titel": title, "nachricht": message])
+    }
+    private func name(_ kid: String) -> String { FamilyConfig.kid(kid)?.name ?? kid.capitalized }
 
     /// Nach einer Änderung: Aufgaben und Punktestände neu laden.
     private func reload() async {
@@ -121,21 +149,51 @@ extension AppStore {
         await run {
             try await client.call("todo", "update_item", ["entity_id": FamilyConfig.choreList(c.kid), "item": c.uid,
                                                           "status": done ? "completed" : "needs_action"])
+            if done {
+                // für den Serien-Bonus: heute war das Kind fleißig
+                _ = try? await client.call("input_boolean", "turn_on", ["entity_id": FamilyConfig.activityFlag(c.kid)])
+            }
+        }
+        if done {
+            await notify("eltern", "⭐ \(name(c.kid)) hat etwas erledigt",
+                         "„\(c.title)“ – bitte in der Familie-App bestätigen (\(ChoreText.pointsText(c.points))).")
         }
     }
 
     func requestReward(_ r: Reward, kid: String) async {
         guard availablePoints(kid) >= r.points else { return }
-        let name = FamilyConfig.kid(kid)?.name ?? kid
         await run {
             try await client.call("todo", "add_item", ["entity_id": FamilyConfig.rewardRequests,
-                                                       "item": "\(name): \(r.title)",
+                                                       "item": "\(name(kid)): \(r.title)",
                                                        "description": ChoreText.jsonString(["kind": kid, "punkte": r.points])])
         }
+        await notify("eltern", "🎁 \(name(kid)) möchte einlösen", "\(r.title) (\(ChoreText.pointsText(r.points)))")
     }
 
+    func requestPayout(kid: String, euro: Int) async {
+        let pts = euro * FamilyConfig.pointsPerEuro
+        guard euro >= FamilyConfig.minPayoutEuro, availablePoints(kid) >= pts else { return }
+        await run {
+            try await client.call("todo", "add_item", ["entity_id": FamilyConfig.rewardRequests,
+                                                       "item": "\(name(kid)): Taschengeld \(euro) €",
+                                                       "description": ChoreText.jsonString(["kind": kid, "punkte": pts, "art": "taschengeld"])])
+        }
+        await notify("eltern", "💶 \(name(kid)) möchte Taschengeld", "\(euro) € auszahlen (\(ChoreText.pointsText(pts)))")
+    }
+
+    /// Kind zieht eine eigene Anfrage zurück
     func cancelRequest(_ r: RewardRequest) async {
         await run { try await client.call("todo", "remove_item", ["entity_id": FamilyConfig.rewardRequests, "item": r.uid]) }
+    }
+
+    /// Eltern lehnen eine Anfrage ab
+    func rejectRequest(_ r: RewardRequest) async {
+        await cancelRequest(r)
+        await notify(r.kid, "Anfrage abgelehnt", "„\(shortTitle(r))“ wurde diesmal nicht bestätigt.")
+    }
+
+    func shortTitle(_ r: RewardRequest) -> String {
+        r.title.replacingOccurrences(of: "\(name(r.kid)): ", with: "")
     }
 
     // MARK: Eltern
@@ -144,6 +202,7 @@ extension AppStore {
         var data: [String: Any] = ["entity_id": FamilyConfig.choreList(kid), "item": title, "description": "Punkte: \(points)"]
         if let due { data["due_date"] = HADate.day.string(from: due) }
         await run { try await client.call("todo", "add_item", data) }
+        await notify(kid, "📝 Neue Aufgabe", "\(title) (\(ChoreText.pointsText(points)))" + (due.map { " – bis \(DayText.label($0))" } ?? ""))
     }
 
     func addTemplate(kid: String, title: String, points: Int, days: [Int]) async {
@@ -154,6 +213,7 @@ extension AppStore {
             try await client.call("automation", "trigger", ["entity_id": FamilyConfig.recurringAutomation, "skip_condition": true])
             try await Task.sleep(for: .seconds(1))
         }
+        await notify(kid, "🔁 Neue wiederkehrende Aufgabe", "\(title) – \(ChoreText.weekdays(days)) (\(ChoreText.pointsText(points)))")
     }
 
     func setTemplate(_ t: ChoreTemplate, active: Bool) async {
@@ -178,16 +238,28 @@ extension AppStore {
             try await bookPoints(kid: c.kid, delta: c.points, reason: c.title)
             try await client.call("todo", "remove_item", ["entity_id": FamilyConfig.choreList(c.kid), "item": c.uid])
         }
+        await notify(c.kid, "+\(ChoreText.pointsText(c.points)) ⭐", "„\(c.title)“ wurde bestätigt – super!")
     }
 
     /// Nicht ordentlich erledigt → zurück auf offen.
-    func rejectChore(_ c: Chore) async { await setChore(c, done: false) }
+    func rejectChore(_ c: Chore) async {
+        if var list = chores[c.kid], let i = list.firstIndex(of: c) {
+            list[i] = Chore(uid: c.uid, kid: c.kid, title: c.title, points: c.points, due: c.due, recurring: c.recurring, done: false)
+            chores[c.kid] = list
+        }
+        await run {
+            try await client.call("todo", "update_item", ["entity_id": FamilyConfig.choreList(c.kid), "item": c.uid, "status": "needs_action"])
+        }
+        await notify(c.kid, "Bitte nochmal ansehen", "„\(c.title)“ ist noch nicht ganz fertig.")
+    }
 
     func confirmRequest(_ r: RewardRequest) async {
+        let payout = r.title.contains("Taschengeld")
         await run {
-            try await bookPoints(kid: r.kid, delta: -r.points, reason: "Eingelöst: \(r.title)")
+            try await bookPoints(kid: r.kid, delta: -r.points, reason: "Eingelöst: \(shortTitle(r))")
             try await client.call("todo", "remove_item", ["entity_id": FamilyConfig.rewardRequests, "item": r.uid])
         }
+        await notify(r.kid, payout ? "💶 Taschengeld bestätigt" : "🎁 Belohnung bestätigt", "\(shortTitle(r)) – viel Spaß!")
     }
 
     func adjustPoints(kid: String, delta: Int, reason: String) async {

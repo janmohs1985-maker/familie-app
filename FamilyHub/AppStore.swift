@@ -24,6 +24,8 @@ final class AppStore {
     var currentUserID: String?                    // HA-Benutzer-ID des angemeldeten Benutzers
     var userLookupFailed = false
     var viewAs = "auto"                           // nur für Eltern: "auto", "eltern" oder Kind-ID
+    var pointsHistory: [PointsEntry] = []
+    var doorbellRings: [DoorbellRing] = []
 
     // UI
     var lastError: String?
@@ -57,7 +59,7 @@ final class AppStore {
     func logout() async {
         await client.logout()
         states = [:]; events = []; calendars = []; todoItems = [:]; pictures = [:]
-        chores = [:]; choreTemplates = []; rewards = []; rewardRequests = []
+        chores = [:]; choreTemplates = []; rewards = []; rewardRequests = []; pointsHistory = []; doorbellRings = []
         currentUserID = nil; userLookupFailed = false; viewAs = "auto"
     }
 
@@ -82,7 +84,8 @@ final class AppStore {
         async let c: () = refreshTodos()
         async let d: () = refreshChores()
         async let e: () = loadCurrentUser()
-        _ = await (b, c, d, e)
+        async let f: () = refreshDoorbell()
+        _ = await (b, c, d, e, f)
     }
 
     func refreshStates() async {

@@ -3,6 +3,8 @@ import SwiftUI
 struct TodayView: View {
     @Environment(AppStore.self) private var store
     @State private var showSettings = false
+    @State private var mapPerson: FamilyConfig.Person?
+    @State private var showFamilyMap = false
 
     var body: some View {
         NavigationStack {
@@ -13,6 +15,7 @@ struct TodayView: View {
                     peopleCard
                     schoolCard
                     mailboxBanner
+                    DoorbellCard()
                     wasteCard
                     upcomingCard
                     if let t = store.lastUpdate {
@@ -75,12 +78,18 @@ struct TodayView: View {
 
     // MARK: Familie
 
+    /// Karte nur für Eltern (nicht in der Kinder-Vorschau)
+    private var canSeeMap: Bool { store.isParent && store.activeKid == nil }
+
     private var peopleCard: some View {
         Card(title: "Familie", symbol: "person.3.fill") {
             HStack(alignment: .top) {
                 ForEach(FamilyConfig.people) { p in
                     let st = store.states[p.id]?.state ?? "unknown"
                     let home = st == "home"
+                    Button {
+                        if canSeeMap { mapPerson = p }
+                    } label: {
                     VStack(spacing: 6) {
                         ZStack(alignment: .bottomTrailing) {
                             Avatar(image: store.pictures[p.id], name: p.name, color: p.color)
@@ -97,9 +106,23 @@ struct TodayView: View {
                             .lineLimit(1).minimumScaleFactor(0.7)
                     }
                     .frame(maxWidth: .infinity)
+                    .contentShape(Rectangle())
+                    }
+                    .buttonStyle(.plain)
+                    .allowsHitTesting(canSeeMap)
                 }
             }
+            if canSeeMap {
+                Button { showFamilyMap = true } label: {
+                    Label("Alle auf der Karte", systemImage: "map.fill")
+                        .font(.subheadline.weight(.semibold))
+                        .frame(maxWidth: .infinity)
+                }
+                .buttonStyle(.bordered)
+            }
         }
+        .sheet(item: $mapPerson) { p in PersonMapView(person: p) }
+        .sheet(isPresented: $showFamilyMap) { FamilyMapView() }
     }
 
     // MARK: Schule
