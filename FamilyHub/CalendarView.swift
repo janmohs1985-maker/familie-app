@@ -50,8 +50,15 @@ struct CalendarView: View {
             .refreshable { await store.refreshCalendar() }
             .navigationTitle("Kalender")
             .toolbar {
-                if !store.writableCalendars.isEmpty {
-                    Button { showAdd = true } label: { Image(systemName: "plus") }
+                ToolbarItem(placement: .topBarLeading) {
+                    NavigationLink { TimetableView(kid: store.activeKid) } label: {
+                        Label("Stundenplan", systemImage: "graduationcap")
+                    }
+                }
+                ToolbarItem(placement: .primaryAction) {
+                    if !store.writableCalendars.isEmpty {
+                        Button { showAdd = true } label: { Image(systemName: "plus") }
+                    }
                 }
             }
             .sheet(isPresented: $showAdd) { AddEventView() }

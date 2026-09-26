@@ -209,6 +209,38 @@ actor HAClient {
         return json["service_response"] ?? json
     }
 
+    /// Fragt über die WebSocket-API ab, welcher HA-Benutzer angemeldet ist (REST kann das nicht).
+    func currentUserID() async throws -> String {
+        guard let base = credentials?.baseURL,
+              var comps = URLComponents(url: base.appending(path: "api/websocket"), resolvingAgainstBaseURL: false)
+        else { throw HAError.notConfigured }
+        comps.scheme = comps.scheme == "https" ? "wss" : "ws"
+        let token = try await validAccessToken()
+        let ws = session.webSocketTask(with: comps.url!)
+        ws.resume()
+        defer { ws.cancel(with: .normalClosure, reason: nil) }
+
+        func receive() async throws -> JSONValue {
+            switch try await ws.receive() {
+            case .string(let s): return try JSONDecoder().decode(JSONValue.self, from: Data(s.utf8))
+            case .data(let d): return try JSONDecoder().decode(JSONValue.self, from: d)
+            @unknown default: throw HAError.unexpected("Unbekannte Antwort vom Server.")
+            }
+        }
+        func send(_ obj: [String: Any]) async throws {
+            let data = try JSONSerialization.data(withJSONObject: obj)
+            try await ws.send(.string(String(decoding: data, as: UTF8.self)))
+        }
+
+        _ = try await receive()                                   // auth_required
+        try await send(["type": "auth", "access_token": token])
+        guard try await receive()["type"]?.string == "auth_ok" else { throw HAError.http(401, "") }
+        try await send(["id": 1, "type": "auth/current_user"])
+        let reply = try await receive()
+        guard let id = reply["result"]?["id"]?.string else { throw HAError.unexpected("Benutzer konnte nicht ermittelt werden.") }
+        return id
+    }
+
     func image(path: String) async -> UIImage? {
         guard let base = credentials?.baseURL,
               let url = URL(string: path, relativeTo: base),

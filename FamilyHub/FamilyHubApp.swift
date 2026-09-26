@@ -33,6 +33,9 @@ struct RootView: View {
                         .tabItem { Label("Heute", systemImage: "house.fill") }
                     CalendarView()
                         .tabItem { Label("Kalender", systemImage: "calendar") }
+                    ChoresView()
+                        .tabItem { Label("Aufgaben", systemImage: "star.fill") }
+                        .badge(store.choreBadge)
                     ListsView()
                         .tabItem { Label("Listen", systemImage: "checklist") }
                     ControlsView()

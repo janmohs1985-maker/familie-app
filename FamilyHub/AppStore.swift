@@ -16,6 +16,15 @@ final class AppStore {
     var todoItems: [String: [TodoItem]] = [:]
     var pictures: [String: UIImage] = [:]
 
+    // Aufgaben & Belohnungen
+    var chores: [String: [Chore]] = [:]          // je Kind
+    var choreTemplates: [ChoreTemplate] = []
+    var rewards: [Reward] = []
+    var rewardRequests: [RewardRequest] = []
+    var currentUserID: String?                    // HA-Benutzer-ID des angemeldeten Benutzers
+    var userLookupFailed = false
+    var viewAs = "auto"                           // nur für Eltern: "auto", "eltern" oder Kind-ID
+
     // UI
     var lastError: String?
     var lastUpdate: Date?
@@ -48,6 +57,8 @@ final class AppStore {
     func logout() async {
         await client.logout()
         states = [:]; events = []; calendars = []; todoItems = [:]; pictures = [:]
+        chores = [:]; choreTemplates = []; rewards = []; rewardRequests = []
+        currentUserID = nil; userLookupFailed = false; viewAs = "auto"
     }
 
     // MARK: - Laden
@@ -66,10 +77,12 @@ final class AppStore {
 
     func refreshAll() async {
         guard isLoggedIn else { return }
-        async let a: () = refreshStates()
+        await refreshStates()
         async let b: () = refreshCalendar()
         async let c: () = refreshTodos()
-        _ = await (a, b, c)
+        async let d: () = refreshChores()
+        async let e: () = loadCurrentUser()
+        _ = await (b, c, d, e)
     }
 
     func refreshStates() async {
@@ -78,6 +91,7 @@ final class AppStore {
             let list = try await client.states()
             states = Dictionary(list.map { ($0.entity_id, $0) }, uniquingKeysWith: { a, _ in a })
             todoLists = list.filter { $0.entity_id.hasPrefix("todo.") &&
+                !FamilyConfig.systemTodoLists.contains($0.entity_id) &&
                 (FamilyConfig.todoLists.isEmpty || FamilyConfig.todoLists.contains($0.entity_id)) }
                 .sorted { $0.name < $1.name }
             lastUpdate = Date()
@@ -118,7 +132,8 @@ final class AppStore {
         if todoLists.isEmpty { await refreshStates() }
         for list in todoLists {
             do {
-                let resp = try await client.callWithResponse("todo", "get_items", ["entity_id": list.entity_id])
+                let resp = try await client.callWithResponse("todo", "get_items", ["entity_id": list.entity_id,
+                                                                                    "status": ["needs_action", "completed"]])
                 let items = resp[list.entity_id]?["items"]?.array ?? []
                 todoItems[list.entity_id] = items.compactMap { i in
                     guard let uid = i["uid"]?.string, let s = i["summary"]?.string else { return nil }
@@ -207,7 +222,7 @@ final class AppStore {
         return FamilyConfig.calendarPalette[idx % FamilyConfig.calendarPalette.count]
     }
 
-    private func report(_ error: Error) {
+    func report(_ error: Error) {
         if (error as? URLError)?.code == .cancelled { return }
         lastError = error.localizedDescription
     }

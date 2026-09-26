@@ -116,6 +116,17 @@ struct SettingsView: View {
                         LabeledContent("Letztes Update", value: t.formatted(date: .omitted, time: .standard))
                     }
                 }
+                Section {
+                    LabeledContent("Rolle", value: store.isParent ? "Eltern" : (FamilyConfig.kid(store.detectedKid ?? "")?.name ?? "–"))
+                    if store.isParent {
+                        Picker("Aufgaben ansehen als", selection: Bindable(store).viewAs) {
+                            Text("Eltern").tag("auto")
+                            ForEach(FamilyConfig.kids) { k in Text(k.name).tag(k.id) }
+                        }
+                    }
+                } header: { Text("Benutzer") } footer: {
+                    if store.isParent { Text("Zum Ausprobieren: So sieht die App für die Kinder aus.") }
+                }
                 Section("Gefunden") {
                     LabeledContent("Kalender", value: "\(store.calendars.count)")
                     LabeledContent("Listen", value: "\(store.todoLists.count)")

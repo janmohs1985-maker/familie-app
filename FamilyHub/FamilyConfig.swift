@@ -99,6 +99,34 @@ enum FamilyConfig {
                 kind: .toggle),
     ]
 
+    // MARK: Aufgaben & Belohnungen
+
+    struct Kid: Identifiable, Hashable {
+        let id: String          // Kurzname, bildet die Entitäten: todo.aufgaben_<id>, counter.punkte_<id>
+        let name: String
+        let person: String      // person.* – darüber erkennt die App, wer angemeldet ist
+        let color: Color
+    }
+
+    static let kids: [Kid] = [
+        Kid(id: "emma",  name: "Emma",  person: "person.emma",  color: .blue),
+        Kid(id: "leoni", name: "Leoni", person: "person.leoni", color: .pink),
+    ]
+    static func kid(_ id: String) -> Kid? { kids.first { $0.id == id } }
+
+    static func choreList(_ kid: String) -> String { "todo.aufgaben_\(kid)" }
+    static func pointsCounter(_ kid: String) -> String { "counter.punkte_\(kid)" }
+    static let choreTemplates = "todo.aufgaben_vorlagen"
+    static let rewards = "todo.belohnungen"
+    static let rewardRequests = "todo.belohnungen_anfragen"
+    static let pointsScript = "punkte_buchen"                       // script.punkte_buchen
+    static let recurringAutomation = "automation.familie_wiederkehrende_aufgaben_anlegen"
+
+    /// Diese Listen gehören zum Aufgaben-System und erscheinen nicht im Tab „Listen“.
+    static var systemTodoLists: Set<String> {
+        Set(kids.map { choreList($0.id) } + [choreTemplates, rewards, rewardRequests])
+    }
+
     // MARK: Farben für Kalender (nach Reihenfolge)
 
     static let calendarPalette: [Color] = [.red, .orange, .green, .blue, .pink, .purple, .teal, .brown]

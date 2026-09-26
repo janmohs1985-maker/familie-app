@@ -110,25 +110,63 @@ struct TodayView: View {
         var id: String { person.id }
     }
 
+    /// Schulende: zuerst aus dem Stundenplan in der App, sonst aus dem HA-Sensor.
+    private func schoolText(for p: FamilyConfig.Person) -> String? {
+        let kidID = FamilyConfig.kids.first { $0.person == p.id }?.id
+        if let kidID, !Timetables.plan(for: kidID).isEmpty {
+            let day = ChoreText.todayIndex
+            guard day <= 4, let end = Timetables.schoolEnd(kid: kidID, day: day) else { return "Heute frei" }
+            return "bis \(end) Uhr"
+        }
+        guard let sensor = p.schoolEnd, let s = store.states[sensor], !s.isUnavailable else { return nil }
+        let text = s.attr("friendly")?.string ?? s.state
+        return text.isEmpty ? nil : text
+    }
+
     @ViewBuilder private var schoolCard: some View {
-        let kids = FamilyConfig.people.compactMap { p -> SchoolInfo? in
-            guard let sensor = p.schoolEnd, let s = store.states[sensor], !s.isUnavailable else { return nil }
-            let text = s.attr("friendly")?.string ?? s.state
-            return text.isEmpty ? nil : SchoolInfo(person: p, text: text)
+        // Kinder sehen nur sich selbst
+        let visible = FamilyConfig.people.filter { p in
+            guard let own = store.activeKid else { return true }
+            return FamilyConfig.kid(own)?.person == p.id
+        }
+        let kids = visible.compactMap { p -> SchoolInfo? in
+            schoolText(for: p).map { SchoolInfo(person: p, text: $0) }
         }
         if !kids.isEmpty {
-            Card(title: "Schule", symbol: "graduationcap.fill") {
-                VStack(spacing: 10) {
-                    ForEach(kids) { k in
-                        HStack {
-                            Circle().fill(k.person.color).frame(width: 10, height: 10)
-                            Text(k.person.name).font(.body.weight(.medium))
-                            Spacer()
-                            Text(k.text).foregroundStyle(.secondary)
+            NavigationLink {
+                TimetableView(kid: store.activeKid)
+            } label: {
+                Card(title: "Schule", symbol: "graduationcap.fill") {
+                    VStack(alignment: .leading, spacing: 10) {
+                        ForEach(kids) { k in
+                            VStack(alignment: .leading, spacing: 2) {
+                                HStack {
+                                    Circle().fill(k.person.color).frame(width: 10, height: 10)
+                                    Text(k.person.name).font(.body.weight(.medium))
+                                    Spacer()
+                                    Text(k.text).foregroundStyle(.secondary)
+                                }
+                                if let kidID = FamilyConfig.kids.first(where: { $0.person == k.person.id })?.id,
+                                   ChoreText.todayIndex <= 4 {
+                                    let subjects = Timetables.subjects(kid: kidID, day: ChoreText.todayIndex)
+                                    if !subjects.isEmpty {
+                                        Text(subjects.joined(separator: " · "))
+                                            .font(.caption).foregroundStyle(.secondary).lineLimit(2)
+                                            .padding(.leading, 18)
+                                    }
+                                }
+                            }
                         }
+                        HStack {
+                            Spacer()
+                            Text("Stundenplan").font(.caption.weight(.semibold))
+                            Image(systemName: "chevron.right").font(.caption2)
+                        }
+                        .foregroundStyle(Color.accentColor)
                     }
                 }
             }
+            .buttonStyle(.plain)
         }
     }
 
