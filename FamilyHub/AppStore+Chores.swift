@@ -12,7 +12,9 @@ extension AppStore {
         return FamilyConfig.kids.first { states[$0.person]?.attr("user_id")?.string == uid }?.id
     }
     /// Echte Rolle: Eltern sind alle, die kein Kind sind.
-    var isParent: Bool { currentUserID != nil && detectedKid == nil }
+    /// Sicherheitshalber erst, wenn Benutzer UND die Personen der Kinder geladen sind –
+    /// sonst könnte ein Kind beim Start kurz als Elternteil gelten.
+    var isParent: Bool { roleKnown && detectedKid == nil }
     /// Welche Ansicht gerade gezeigt wird (Eltern können zum Testen als Kind schauen).
     var activeKid: String? {
         guard isParent else { return detectedKid }
@@ -21,7 +23,10 @@ extension AppStore {
         default: return viewAs
         }
     }
-    var roleKnown: Bool { currentUserID != nil }
+    var roleKnown: Bool {
+        guard let uid = currentUserID, !uid.isEmpty else { return false }
+        return FamilyConfig.kids.allSatisfy { states[$0.person]?.attr("user_id")?.string != nil }
+    }
 
     func loadCurrentUser() async {
         guard isLoggedIn, currentUserID == nil else { return }
