@@ -263,6 +263,44 @@ actor HAClient {
         return data
     }
 
+    /// Einzelner WebSocket-Befehl (z. B. media_player/browse_media, das es nur per WebSocket gibt)
+    func websocket(_ command: [String: Any]) async throws -> JSONValue {
+        guard let base = credentials?.baseURL,
+              var comps = URLComponents(url: base.appending(path: "api/websocket"), resolvingAgainstBaseURL: false)
+        else { throw HAError.notConfigured }
+        comps.scheme = comps.scheme == "https" ? "wss" : "ws"
+        let token = try await validAccessToken()
+        let ws = session.webSocketTask(with: comps.url!)
+        ws.maximumMessageSize = 16 * 1024 * 1024
+        ws.resume()
+        defer { ws.cancel(with: .normalClosure, reason: nil) }
+
+        func receive() async throws -> JSONValue {
+            switch try await ws.receive() {
+            case .string(let s): return try JSONDecoder().decode(JSONValue.self, from: Data(s.utf8))
+            case .data(let d): return try JSONDecoder().decode(JSONValue.self, from: d)
+            @unknown default: throw HAError.unexpected("Unbekannte Antwort vom Server.")
+            }
+        }
+        func send(_ obj: [String: Any]) async throws {
+            let data = try JSONSerialization.data(withJSONObject: obj)
+            try await ws.send(.string(String(decoding: data, as: UTF8.self)))
+        }
+
+        _ = try await receive()                                   // auth_required
+        try await send(["type": "auth", "access_token": token])
+        guard try await receive()["type"]?.string == "auth_ok" else { throw HAError.http(401, "") }
+        var cmd = command
+        cmd["id"] = 1
+        try await send(cmd)
+        while true {
+            let reply = try await receive()
+            guard reply["id"]?.int == 1 else { continue }
+            if reply["success"]?.string == "true" { return reply["result"] ?? .null }
+            throw HAError.unexpected(reply["error"]?["message"]?.string ?? "Fehler vom Server.")
+        }
+    }
+
     func image(path: String) async -> UIImage? {
         guard let base = credentials?.baseURL,
               let url = URL(string: path, relativeTo: base),

@@ -17,6 +17,7 @@ struct TodayView: View {
                     if store.ringRecently { DoorbellCard() }
                     // Persönliches
                     ParentTodosTodayCard()
+                    MusicTodayCard()
                     peopleCard
                     // Kinder
                     schoolCard

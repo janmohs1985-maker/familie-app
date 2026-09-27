@@ -150,6 +150,18 @@ enum FamilyConfig {
     static func parent(_ id: String) -> Parent? { parents.first { $0.id == id } }
     static let parentTodoList = "todo.eltern_aufgaben"
 
+    // Sonos-Lautsprecher (Reihenfolge = Anzeige)
+    struct Speaker: Identifiable, Hashable {
+        let id: String          // Sonos-Integration (Steuerung, Spotify-Bibliothek)
+        let name: String
+        let assistant: String   // gleicher Lautsprecher in Music Assistant (Suche & Abspielen von Treffern)
+    }
+    static let speakers: [Speaker] = [
+        Speaker(id: "media_player.kuche_2", name: "Küche", assistant: "media_player.kuche"),
+        Speaker(id: "media_player.unnamed_room", name: "Move 2", assistant: "media_player.move_2"),
+    ]
+    static let musicAssistantEntry = "01M3J3XS31CWBS6PDFGWJF7GYA"   // Config-Entry von Music Assistant
+
     static let guestWifiSwitch = "switch.mohs_gaste"          // UniFi: WLAN „Mohs - Gäste“ an/aus
     static let freizeitList = "todo.freizeit"                 // Freizeitaktivitäten der Kinder
     static let schoolDocsList = "todo.schulmappe"             // Schulmappe (Fotos über das Scanner-Add-on)
