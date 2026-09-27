@@ -17,6 +17,7 @@ struct TodayView: View {
                     mailboxBanner
                     MealTodayCard()
                     DoorbellCard()
+                    ScanCard()
                     wasteCard
                     upcomingCard
                     if let t = store.lastUpdate {

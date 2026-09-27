@@ -30,6 +30,12 @@ final class AppStore {
     var meals: [Meal] = []
     var mealWishes: [MealWish] = []
 
+    // Dokumente / Scanner (nur Eltern)
+    var scans: [ScanFile] = []
+    var scanning = false
+    var sentScans: Set<String> = []
+    @ObservationIgnored var scanCache: [String: Data] = [:]
+
     // UI
     var lastError: String?
     var lastUpdate: Date?
@@ -63,6 +69,7 @@ final class AppStore {
         await client.logout()
         states = [:]; events = []; calendars = []; todoItems = [:]; pictures = [:]
         chores = [:]; choreTemplates = []; rewards = []; rewardRequests = []; pointsHistory = []; doorbellRings = []; appControls = []; meals = []; mealWishes = []
+        scans = []; sentScans = []; scanCache = [:]
         currentUserID = nil; userLookupFailed = false; viewAs = "auto"
     }
 

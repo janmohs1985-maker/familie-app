@@ -145,12 +145,13 @@ actor HAClient {
 
     // MARK: - API
 
-    private func api(_ path: String, method: String = "GET", query: [URLQueryItem] = [], json: [String: Any]? = nil, retry: Bool = true) async throws -> Data {
+    private func api(_ path: String, method: String = "GET", query: [URLQueryItem] = [], json: [String: Any]? = nil, timeout: TimeInterval? = nil, retry: Bool = true) async throws -> Data {
         guard let base = credentials?.baseURL else { throw HAError.notConfigured }
         var comps = URLComponents(url: base.appending(path: path), resolvingAgainstBaseURL: false)!
         if !query.isEmpty { comps.queryItems = query }
         var req = URLRequest(url: comps.url!)
         req.httpMethod = method
+        if let timeout { req.timeoutInterval = timeout }
         req.setValue("Bearer \(try await validAccessToken())", forHTTPHeaderField: "Authorization")
         if let json {
             req.setValue("application/json", forHTTPHeaderField: "Content-Type")
@@ -160,7 +161,7 @@ actor HAClient {
         let code = (resp as? HTTPURLResponse)?.statusCode ?? 0
         if code == 401, retry, credentials?.longLivedToken == nil {
             credentials?.accessExpiry = .distantPast        // Token erneuern und einmal wiederholen
-            return try await api(path, method: method, query: query, json: json, retry: false)
+            return try await api(path, method: method, query: query, json: json, timeout: timeout, retry: false)
         }
         guard (200..<300).contains(code) else { throw HAError.http(code, String(data: data, encoding: .utf8) ?? "") }
         return data
@@ -211,9 +212,9 @@ actor HAClient {
     }
 
     /// Service mit Rückgabewert (z. B. todo.get_items)
-    func callWithResponse(_ domain: String, _ service: String, _ data: [String: Any]) async throws -> JSONValue {
+    func callWithResponse(_ domain: String, _ service: String, _ data: [String: Any], timeout: TimeInterval? = nil) async throws -> JSONValue {
         let raw = try await api("api/services/\(domain)/\(service)", method: "POST",
-                                query: [URLQueryItem(name: "return_response", value: nil)], json: data)
+                                query: [URLQueryItem(name: "return_response", value: nil)], json: data, timeout: timeout)
         let json = try JSONDecoder().decode(JSONValue.self, from: raw)
         return json["service_response"] ?? json
     }
@@ -248,6 +249,18 @@ actor HAClient {
         let reply = try await receive()
         guard let id = reply["result"]?["id"]?.string else { throw HAError.unexpected("Benutzer konnte nicht ermittelt werden.") }
         return id
+    }
+
+    /// Beliebige Datei vom Server laden (z. B. PDF aus /media/local/…)
+    func download(path: String) async throws -> Data {
+        guard let base = credentials?.baseURL, let url = URL(string: path, relativeTo: base) else { throw HAError.notConfigured }
+        var req = URLRequest(url: url)
+        req.timeoutInterval = 60
+        req.setValue("Bearer \(try await validAccessToken())", forHTTPHeaderField: "Authorization")
+        let (data, resp) = try await session.data(for: req)
+        let code = (resp as? HTTPURLResponse)?.statusCode ?? 0
+        guard code == 200 else { throw HAError.http(code, "") }
+        return data
     }
 
     func image(path: String) async -> UIImage? {

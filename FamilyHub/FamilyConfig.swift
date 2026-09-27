@@ -117,6 +117,7 @@ enum FamilyConfig {
 
     static let pointsHistory = "todo.punkte_verlauf"
     static let notifyScript = "familie_mitteilung"                  // script.familie_mitteilung (an: eltern/jan/vanessa/emma/leoni)
+    static let scannerScript = "familie_scanner"                    // script.familie_scanner (Add-on „Familie Scanner“, nur Eltern)
     static func streakCounter(_ kid: String) -> String { "counter.serie_\(kid)" }
     static func activityFlag(_ kid: String) -> String { "input_boolean.aufgabe_heute_\(kid)" }
     static let streakBonusDays = 7                                   // muss zur Automation „Familie: Serien-Bonus“ passen
