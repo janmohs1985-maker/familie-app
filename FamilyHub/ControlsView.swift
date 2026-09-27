@@ -72,6 +72,24 @@ struct ControlsView: View {
                 }
                 .padding(.horizontal)
 
+                if store.allows(.strom) || store.allows(.heizung) {
+                    SectionTitle("Haus")
+                    LazyVGrid(columns: columns, spacing: 12) {
+                        if store.allows(.strom) {
+                            NavigationLink { EnergyView() } label: {
+                                HubTile(title: "Haus & Strom", symbol: "bolt.fill", color: .yellow)
+                            }
+                        }
+                        if store.allows(.heizung) {
+                            NavigationLink { HeatingView() } label: {
+                                HubTile(title: "Heizung", symbol: "heat.waves", color: .red)
+                            }
+                        }
+                    }
+                    .padding(.horizontal)
+                    .buttonStyle(.plain)
+                }
+
                 SectionTitle("Familie")
                 LazyVGrid(columns: columns, spacing: 12) {
                     if store.allows(.stundenplan) {
