@@ -162,6 +162,30 @@ enum FamilyConfig {
     ]
     static let musicAssistantEntry = "01M3J3XS31CWBS6PDFGWJF7GYA"   // Config-Entry von Music Assistant
 
+    // Saugroboter (Roborock). prefix bildet die Sensoren: sensor.<prefix>_status, binary_sensor.<prefix>_wasserknappheit …
+    struct Vacuum: Identifiable, Hashable {
+        struct Program: Hashable { let entity: String; let name: String }
+        let id: String
+        let name: String
+        let prefix: String
+        let modeSelect: String
+        let programs: [Program]
+    }
+    static let vacuums: [Vacuum] = [
+        Vacuum(id: "vacuum.saugi_eg", name: "Saugi EG", prefix: "saugi_eg",
+               modeSelect: "select.saugi_eg_reinigungsmodus",
+               programs: [.init(entity: "button.saugi_eg_vollreinigung", name: "Vollreinigung"),
+                          .init(entity: "button.saugi_eg_intensiv", name: "Intensiv")]),
+        Vacuum(id: "vacuum.qrevo_s_pro_series", name: "Saugi OG", prefix: "qrevo_s_pro_series",
+               modeSelect: "select.saugi_og_reinigungsmodus",
+               programs: [.init(entity: "button.saugi_og_vollreinigung", name: "Vollreinigung")]),
+        Vacuum(id: "vacuum.roborock_s7_maxv", name: "Saugi Keller", prefix: "roborock_s7_maxv",
+               modeSelect: "select.flur_obergeschoss_saugi_keller_reinigungsmodus",
+               programs: [.init(entity: "button.roborock_s7_maxv_vollreinigung", name: "Vollreinigung"),
+                          .init(entity: "button.roborock_s7_maxv_flur", name: "Flur"),
+                          .init(entity: "button.roborock_s7_maxv_saugen_leicht_wisch", name: "Saugen & leicht wischen")]),
+    ]
+
     static let guestWifiSwitch = "switch.mohs_gaste"          // UniFi: WLAN „Mohs - Gäste“ an/aus
     static let freizeitList = "todo.freizeit"                 // Freizeitaktivitäten der Kinder
     static let schoolDocsList = "todo.schulmappe"             // Schulmappe (Fotos über das Scanner-Add-on)

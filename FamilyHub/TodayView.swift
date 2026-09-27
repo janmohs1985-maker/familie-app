@@ -18,6 +18,7 @@ struct TodayView: View {
                     // Persönliches
                     ParentTodosTodayCard()
                     MusicTodayCard()
+                    VacuumTodayCard()
                     peopleCard
                     // Kinder
                     schoolCard

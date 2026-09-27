@@ -247,8 +247,15 @@ struct MusicSearchView: View {
 struct MusicView: View {
     @Environment(AppStore.self) private var store
     @AppStorage("musicSpeaker") private var speaker = FamilyConfig.speakers.first?.id ?? ""
+    @AppStorage("spotifyAccount") private var accountTitle = ""
     @State private var root: BrowseResult?
+    @State private var library: BrowseResult?
     @State private var error: String?
+
+    /// Jedes in Home Assistant angemeldete Spotify-Konto ist ein eigener Eintrag
+    private var accounts: [MediaItem] { (root?.items ?? []).filter { $0.contentType == "spotify://library" } }
+    private var others: [MediaItem] { (root?.items ?? []).filter { $0.contentType != "spotify://library" } }
+    private var account: MediaItem? { accounts.first { $0.title == accountTitle } ?? accounts.first }
 
     var body: some View {
         List {
@@ -267,26 +274,54 @@ struct MusicView: View {
                         .font(.headline)
                 }
             }
-            Section("Musik auswählen") {
-                if let error {
-                    Label(error, systemImage: "exclamationmark.triangle.fill").foregroundStyle(.red).font(.footnote)
+            if let error {
+                Label(error, systemImage: "exclamationmark.triangle.fill").foregroundStyle(.red).font(.footnote)
+            }
+            if root == nil && error == nil {
+                HStack { ProgressView(); Text("Lade …").foregroundStyle(.secondary) }
+            }
+
+            // Spotify – Konto wählen (Jan / Vanessa …)
+            if let account {
+                Section {
+                    if accounts.count > 1 {
+                        Picker("Konto", selection: Binding(get: { account.title }, set: { accountTitle = $0 })) {
+                            ForEach(accounts) { a in Text(a.title).tag(a.title) }
+                        }
+                        .pickerStyle(.segmented)
+                    }
+                    if let library {
+                        ForEach(library.items) { item in
+                            NavigationLink {
+                                BrowseView(speaker: speaker, item: item)
+                            } label: {
+                                MediaRow(item: item)
+                            }
+                        }
+                    } else {
+                        HStack { ProgressView(); Text("Lade Bibliothek …").foregroundStyle(.secondary) }
+                    }
+                } header: {
+                    Label(accounts.count > 1 ? "Spotify" : "Spotify · \(account.title)", systemImage: "music.note.house")
                 }
-                if let root {
-                    ForEach(root.items) { item in
+            }
+
+            if !others.isEmpty {
+                Section("Weitere Quellen") {
+                    ForEach(others) { item in
                         NavigationLink {
                             BrowseView(speaker: speaker, item: item)
                         } label: {
                             MediaRow(item: item)
                         }
                     }
-                } else if error == nil {
-                    HStack { ProgressView(); Text("Lade …").foregroundStyle(.secondary) }
                 }
             }
         }
         .navigationTitle("Musik")
         .task(id: speaker) { await loadRoot() }
-        .refreshable { await store.refreshStates(); await loadRoot() }
+        .task(id: account?.title) { await loadLibrary() }
+        .refreshable { await store.refreshStates(); await loadRoot(); await loadLibrary() }
     }
 
     private func loadRoot() async {
@@ -294,10 +329,21 @@ struct MusicView: View {
         do {
             root = try await store.browse(speaker)
             error = nil
+            // Standard: das Konto des angemeldeten Elternteils, sonst das erste
+            if accountTitle.isEmpty, let me = store.myParentID, let name = FamilyConfig.parent(me)?.name,
+               let mine = accounts.first(where: { $0.title.localizedCaseInsensitiveContains(name) }) {
+                accountTitle = mine.title
+            }
         } catch {
             self.error = store.speakerOnline(speaker) ? error.localizedDescription
                                                        : "Dieser Lautsprecher ist gerade offline."
         }
+    }
+
+    private func loadLibrary() async {
+        guard let account else { return }
+        library = nil
+        library = try? await store.browse(speaker, account)
     }
 }
 

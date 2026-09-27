@@ -83,6 +83,9 @@ struct ControlsView: View {
                     NavigationLink { MealPlanView() } label: {
                         HubTile(title: "Essensplan", symbol: "fork.knife", color: .orange)
                     }
+                    NavigationLink { VacuumsView() } label: {
+                        HubTile(title: "Saugroboter", symbol: "fan.fill", color: .mint)
+                    }
                     NavigationLink { MusicView() } label: {
                         HubTile(title: "Musik", symbol: "hifispeaker.2.fill", color: .pink)
                     }
