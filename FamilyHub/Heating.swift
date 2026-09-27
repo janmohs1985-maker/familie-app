@@ -44,6 +44,16 @@ enum HeatingConfig {
     static let filterDays = "sensor.proxon_filter_resttage"
     static let intensiveLeft = "sensor.proxon_intensivluftung_restzeit"
 
+    static func modeShort(_ m: String) -> String {
+        switch m {
+        case "Sommerbetrieb": "Sommer"
+        case "Winterbetrieb": "Winter"
+        case "ECO Komfortbetrieb": "ECO Komfort"
+        case "Ofenbetrieb": "Ofen"
+        default: m
+        }
+    }
+
     static func modeSymbol(_ m: String) -> String {
         switch m {
         case "Aus": "power"
@@ -150,21 +160,31 @@ struct HeatingView: View {
                     }
                 }
                 if isParent && !options.isEmpty {
-                    Menu {
+                    Text("Betriebsart").font(.caption.weight(.semibold)).foregroundStyle(.secondary)
+                    LazyVGrid(columns: [GridItem(.adaptive(minimum: 96), spacing: 8)], spacing: 8) {
                         ForEach(options, id: \.self) { o in
-                            Button { Task { await store.selectOption(HeatingConfig.mode, o) } } label: {
-                                Label(o, systemImage: o == mode ? "checkmark" : HeatingConfig.modeSymbol(o))
+                            let on = o == mode
+                            Button { if !on { Task { await store.selectOption(HeatingConfig.mode, o) } } } label: {
+                                VStack(spacing: 4) {
+                                    Image(systemName: HeatingConfig.modeSymbol(o)).font(.title3)
+                                    Text(HeatingConfig.modeShort(o)).font(.caption2.weight(.semibold)).lineLimit(1)
+                                }
+                                .frame(maxWidth: .infinity, minHeight: 54)
+                                .foregroundStyle(on ? Color.white : Color.primary)
+                                .background(on ? AnyShapeStyle(Color.orange.gradient) : AnyShapeStyle(Color(.tertiarySystemFill)),
+                                            in: RoundedRectangle(cornerRadius: 12))
                             }
+                            .buttonStyle(.plain)
                         }
-                    } label: {
-                        Label("Betriebsart ändern", systemImage: "slider.horizontal.3")
-                            .frame(maxWidth: .infinity)
                     }
-                    .buttonStyle(.bordered)
                     HStack {
                         Toggle(isOn: Binding(get: { store.states[HeatingConfig.elementsGlobal]?.state == "on" },
                                              set: { v in Task { await store.setSwitch(HeatingConfig.elementsGlobal, v) } })) {
-                            Label("Heizelemente", systemImage: "flame")
+                            VStack(alignment: .leading, spacing: 1) {
+                                Label("Wärmeelemente (alle)", systemImage: "flame")
+                                Text("Hauptschalter – einzelne Räume unten bei „Räume“")
+                                    .font(.caption2).foregroundStyle(.secondary)
+                            }
                         }
                     }
                     Toggle(isOn: Binding(get: { store.states[HeatingConfig.cooling]?.state == "on" },
@@ -326,6 +346,7 @@ struct RoomRow: View {
             return .green
         }()
 
+        VStack(alignment: .leading, spacing: 6) {
         HStack(spacing: 12) {
             VStack(alignment: .leading, spacing: 2) {
                 HStack(spacing: 4) {
@@ -356,11 +377,26 @@ struct RoomRow: View {
                 .background(Color(.tertiarySystemFill), in: Capsule())
             }
         }
+            if parent, store.states[room.elementSwitch] != nil {
+                let elementOn = store.states[room.elementSwitch]?.state == "on"
+                Button {
+                    Task { await store.setSwitch(room.elementSwitch, !elementOn) }
+                } label: {
+                    Label(elementOn ? "Wärmeelement an" : "Wärmeelement aus", systemImage: elementOn ? "flame.fill" : "flame")
+                        .font(.caption.weight(.semibold))
+                        .padding(.horizontal, 10).padding(.vertical, 5)
+                        .foregroundStyle(elementOn ? Color.white : Color.secondary)
+                        .background(elementOn ? AnyShapeStyle(Color.orange.gradient) : AnyShapeStyle(Color(.tertiarySystemFill)), in: Capsule())
+                }
+                .buttonStyle(.plain)
+                .disabled(store.states[HeatingConfig.elementsGlobal]?.state == "off")
+            }
+        }
         .contextMenu {
             if parent {
                 ForEach(c?.attr("hvac_modes")?.array?.compactMap(\.string) ?? [], id: \.self) { m in
                     Button { Task { await store.setRoomHvac(room, m) } } label: {
-                        Label(["auto": "Automatik", "heat": "Heizen", "off": "Aus", "cool": "Kühlen"][m] ?? m,
+                        Label(["auto": "Wärmeelement aus (nur Wärmepumpe)", "heat": "Wärmeelement an", "off": "Raum aus", "cool": "Kühlen"][m] ?? m,
                               systemImage: m == hvac ? "checkmark" : "thermometer")
                     }
                 }
