@@ -47,7 +47,9 @@ extension AppStore {
     private func scanner(_ aktion: String, _ extra: [String: Any] = [:], timeout: TimeInterval = 30) async throws -> JSONValue {
         var data = extra
         data["aktion"] = aktion
-        let r = try await client.callWithResponse("script", FamilyConfig.scannerScript, data, timeout: timeout)
+        let raw = try await client.callWithResponse("script", FamilyConfig.scannerScript, data, timeout: timeout)
+        // „get“ liefert die rohe rest_command-Antwort ({status, content, headers}), alles andere direkt das Ergebnis
+        let r = raw["content"]?.object != nil ? raw["content"]! : raw
         guard r["ok"]?.string == "true" else {
             var msg = r["error"]?.string ?? "Unbekannter Fehler vom Scanner."
             if msg.contains("device I/O") || msg.contains("No route") {
@@ -104,7 +106,11 @@ extension AppStore {
 
     func pdfData(_ scan: ScanFile) async throws -> Data {
         if let d = scanCache[scan.file] { return d }
-        let d = try await client.download(path: scan.path)
+        // Home Assistant liefert PDFs nicht über /media aus – das Add-on schickt sie base64-kodiert
+        let r = try await scanner("get", ["file": scan.file], timeout: 90)
+        guard let b64 = r["data"]?.string, let d = Data(base64Encoded: b64) else {
+            throw ScannerError(message: "Die PDF konnte nicht geladen werden.")
+        }
         scanCache[scan.file] = d
         return d
     }
@@ -238,8 +244,11 @@ struct ScanDetailView: View {
     var body: some View {
         VStack(spacing: 0) {
             Group {
-                if let data {
+                if let data, PDFDocument(data: data) != nil {
                     PDFPreview(data: data)
+                } else if data != nil {
+                    ContentUnavailableView("Vorschau nicht möglich", systemImage: "doc.questionmark",
+                                           description: Text("Die Datei ist keine gültige PDF."))
                 } else if let loadError {
                     ContentUnavailableView("Vorschau nicht möglich", systemImage: "doc.questionmark",
                                            description: Text(loadError))
