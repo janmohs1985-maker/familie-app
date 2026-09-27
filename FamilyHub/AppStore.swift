@@ -31,6 +31,11 @@ final class AppStore {
     var mealWishes: [MealWish] = []
     var activities: [Activity] = []               // Freizeit der Kinder
     var schoolDocs: [SchoolDoc] = []              // Schulmappe
+    var parentTodos: [ParentTodo] = []            // Aufgaben Jan & Vanessa
+
+    // Navigation
+    var selectedTab = "heute"
+    var aufgabenMode = "wir"                      // Eltern: "wir" oder "kinder"
 
     // Dokumente / Scanner (nur Eltern)
     var scans: [ScanFile] = []
@@ -71,7 +76,7 @@ final class AppStore {
     func logout() async {
         await client.logout()
         states = [:]; events = []; calendars = []; todoItems = [:]; pictures = [:]
-        chores = [:]; choreTemplates = []; rewards = []; rewardRequests = []; pointsHistory = []; doorbellRings = []; appControls = []; meals = []; mealWishes = []; activities = []; schoolDocs = []
+        chores = [:]; choreTemplates = []; rewards = []; rewardRequests = []; pointsHistory = []; doorbellRings = []; appControls = []; meals = []; mealWishes = []; activities = []; schoolDocs = []; parentTodos = []; selectedTab = "heute"
         scans = []; sentScans = []; scanCache = [:]
         currentUserID = nil; userLookupFailed = false; viewAs = "auto"
     }
@@ -102,7 +107,8 @@ final class AppStore {
         async let h: () = refreshMeals()
         async let i: () = refreshFreizeit()
         async let j: () = refreshSchool()
-        _ = await (b, c, d, e, f, g, h, i, j)
+        async let k: () = refreshParentTodos()
+        _ = await (b, c, d, e, f, g, h, i, j, k)
     }
 
     func refreshStates() async {

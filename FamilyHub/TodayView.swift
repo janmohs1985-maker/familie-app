@@ -12,14 +12,17 @@ struct TodayView: View {
                 VStack(alignment: .leading, spacing: 16) {
                     ErrorBanner()
                     weatherCard
+                    // Hinweise, die jetzt wichtig sind
+                    mailboxBanner
+                    if store.ringRecently { DoorbellCard() }
+                    // Persönliches
+                    ParentTodosTodayCard()
                     peopleCard
+                    // Kinder
                     schoolCard
                     FreizeitTodayCard()
-                    mailboxBanner
+                    // Haushalt
                     MealTodayCard()
-                    DoorbellCard()
-                    ScanCard()
-                    SchoolDocsCard()
                     wasteCard
                     upcomingCard
                     if let t = store.lastUpdate {

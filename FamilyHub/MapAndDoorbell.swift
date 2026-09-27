@@ -176,6 +176,14 @@ struct FamilyMapView: View {
 
 // MARK: - Klingel
 
+extension AppStore {
+    /// Klingel-Karte auf „Heute“ nur zeigen, wenn es kürzlich geklingelt hat
+    var ringRecently: Bool {
+        guard let t = lastRing else { return false }
+        return Date().timeIntervalSince(t) < 12 * 3600
+    }
+}
+
 struct DoorbellCard: View {
     @Environment(AppStore.self) private var store
 

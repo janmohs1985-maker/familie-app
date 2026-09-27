@@ -54,7 +54,7 @@ extension AppStore {
     /// Zahl für das Badge am Tab.
     var choreBadge: Int {
         if let kid = activeKid { return (chores[kid] ?? []).filter { !$0.done }.count }
-        return isParent ? pendingChores.count + rewardRequests.count : 0
+        return isParent ? pendingChores.count + rewardRequests.count + myOpenTodos.filter { $0.isOverdue || $0.isToday }.count : 0
     }
 
     private func items(_ list: String) async throws -> [JSONValue] {

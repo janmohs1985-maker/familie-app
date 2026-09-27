@@ -20,11 +20,28 @@ struct ChoresView: View {
                     }
                 } else if let id = store.activeKid, let kid = FamilyConfig.kid(id) {
                     KidChoresView(kid: kid)
+                } else if store.aufgabenMode == "wir" {
+                    ParentTodosView()
                 } else {
                     ParentChoresView()
                 }
             }
-            .safeAreaInset(edge: .top) { ErrorBanner().padding(.horizontal) }
+            .safeAreaInset(edge: .top) {
+                VStack(spacing: 8) {
+                    ErrorBanner()
+                    if store.canUseParentTodos {
+                        Picker("Bereich", selection: Bindable(store).aufgabenMode) {
+                            Text("Wir").tag("wir")
+                            Text(store.pendingChores.count + store.rewardRequests.count > 0
+                                 ? "Kinder (\(store.pendingChores.count + store.rewardRequests.count))" : "Kinder").tag("kinder")
+                        }
+                        .pickerStyle(.segmented)
+                    }
+                }
+                .padding(.horizontal)
+                .padding(.bottom, 4)
+                .background(Color(.systemGroupedBackground))
+            }
             .navigationTitle("Aufgaben")
             .task { await store.loadCurrentUser(); await store.refreshChores() }
         }

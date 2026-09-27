@@ -61,9 +61,6 @@ struct ListsView: View {
             .refreshable { await store.refreshTodos() }
             .navigationTitle(store.todoLists.first { $0.entity_id == listID }?.name ?? "Listen")
             .toolbar {
-                if store.canScan {
-                    NavigationLink { DocumentsView() } label: { Label("Dokumente", systemImage: "doc.viewfinder") }
-                }
                 NavigationLink { MealPlanView() } label: { Label("Essensplan", systemImage: "fork.knife") }
             }
         }

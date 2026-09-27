@@ -136,12 +136,26 @@ enum FamilyConfig {
     static let doorbellHistory = "todo.klingel_verlauf"              // Bilder liegen unter /media/local/<datei>
 
     /// Diese Listen gehören zu App-Funktionen und erscheinen nicht im Tab „Listen“.
+    // Eltern (für die gemeinsame Aufgabenliste)
+    struct Parent: Identifiable, Hashable {
+        let id: String          // "jan" / "vanessa" – auch Ziel für script.familie_mitteilung
+        let name: String
+        let person: String
+        let color: Color
+    }
+    static let parents: [Parent] = [
+        Parent(id: "jan", name: "Jan", person: "person.mohs", color: .orange),
+        Parent(id: "vanessa", name: "Vanessa", person: "person.vanessa", color: .green),
+    ]
+    static func parent(_ id: String) -> Parent? { parents.first { $0.id == id } }
+    static let parentTodoList = "todo.eltern_aufgaben"
+
     static let guestWifiSwitch = "switch.mohs_gaste"          // UniFi: WLAN „Mohs - Gäste“ an/aus
     static let freizeitList = "todo.freizeit"                 // Freizeitaktivitäten der Kinder
     static let schoolDocsList = "todo.schulmappe"             // Schulmappe (Fotos über das Scanner-Add-on)
 
     static var systemTodoLists: Set<String> {
-        Set(kids.map { choreList($0.id) } + [choreTemplates, rewards, rewardRequests, pointsHistory, doorbellHistory, appControls, mealPlan, mealWishes, freizeitList, schoolDocsList])
+        Set(kids.map { choreList($0.id) } + [choreTemplates, rewards, rewardRequests, pointsHistory, doorbellHistory, appControls, mealPlan, mealWishes, freizeitList, schoolDocsList, parentTodoList])
     }
 
     // MARK: Farben für Kalender (nach Reihenfolge)

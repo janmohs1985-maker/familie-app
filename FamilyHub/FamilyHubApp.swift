@@ -28,18 +28,23 @@ struct RootView: View {
     var body: some View {
         Group {
             if store.isLoggedIn {
-                TabView {
+                TabView(selection: Bindable(store).selectedTab) {
                     TodayView()
-                        .tabItem { Label("Heute", systemImage: "house.fill") }
+                        .tabItem { Label("Heute", systemImage: "sun.max.fill") }
+                        .tag("heute")
                     CalendarView()
                         .tabItem { Label("Kalender", systemImage: "calendar") }
+                        .tag("kalender")
                     ChoresView()
-                        .tabItem { Label("Aufgaben", systemImage: "star.fill") }
+                        .tabItem { Label("Aufgaben", systemImage: "checkmark.circle.fill") }
                         .badge(store.choreBadge)
+                        .tag("aufgaben")
                     ListsView()
-                        .tabItem { Label("Listen", systemImage: "checklist") }
+                        .tabItem { Label("Listen", systemImage: "cart.fill") }
+                        .tag("listen")
                     ControlsView()
-                        .tabItem { Label("Steuern", systemImage: "switch.2") }
+                        .tabItem { Label("Zuhause", systemImage: "house.fill") }
+                        .tag("zuhause")
                 }
                 .task { store.startPolling(); await store.refreshAll() }
             } else {

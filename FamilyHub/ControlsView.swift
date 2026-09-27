@@ -1,12 +1,51 @@
 import SwiftUI
 
-// MARK: - Tab „Steuern“
+// MARK: - Kacheln für „Zuhause“
+
+struct HubTile: View {
+    let title: String
+    let symbol: String
+    let color: Color
+
+    var body: some View {
+        HStack(spacing: 10) {
+            Image(systemName: symbol)
+                .font(.headline).foregroundStyle(.white)
+                .frame(width: 34, height: 34)
+                .background(color.gradient, in: RoundedRectangle(cornerRadius: 9))
+            Text(title)
+                .font(.subheadline.weight(.semibold)).foregroundStyle(.primary)
+                .multilineTextAlignment(.leading).lineLimit(2)
+            Spacer(minLength: 0)
+        }
+        .padding(12)
+        .frame(maxWidth: .infinity, minHeight: 62, alignment: .leading)
+        .background(Color(.secondarySystemGroupedBackground), in: RoundedRectangle(cornerRadius: 16))
+        .contentShape(RoundedRectangle(cornerRadius: 16))
+    }
+}
+
+struct SectionTitle: View {
+    let text: String
+    init(_ text: String) { self.text = text }
+    var body: some View {
+        Text(text)
+            .font(.title3.weight(.bold))
+            .frame(maxWidth: .infinity, alignment: .leading)
+            .padding(.horizontal)
+            .padding(.top, 12)
+    }
+}
+
+// MARK: - Tab „Zuhause“ (Schalter + Familie + Verwaltung)
 
 struct ControlsView: View {
     @Environment(AppStore.self) private var store
     @State private var pending: AppControl?
     @State private var coverSheet: AppControl?
     @State private var lightSheet: AppControl?
+    @State private var showSettings = false
+    @State private var showMap = false
 
     private let columns = [GridItem(.flexible(), spacing: 12), GridItem(.flexible(), spacing: 12)]
 
@@ -17,9 +56,12 @@ struct ControlsView: View {
                 if store.visibleControls.isEmpty {
                     ContentUnavailableView("Keine Schalter", systemImage: "switch.2",
                         description: Text(store.isParent && store.activeKid == nil
-                                          ? "Über „Bearbeiten“ kannst du Geräte hinzufügen."
+                                          ? "Über „Schalter“ oben rechts kannst du Geräte hinzufügen."
                                           : "Mama oder Papa haben noch nichts für dich freigegeben."))
-                        .padding(.top, 60)
+                        .padding(.top, 12)
+                }
+                if !store.visibleControls.isEmpty {
+                    SectionTitle("Schalten")
                 }
                 LazyVGrid(columns: columns, spacing: 12) {
                     ForEach(store.visibleControls) { c in
@@ -28,16 +70,62 @@ struct ControlsView: View {
                         }
                     }
                 }
-                .padding()
+                .padding(.horizontal)
+
+                SectionTitle("Familie")
+                LazyVGrid(columns: columns, spacing: 12) {
+                    NavigationLink { TimetableView(kid: store.activeKid) } label: {
+                        HubTile(title: "Stundenplan & Freizeit", symbol: "graduationcap.fill", color: .teal)
+                    }
+                    NavigationLink { SchoolDocsView(kid: store.activeKid) } label: {
+                        HubTile(title: "Schulmappe", symbol: "folder.fill", color: .cyan)
+                    }
+                    NavigationLink { MealPlanView() } label: {
+                        HubTile(title: "Essensplan", symbol: "fork.knife", color: .orange)
+                    }
+                    NavigationLink { DoorbellView() } label: {
+                        HubTile(title: "Haustür", symbol: "bell.fill", color: .yellow)
+                    }
+                }
+                .padding(.horizontal)
+                .buttonStyle(.plain)
+
+                if store.isParent && store.activeKid == nil {
+                    SectionTitle("Verwaltung")
+                    LazyVGrid(columns: columns, spacing: 12) {
+                        NavigationLink { DocumentsView() } label: {
+                            HubTile(title: "Dokumente scannen", symbol: "scanner.fill", color: .indigo)
+                        }
+                        NavigationLink { GuestWifiView() } label: {
+                            HubTile(title: "Gäste-WLAN", symbol: "wifi", color: .blue)
+                        }
+                        Button { showMap = true } label: {
+                            HubTile(title: "Wo sind alle?", symbol: "map.fill", color: .green)
+                        }
+                        Button { showSettings = true } label: {
+                            HubTile(title: "Einstellungen", symbol: "gearshape.fill", color: .gray)
+                        }
+                    }
+                    .padding(.horizontal)
+                    .buttonStyle(.plain)
+                }
+                Spacer(minLength: 24)
             }
             .background(Color(.systemGroupedBackground))
             .refreshable { await store.refreshStates(); await store.refreshControls() }
-            .navigationTitle("Steuern")
+            .navigationTitle("Zuhause")
             .toolbar {
+                ToolbarItem(placement: .topBarLeading) {
+                    Button { showSettings = true } label: { Image(systemName: "gearshape") }
+                }
                 if store.isParent && store.activeKid == nil {
-                    NavigationLink("Bearbeiten") { ControlsManageView() }
+                    ToolbarItem(placement: .primaryAction) {
+                        NavigationLink("Schalter") { ControlsManageView() }
+                    }
                 }
             }
+            .sheet(isPresented: $showSettings) { SettingsView() }
+            .fullScreenCover(isPresented: $showMap) { FamilyMapView() }
             .task { await store.refreshControls() }
             .confirmationDialog(pending.map { "\($0.name) wirklich schalten?" } ?? "",
                                 isPresented: Binding(get: { pending != nil }, set: { if !$0 { pending = nil } }),
