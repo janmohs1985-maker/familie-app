@@ -7,7 +7,7 @@ import SwiftUI
 // Standard: alles erlaubt.
 
 enum KidFeature: String, CaseIterable, Identifiable {
-    case kalender, listen, stundenplan, schulmappe, essensplan, strom, heizung, saugroboter, pool, musik, haustuer
+    case kalender, listen, stundenplan, schulmappe, essensplan, musik, haustuer, strom, heizung, pool, saugroboter
     var id: String { rawValue }
 
     var title: String {

@@ -72,7 +72,7 @@ struct ControlsView: View {
                 }
                 .padding(.horizontal)
 
-                if store.allows(.strom) || store.allows(.heizung) {
+                if [KidFeature.strom, .heizung, .pool, .saugroboter].contains(where: { store.allows($0) }) {
                     SectionTitle("Haus")
                     LazyVGrid(columns: columns, spacing: 12) {
                         if store.allows(.strom) {
@@ -83,6 +83,16 @@ struct ControlsView: View {
                         if store.allows(.heizung) {
                             NavigationLink { HeatingView() } label: {
                                 HubTile(title: "Heizung", symbol: "heat.waves", color: .red)
+                            }
+                        }
+                        if store.allows(.pool) {
+                            NavigationLink { PoolView() } label: {
+                                HubTile(title: "Pool", symbol: "figure.pool.swim", color: .blue)
+                            }
+                        }
+                        if store.allows(.saugroboter) {
+                            NavigationLink { VacuumsView() } label: {
+                                HubTile(title: "Saugroboter", symbol: "fan.fill", color: .mint)
                             }
                         }
                     }
@@ -105,16 +115,6 @@ struct ControlsView: View {
                     if store.allows(.essensplan) {
                         NavigationLink { MealPlanView() } label: {
                             HubTile(title: "Essensplan", symbol: "fork.knife", color: .orange)
-                        }
-                    }
-                    if store.allows(.saugroboter) {
-                        NavigationLink { VacuumsView() } label: {
-                            HubTile(title: "Saugroboter", symbol: "fan.fill", color: .mint)
-                        }
-                    }
-                    if store.allows(.pool) {
-                        NavigationLink { PoolView() } label: {
-                            HubTile(title: "Pool", symbol: "figure.pool.swim", color: .blue)
                         }
                     }
                     if store.allows(.musik) {
