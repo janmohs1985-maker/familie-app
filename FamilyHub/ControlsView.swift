@@ -431,6 +431,13 @@ struct SettingsView: View {
                 } header: { Text("Benutzer") } footer: {
                     if store.isParent { Text("Zum Ausprobieren: So sieht die App für die Kinder aus.") }
                 }
+                if store.canManageNetwork {
+                    Section("Netzwerk") {
+                        NavigationLink { GuestWifiView() } label: {
+                            Label("Gäste-WLAN", systemImage: "wifi")
+                        }
+                    }
+                }
                 Section("Gefunden") {
                     LabeledContent("Kalender", value: "\(store.calendars.count)")
                     LabeledContent("Listen", value: "\(store.todoLists.count)")

@@ -136,6 +136,7 @@ enum FamilyConfig {
     static let doorbellHistory = "todo.klingel_verlauf"              // Bilder liegen unter /media/local/<datei>
 
     /// Diese Listen gehören zu App-Funktionen und erscheinen nicht im Tab „Listen“.
+    static let guestWifiSwitch = "switch.mohs_gaste"          // UniFi: WLAN „Mohs - Gäste“ an/aus
     static let freizeitList = "todo.freizeit"                 // Freizeitaktivitäten der Kinder
     static let schoolDocsList = "todo.schulmappe"             // Schulmappe (Fotos über das Scanner-Add-on)
 
