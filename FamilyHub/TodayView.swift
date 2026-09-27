@@ -5,6 +5,7 @@ struct TodayView: View {
     @State private var showSettings = false
     @State private var mapPerson: FamilyConfig.Person?
     @State private var showFamilyMap = false
+    @State private var showWeather = false
 
     var body: some View {
         NavigationStack {
@@ -44,6 +45,7 @@ struct TodayView: View {
                 Button { showSettings = true } label: { Image(systemName: "gearshape") }
             }
             .sheet(isPresented: $showSettings) { SettingsView() }
+            .sheet(isPresented: $showWeather) { WeatherSheet().presentationDetents([.large]) }
         }
     }
 
@@ -62,28 +64,45 @@ struct TodayView: View {
     @ViewBuilder private var weatherCard: some View {
         if let w = store.states[FamilyConfig.weather] {
             let info = WeatherText.info(w.state)
-            Card {
-                HStack(spacing: 16) {
-                    Image(systemName: info.symbol)
-                        .symbolRenderingMode(.multicolor)
-                        .font(.system(size: 44))
-                    VStack(alignment: .leading, spacing: 2) {
-                        Text(info.text).font(.headline)
-                        Text(Date().formatted(.dateTime.weekday(.wide).day().month(.wide)))
-                            .font(.subheadline).foregroundStyle(.secondary)
-                    }
-                    Spacer()
-                    VStack(alignment: .trailing, spacing: 2) {
-                        if let t = w.attr("temperature")?.double {
-                            Text("\(t.formatted(.number.precision(.fractionLength(0))))°")
-                                .font(.system(size: 38, weight: .semibold, design: .rounded))
+            Button { showWeather = true } label: {
+                Card {
+                    VStack(alignment: .leading, spacing: 10) {
+                        HStack(spacing: 16) {
+                            Image(systemName: info.symbol)
+                                .symbolRenderingMode(.multicolor)
+                                .font(.system(size: 44))
+                            VStack(alignment: .leading, spacing: 2) {
+                                Text(info.text).font(.headline)
+                                Text(Date().formatted(.dateTime.weekday(.wide).day().month(.wide)))
+                                    .font(.subheadline).foregroundStyle(.secondary)
+                            }
+                            Spacer()
+                            VStack(alignment: .trailing, spacing: 2) {
+                                if let t = store.outsideTemp {
+                                    Text("\(t.formatted(.number.precision(.fractionLength(0))))°")
+                                        .font(.system(size: 38, weight: .semibold, design: .rounded))
+                                }
+                                HStack(spacing: 8) {
+                                    if let wind = store.num(WeatherConfig.stationWind) ?? w.attr("wind_speed")?.double {
+                                        Label("\(Int(wind.rounded())) km/h", systemImage: "wind")
+                                    }
+                                    if let h = w.attr("humidity")?.int {
+                                        Label("\(h) %", systemImage: "humidity")
+                                    }
+                                }
+                                .font(.caption).foregroundStyle(.secondary)
+                            }
                         }
-                        if let h = w.attr("humidity")?.int {
-                            Label("\(h) %", systemImage: "humidity").font(.caption).foregroundStyle(.secondary)
+                        if let l = store.lightning {
+                            Label("Blitz \(Int(l.km.rounded())) km entfernt\(l.direction.map { " im \($0)" } ?? "")",
+                                  systemImage: "cloud.bolt.fill")
+                                .font(.caption.weight(.semibold))
+                                .foregroundStyle(l.km < 10 ? Color.red : Color.orange)
                         }
                     }
                 }
             }
+            .buttonStyle(.plain)
         }
     }
 
