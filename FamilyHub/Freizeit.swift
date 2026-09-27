@@ -86,7 +86,6 @@ extension AppStore {
 struct FreizeitManageView: View {
     @Environment(AppStore.self) private var store
     @State private var editing: Activity?
-    @State private var isNew = false
 
     var body: some View {
         List {
@@ -97,7 +96,7 @@ struct FreizeitManageView: View {
                         Text("Noch nichts eingetragen").foregroundStyle(.secondary)
                     }
                     ForEach(list) { a in
-                        Button { isNew = false; editing = a } label: { ActivityRow(activity: a, showDay: true) }
+                        Button { editing = a } label: { ActivityRow(activity: a, showDay: true) }
                             .buttonStyle(.plain)
                     }
                     .onDelete { idx in
@@ -115,12 +114,11 @@ struct FreizeitManageView: View {
         .navigationTitle("Freizeit")
         .toolbar {
             Button {
-                isNew = true
                 editing = Activity(uid: "", title: "", kid: FamilyConfig.kids.first?.id ?? "",
                                    day: min(ChoreText.todayIndex, 6), start: "16:00", end: "17:00", place: "")
             } label: { Image(systemName: "plus") }
         }
-        .sheet(item: $editing) { a in ActivityEditView(activity: a, isNew: isNew) }
+        .sheet(item: $editing) { a in ActivityEditView(activity: a) }
         .refreshable { await store.refreshFreizeit() }
     }
 }
@@ -160,7 +158,8 @@ struct ActivityEditView: View {
     @Environment(AppStore.self) private var store
     @Environment(\.dismiss) private var dismiss
     @State var activity: Activity
-    let isNew: Bool
+    /// Neu = noch ohne Kennung aus Home Assistant (nicht als eigener Zustand – den übernimmt SwiftUI im Sheet veraltet)
+    private var isNew: Bool { activity.uid.isEmpty }
     @State private var from = Date()
     @State private var to = Date()
     @State private var hasEnd = true
