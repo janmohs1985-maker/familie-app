@@ -90,11 +90,14 @@ extension AppStore {
     }
 
     /// Startet einen Scan am Epson und liefert die neue PDF-Datei
-    func scan(name: String, mode: ScanMode, resolution: Int) async throws -> ScanFile {
+    /// `append`: neue Seiten an diese PDF anhängen statt eine neue Datei anzulegen
+    func scan(name: String, mode: ScanMode, resolution: Int, append: ScanFile? = nil) async throws -> ScanFile {
         scanning = true
         defer { scanning = false }
         // Scan nur anstoßen und dann kurz nachfragen – eine minutenlange Verbindung würde unterwegs getrennt
-        let start = try await scanner("start", ["name": name, "mode": mode.rawValue, "resolution": resolution])
+        var params: [String: Any] = ["name": name, "mode": mode.rawValue, "resolution": resolution]
+        if let append { params["append"] = append.file }
+        let start = try await scanner("start", params)
         let job = start["job"]?.string ?? ""
         var file: String?
         var failures = 0
@@ -117,6 +120,10 @@ extension AppStore {
             file = f
         }
         guard let file else { throw ScannerError(message: "Scan ohne Ergebnis.") }
+        if append != nil {                                  // Datei hat sich geändert
+            scanCache[file] = nil
+            sentScans.remove(file)
+        }
         await refreshScans()
         return scans.first { $0.file == file } ?? ScanFile(file: file, size: 0, time: Date())
     }
@@ -329,13 +336,18 @@ struct ScanDetailView: View {
     @State private var newName = ""
     @State private var confirmDelete = false
 
+    @AppStorage("scanMode") private var modeRaw = ScanMode.color.rawValue
+    @AppStorage("scanResolution") private var resolution = 300
+    @State private var addingPage = false
+
     private var sent: Bool { store.sentScans.contains(scan.file) }
+    private var pageCount: Int { data.flatMap { PDFDocument(data: $0)?.pageCount } ?? 0 }
 
     var body: some View {
         VStack(spacing: 0) {
             Group {
                 if let data, PDFDocument(data: data) != nil {
-                    PDFPreview(data: data)
+                    PDFPreview(data: data).id(data.count)          // nach „Seite hinzufügen“ neu aufbauen
                 } else if data != nil {
                     ContentUnavailableView("Vorschau nicht möglich", systemImage: "doc.questionmark",
                                            description: Text("Die Datei ist keine gültige PDF."))
@@ -386,6 +398,20 @@ struct ScanDetailView: View {
             if let message {
                 Text(message).font(.footnote).foregroundStyle(.secondary).multilineTextAlignment(.center)
             }
+            Button(action: addPage) {
+                HStack {
+                    if addingPage {
+                        ProgressView()
+                        Text("Scanne weitere Seite …")
+                    } else {
+                        Label(pageCount > 0 ? "Seite hinzufügen (bisher \(pageCount))" : "Seite hinzufügen",
+                              systemImage: "doc.badge.plus")
+                    }
+                }
+                .frame(maxWidth: .infinity)
+            }
+            .buttonStyle(.bordered)
+            .disabled(addingPage || data == nil || store.scanning)
             HStack(spacing: 10) {
                 Button { exporting = true } label: {
                     Label("Auf iPhone", systemImage: "square.and.arrow.down").frame(maxWidth: .infinity)
@@ -420,7 +446,26 @@ struct ScanDetailView: View {
         .background(.bar)
     }
 
+    /// Nächstes Blatt scannen und an diese PDF anhängen
+    private func addPage() {
+        addingPage = true
+        message = "Nächstes Blatt einlegen, falls noch nicht geschehen – der Scanner zieht es gleich ein."
+        Task {
+            do {
+                scan = try await store.scan(name: scan.title, mode: ScanMode(rawValue: modeRaw) ?? .color,
+                                            resolution: resolution, append: scan)
+                data = nil
+                await load()
+                message = "Seite hinzugefügt – jetzt \(pageCount) Seiten."
+            } catch {
+                message = error.localizedDescription
+            }
+            addingPage = false
+        }
+    }
+
     private func load() async {
+        Task { await store.prepareScanner() }       // Verbindung für „Seite hinzufügen“ bereithalten
         loadError = nil
         do {
             let d = try await store.pdfData(scan)
