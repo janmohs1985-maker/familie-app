@@ -49,8 +49,12 @@ extension AppStore {
         ChoreText.jsonString(["kind": a.kid, "tag": a.day, "von": a.start, "bis": a.end, "ort": a.place])
     }
 
-    func saveActivity(_ a: Activity, isNew: Bool) async {
-        guard canEditFreizeit else { return }
+    /// Liefert nil bei Erfolg, sonst eine Fehlermeldung für die Anzeige
+    func saveActivity(_ a: Activity, isNew: Bool) async -> String? {
+        guard canEditFreizeit else {
+            return isParent ? "Du siehst die App gerade als Kind (Einstellungen → „Aufgaben ansehen als“)."
+                            : "Nur Eltern können Freizeit eintragen (Rolle nicht erkannt)."
+        }
         do {
             if isNew {
                 try await client.call("todo", "add_item", ["entity_id": FamilyConfig.freizeitList, "item": a.title,
@@ -59,8 +63,14 @@ extension AppStore {
                 try await client.call("todo", "update_item", ["entity_id": FamilyConfig.freizeitList, "item": a.uid,
                                                               "rename": a.title, "description": activityJSON(a)])
             }
-        } catch { report(error) }
+        } catch {
+            return "Speichern fehlgeschlagen: \(error.localizedDescription)"
+        }
         await refreshFreizeit()
+        if isNew && !activities.contains(where: { $0.title == a.title && $0.kid == a.kid && $0.day == a.day }) {
+            return "Gespeichert, aber beim Neuladen nicht gefunden. Bitte nach unten ziehen zum Aktualisieren."
+        }
+        return nil
     }
 
     func deleteActivity(_ a: Activity) async {
@@ -154,6 +164,8 @@ struct ActivityEditView: View {
     @State private var from = Date()
     @State private var to = Date()
     @State private var hasEnd = true
+    @State private var saving = false
+    @State private var saveError: String?
 
     private static let suggestions = ["Turnen", "Fußball", "Basketball", "Schwimmen", "Tanzen", "Musikschule", "Reiten", "Handball"]
 
@@ -189,6 +201,10 @@ struct ActivityEditView: View {
                 Section("Wo (optional)") {
                     TextField("z. B. Sporthalle Nord", text: $activity.place)
                 }
+                if let saveError {
+                    Label(saveError, systemImage: "exclamationmark.triangle.fill")
+                        .foregroundStyle(.red).font(.footnote)
+                }
                 if !isNew {
                     Section {
                         Button("Löschen", role: .destructive) {
@@ -202,15 +218,25 @@ struct ActivityEditView: View {
             .toolbar {
                 ToolbarItem(placement: .cancellationAction) { Button("Abbrechen") { dismiss() } }
                 ToolbarItem(placement: .confirmationAction) {
-                    Button("Sichern") {
-                        var a = activity
-                        a.title = a.title.trimmingCharacters(in: .whitespacesAndNewlines)
-                        a.place = a.place.trimmingCharacters(in: .whitespacesAndNewlines)
-                        a.start = Self.hm(from)
-                        a.end = hasEnd ? Self.hm(to) : ""
-                        Task { await store.saveActivity(a, isNew: isNew); dismiss() }
+                    if saving {
+                        ProgressView()
+                    } else {
+                        Button("Sichern") {
+                            var a = activity
+                            a.title = a.title.trimmingCharacters(in: .whitespacesAndNewlines)
+                            a.place = a.place.trimmingCharacters(in: .whitespacesAndNewlines)
+                            a.start = Self.hm(from)
+                            a.end = hasEnd ? Self.hm(to) : ""
+                            saving = true
+                            saveError = nil
+                            Task {
+                                let err = await store.saveActivity(a, isNew: isNew)
+                                saving = false
+                                if let err { saveError = err } else { dismiss() }
+                            }
+                        }
+                        .disabled(activity.title.trimmingCharacters(in: .whitespaces).isEmpty)
                     }
-                    .disabled(activity.title.trimmingCharacters(in: .whitespaces).isEmpty)
                 }
             }
             .onAppear {
