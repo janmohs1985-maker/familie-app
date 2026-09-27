@@ -86,6 +86,9 @@ struct ControlsView: View {
                     NavigationLink { VacuumsView() } label: {
                         HubTile(title: "Saugroboter", symbol: "fan.fill", color: .mint)
                     }
+                    NavigationLink { PoolView() } label: {
+                        HubTile(title: "Pool", symbol: "figure.pool.swim", color: .blue)
+                    }
                     NavigationLink { MusicView() } label: {
                         HubTile(title: "Musik", symbol: "hifispeaker.2.fill", color: .pink)
                     }
