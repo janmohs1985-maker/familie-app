@@ -29,6 +29,8 @@ final class AppStore {
     var appControls: [AppControl] = []
     var meals: [Meal] = []
     var mealWishes: [MealWish] = []
+    var activities: [Activity] = []               // Freizeit der Kinder
+    var schoolDocs: [SchoolDoc] = []              // Schulmappe
 
     // Dokumente / Scanner (nur Eltern)
     var scans: [ScanFile] = []
@@ -69,7 +71,7 @@ final class AppStore {
     func logout() async {
         await client.logout()
         states = [:]; events = []; calendars = []; todoItems = [:]; pictures = [:]
-        chores = [:]; choreTemplates = []; rewards = []; rewardRequests = []; pointsHistory = []; doorbellRings = []; appControls = []; meals = []; mealWishes = []
+        chores = [:]; choreTemplates = []; rewards = []; rewardRequests = []; pointsHistory = []; doorbellRings = []; appControls = []; meals = []; mealWishes = []; activities = []; schoolDocs = []
         scans = []; sentScans = []; scanCache = [:]
         currentUserID = nil; userLookupFailed = false; viewAs = "auto"
     }
@@ -98,7 +100,9 @@ final class AppStore {
         async let f: () = refreshDoorbell()
         async let g: () = refreshControls()
         async let h: () = refreshMeals()
-        _ = await (b, c, d, e, f, g, h)
+        async let i: () = refreshFreizeit()
+        async let j: () = refreshSchool()
+        _ = await (b, c, d, e, f, g, h, i, j)
     }
 
     func refreshStates() async {

@@ -87,7 +87,7 @@ enum Timetables {
         return lessons(kid: kid, day: day).filter { !$0.isBreak }.map(\.subject).filter { seen.insert($0).inserted }
     }
 
-    static let dayNamesLong = ["Montag", "Dienstag", "Mittwoch", "Donnerstag", "Freitag"]
+    static let dayNamesLong = ["Montag", "Dienstag", "Mittwoch", "Donnerstag", "Freitag", "Samstag", "Sonntag"]
 
     static func color(_ subject: String) -> Color {
         switch subject {
@@ -122,8 +122,7 @@ struct TimetableView: View {
 
     init(kid: String? = nil) {
         _kid = State(initialValue: kid ?? FamilyConfig.kids.first?.id ?? "")
-        let today = ChoreText.todayIndex
-        _day = State(initialValue: today <= 4 ? today : 0)       // am Wochenende: Montag zeigen
+        _day = State(initialValue: ChoreText.todayIndex)
     }
 
     private var isToday: Bool { day == ChoreText.todayIndex }
@@ -141,7 +140,7 @@ struct TimetableView: View {
             }
 
             Picker("Tag", selection: $day) {
-                ForEach(0..<5, id: \.self) { d in Text(ChoreText.dayNames[d]).tag(d) }
+                ForEach(0..<7, id: \.self) { d in Text(ChoreText.dayNames[d]).tag(d) }
             }
             .pickerStyle(.segmented)
             .listRowBackground(Color.clear)
@@ -166,8 +165,31 @@ struct TimetableView: View {
                     Text("Schulschluss \(end) Uhr")
                 }
             }
+
+            // Freizeit am Nachmittag
+            let free = store.activities(kid: kid, day: day)
+            if !free.isEmpty || store.canEditFreizeit {
+                Section {
+                    if free.isEmpty {
+                        Text("Nichts eingetragen").foregroundStyle(.secondary)
+                    }
+                    ForEach(free) { a in ActivityRow(activity: a) }
+                    if store.canEditFreizeit {
+                        NavigationLink { FreizeitManageView() } label: {
+                            Label("Freizeit bearbeiten", systemImage: "pencil")
+                        }
+                    }
+                } header: {
+                    Text("Nachmittag · Freizeit")
+                }
+            }
         }
         .navigationTitle("Stundenplan")
+        .toolbar {
+            NavigationLink { SchoolDocsView(kid: store.activeKid) } label: {
+                Label("Schulmappe", systemImage: "folder.fill")
+            }
+        }
         .onAppear { if let own = store.activeKid { kid = own } }
     }
 

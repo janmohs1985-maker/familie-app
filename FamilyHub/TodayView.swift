@@ -14,10 +14,12 @@ struct TodayView: View {
                     weatherCard
                     peopleCard
                     schoolCard
+                    FreizeitTodayCard()
                     mailboxBanner
                     MealTodayCard()
                     DoorbellCard()
                     ScanCard()
+                    SchoolDocsCard()
                     wasteCard
                     upcomingCard
                     if let t = store.lastUpdate {

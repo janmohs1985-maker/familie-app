@@ -136,8 +136,11 @@ enum FamilyConfig {
     static let doorbellHistory = "todo.klingel_verlauf"              // Bilder liegen unter /media/local/<datei>
 
     /// Diese Listen gehören zu App-Funktionen und erscheinen nicht im Tab „Listen“.
+    static let freizeitList = "todo.freizeit"                 // Freizeitaktivitäten der Kinder
+    static let schoolDocsList = "todo.schulmappe"             // Schulmappe (Fotos über das Scanner-Add-on)
+
     static var systemTodoLists: Set<String> {
-        Set(kids.map { choreList($0.id) } + [choreTemplates, rewards, rewardRequests, pointsHistory, doorbellHistory, appControls, mealPlan, mealWishes])
+        Set(kids.map { choreList($0.id) } + [choreTemplates, rewards, rewardRequests, pointsHistory, doorbellHistory, appControls, mealPlan, mealWishes, freizeitList, schoolDocsList])
     }
 
     // MARK: Farben für Kalender (nach Reihenfolge)
