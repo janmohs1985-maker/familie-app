@@ -496,6 +496,7 @@ struct SettingsView: View {
     @Environment(AppStore.self) private var store
     @Environment(\.dismiss) private var dismiss
     @State private var serverStatus: String?
+    @AppStorage("startAnimation") private var startAnimation = true
 
     var body: some View {
         NavigationStack {
@@ -526,6 +527,9 @@ struct SettingsView: View {
                         }
                     }
                 }
+                Section {
+                    Toggle("Startanimation", isOn: $startAnimation)
+                } header: { Text("Darstellung") }
                 Section("Gefunden") {
                     LabeledContent("Kalender", value: "\(store.calendars.count)")
                     LabeledContent("Listen", value: "\(store.todoLists.count)")

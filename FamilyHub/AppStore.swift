@@ -51,10 +51,12 @@ final class AppStore {
 
     @ObservationIgnored private(set) var client: HAClient!
     @ObservationIgnored private var pollTask: Task<Void, Never>?
+    @ObservationIgnored private var freshPictures: Set<String> = []
 
     init() {
         let stored = Keychain.load()
         credentials = stored
+        pictures = AvatarCache.loadAll()
         client = HAClient(credentials: stored) { [weak self] creds in
             if let creds { Keychain.save(creds) } else { Keychain.clear() }
             Task { @MainActor in self?.credentials = creds }
@@ -127,10 +129,13 @@ final class AppStore {
     }
 
     private func loadPictures() async {
-        for p in FamilyConfig.people where pictures[p.id] == nil {
+        // einmal pro App-Start frisch laden (zwischengespeicherte Bilder werden bis dahin angezeigt)
+        for p in FamilyConfig.people where !freshPictures.contains(p.id) {
             if let path = states[p.id]?.attr("entity_picture")?.string,
                let img = await client.image(path: path) {
                 pictures[p.id] = img
+                freshPictures.insert(p.id)
+                AvatarCache.save(img, for: p.id)
             }
         }
     }

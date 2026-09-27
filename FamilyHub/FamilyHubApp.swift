@@ -24,6 +24,9 @@ struct FamilyHubApp: App {
 
 struct RootView: View {
     @Environment(AppStore.self) private var store
+    @AppStorage("startAnimation") private var startAnimation = true
+    @AppStorage("lastUserName") private var lastUserName = ""
+    @State private var splashDone = false
 
     var body: some View {
         Group {
@@ -51,7 +54,23 @@ struct RootView: View {
                 LoginView()
             }
         }
+        .overlay {
+            if store.isLoggedIn && startAnimation && !splashDone {
+                SplashView(pictures: store.pictures, name: lastUserName.isEmpty ? nil : lastUserName) {
+                    splashDone = true
+                }
+                .transition(.opacity)
+            }
+        }
+        .onChange(of: myName) { _, n in if let n { lastUserName = n } }
         .animation(.default, value: store.isLoggedIn)
+    }
+
+    /// Name des angemeldeten Familienmitglieds (für die Begrüßung beim nächsten Start)
+    private var myName: String? {
+        if let p = store.myParentID { return FamilyConfig.parent(p)?.name }
+        if let k = store.detectedKid { return FamilyConfig.kid(k)?.name }
+        return nil
     }
 }
 
