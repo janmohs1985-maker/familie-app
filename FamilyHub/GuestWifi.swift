@@ -57,6 +57,23 @@ extension AppStore {
         }
     }
 
+    /// Passwort der Gäste-Anmeldeseite (UniFi Hotspot / Captive Portal)
+    func loadGuestPassword() async throws -> String {
+        let r = try await client.callWithResponse("script", FamilyConfig.scannerScript, ["aktion": "wifi"], timeout: 30)
+        guard r["ok"]?.string == "true" else {
+            throw ScannerError(message: r["error"]?.string ?? "Passwort konnte nicht geladen werden.")
+        }
+        return r["password"]?.string ?? ""
+    }
+
+    func setGuestPassword(_ pw: String) async throws {
+        let r = try await client.callWithResponse("script", FamilyConfig.scannerScript,
+                                                  ["aktion": "wifi_password", "password": pw], timeout: 30)
+        guard r["ok"]?.string == "true" else {
+            throw ScannerError(message: r["error"]?.string ?? "Passwort konnte nicht geändert werden.")
+        }
+    }
+
     func setGuestWifi(_ on: Bool) async {
         do {
             try await client.call("switch", on ? "turn_on" : "turn_off", ["entity_id": FamilyConfig.guestWifiSwitch])
@@ -75,6 +92,11 @@ struct GuestWifiView: View {
     @State private var busy: Set<String> = []
     @State private var confirmBlock: GuestClient?
     @State private var confirmWifiOff = false
+    @State private var password: String?
+    @State private var showPassword = false
+    @State private var changing = false
+    @State private var newPassword = ""
+    @State private var pwMessage: String?
 
     private var wifiOn: Bool { store.states[FamilyConfig.guestWifiSwitch]?.state == "on" }
 
@@ -88,6 +110,37 @@ struct GuestWifiView: View {
                 }
             } footer: {
                 Text("Schaltet das WLAN „Mohs - Gäste“ komplett ein oder aus.")
+            }
+
+            Section {
+                HStack {
+                    Image(systemName: "key.fill").foregroundStyle(.orange).frame(width: 30)
+                    if let password {
+                        Text(showPassword ? password : String(repeating: "•", count: max(password.count, 6)))
+                            .font(.body.monospaced())
+                            .textSelection(.enabled)
+                    } else {
+                        ProgressView()
+                    }
+                    Spacer()
+                    if password != nil {
+                        Button { showPassword.toggle() } label: {
+                            Image(systemName: showPassword ? "eye.slash" : "eye")
+                        }
+                        .buttonStyle(.borderless)
+                        Button {
+                            UIPasteboard.general.string = password
+                            pwMessage = "Kopiert."
+                        } label: { Image(systemName: "doc.on.doc") }
+                        .buttonStyle(.borderless)
+                    }
+                }
+                Button("Passwort ändern …") { newPassword = ""; changing = true }
+                    .disabled(password == nil)
+            } header: {
+                Text("Passwort der Anmeldeseite")
+            } footer: {
+                Text(pwMessage ?? "Das geben Gäste auf der UniFi-Anmeldeseite ein, nachdem sie sich mit „Mohs - Gäste“ verbunden haben.")
             }
 
             if let error {
@@ -145,6 +198,16 @@ struct GuestWifiView: View {
         } message: { c in
             Text("\(c.name) wird getrennt und kommt nicht mehr ins WLAN, bis du es unter „Gesperrt“ wieder freigibst.")
         }
+        .alert("Neues Passwort", isPresented: $changing) {
+            TextField("mind. 4 Zeichen", text: $newPassword)
+                .textInputAutocapitalization(.never)
+                .autocorrectionDisabled()
+            Button("Abbrechen", role: .cancel) {}
+            Button("Speichern") { savePassword() }
+        } message: {
+            Text("Gilt für neue Anmeldungen. Bereits verbundene Gäste bleiben online.")
+        }
+        .task { await loadPassword() }
         .confirmationDialog("Gäste-WLAN ausschalten?", isPresented: $confirmWifiOff, titleVisibility: .visible) {
             Button("Ausschalten", role: .destructive) { Task { await store.setGuestWifi(false) } }
         } message: {
@@ -162,6 +225,25 @@ struct GuestWifiView: View {
             self.error = error.localizedDescription
         }
         loaded = true
+    }
+
+    private func loadPassword() async {
+        do { password = try await store.loadGuestPassword() }
+        catch { pwMessage = error.localizedDescription }
+    }
+
+    private func savePassword() {
+        let pw = newPassword.trimmingCharacters(in: .whitespacesAndNewlines)
+        Task {
+            do {
+                try await store.setGuestPassword(pw)
+                password = pw
+                showPassword = true
+                pwMessage = "Passwort geändert."
+            } catch {
+                pwMessage = error.localizedDescription
+            }
+        }
     }
 
     private func run(_ action: String, _ c: GuestClient) {
