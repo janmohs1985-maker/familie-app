@@ -26,6 +26,7 @@ final class AppStore {
     var viewAs = "auto"                           // nur für Eltern: "auto", "eltern" oder Kind-ID
     var pointsHistory: [PointsEntry] = []
     var doorbellRings: [DoorbellRing] = []
+    var appControls: [AppControl] = []
 
     // UI
     var lastError: String?
@@ -59,7 +60,7 @@ final class AppStore {
     func logout() async {
         await client.logout()
         states = [:]; events = []; calendars = []; todoItems = [:]; pictures = [:]
-        chores = [:]; choreTemplates = []; rewards = []; rewardRequests = []; pointsHistory = []; doorbellRings = []
+        chores = [:]; choreTemplates = []; rewards = []; rewardRequests = []; pointsHistory = []; doorbellRings = []; appControls = []
         currentUserID = nil; userLookupFailed = false; viewAs = "auto"
     }
 
@@ -85,7 +86,8 @@ final class AppStore {
         async let d: () = refreshChores()
         async let e: () = loadCurrentUser()
         async let f: () = refreshDoorbell()
-        _ = await (b, c, d, e, f)
+        async let g: () = refreshControls()
+        _ = await (b, c, d, e, f, g)
     }
 
     func refreshStates() async {
@@ -147,24 +149,6 @@ final class AppStore {
     }
 
     // MARK: - Aktionen
-
-    func perform(_ control: FamilyConfig.Control) async {
-        busy.insert(control.id)
-        defer { busy.remove(control.id) }
-        do {
-            switch control.kind {
-            case .toggle:
-                try await client.call("homeassistant", "toggle", ["entity_id": control.id])
-            case .script(let script):
-                try await client.call("script", "turn_on", ["entity_id": script])
-            case .lock:
-                let locked = states[control.id]?.state == "locked"
-                try await client.call("lock", locked ? "unlock" : "lock", ["entity_id": control.id])
-            }
-            try? await Task.sleep(for: .milliseconds(800))
-            await refreshStates()
-        } catch { report(error) }
-    }
 
     func addTodo(_ text: String, to list: String) async {
         do {

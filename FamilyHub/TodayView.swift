@@ -205,11 +205,7 @@ struct TodayView: View {
                 }
                 Spacer()
                 Button("Geleert") {
-                    Task {
-                        if let c = FamilyConfig.controls.first(where: { $0.id == FamilyConfig.mailbox }) {
-                            await store.perform(c)
-                        }
-                    }
+                    Task { await store.clearMailbox() }
                 }
                 .buttonStyle(.borderedProminent).tint(.orange)
             }

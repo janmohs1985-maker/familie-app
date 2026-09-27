@@ -61,43 +61,13 @@ enum FamilyConfig {
     static let todoLists: [String] = []
 
     // MARK: Steuern
+    //
+    // Welche Schalter es gibt und wer sie bedienen darf, wird in der App eingestellt
+    // (Steuern → Bearbeiten) und in Home Assistant in der Liste „App Schalter“ gespeichert.
 
-    enum ControlKind {
-        case toggle                         // light/switch/input_boolean/fan … → homeassistant.toggle
-        case script(String)                 // startet ein Skript, Zustand kommt aus `entity`
-        case lock                           // lock.lock / lock.unlock
-    }
-
-    struct Control: Identifiable {
-        let id: String                      // Entität, deren Zustand angezeigt wird
-        let name: String
-        let symbolOn: String
-        let symbolOff: String
-        let kind: ControlKind
-        var onStates: Set<String> = ["on", "open", "Offen", "unlocked"]
-        var confirm: Bool = false           // Sicherheitsabfrage vor dem Schalten
-    }
-
-    static let controls: [Control] = [
-        Control(id: "sensor.garagentor_status", name: "Garagentor",
-                symbolOn: "door.garage.open", symbolOff: "door.garage.closed",
-                kind: .script("script.toggle_garage_door"), confirm: true),
-        Control(id: "lock.garage_2", name: "Garagentür",
-                symbolOn: "lock.open.fill", symbolOff: "lock.fill",
-                kind: .lock, confirm: true),
-        Control(id: "input_boolean.briefkasten", name: "Post im Briefkasten",
-                symbolOn: "envelope.badge.fill", symbolOff: "envelope",
-                kind: .toggle),
-        Control(id: "input_boolean.garagentor_offnen_paketboote", name: "Paketbote",
-                symbolOn: "shippingbox.fill", symbolOff: "shippingbox",
-                kind: .toggle),
-        Control(id: "light.eingang_uberdachung_deckenlicht", name: "Licht Eingang",
-                symbolOn: "lightbulb.fill", symbolOff: "lightbulb",
-                kind: .toggle),
-        Control(id: "switch.gartenhaus_deckenlicht", name: "Licht Gartenhaus",
-                symbolOn: "lightbulb.fill", symbolOff: "lightbulb",
-                kind: .toggle),
-    ]
+    static let appControls = "todo.app_schalter"
+    static let controllableDomains: Set<String> = ["light", "switch", "input_boolean", "cover", "fan", "lock",
+                                                   "scene", "script", "button", "input_button"]
 
     // MARK: Aufgaben & Belohnungen
 
@@ -143,7 +113,7 @@ enum FamilyConfig {
 
     /// Diese Listen gehören zu App-Funktionen und erscheinen nicht im Tab „Listen“.
     static var systemTodoLists: Set<String> {
-        Set(kids.map { choreList($0.id) } + [choreTemplates, rewards, rewardRequests, pointsHistory, doorbellHistory])
+        Set(kids.map { choreList($0.id) } + [choreTemplates, rewards, rewardRequests, pointsHistory, doorbellHistory, appControls])
     }
 
     // MARK: Farben für Kalender (nach Reihenfolge)
