@@ -33,6 +33,7 @@ final class AppStore {
     // Dokumente / Scanner (nur Eltern)
     var scans: [ScanFile] = []
     var scanning = false
+    var scannerState = "off"                      // off | connecting | ready (Vorwärm-Verbindung)
     var sentScans: Set<String> = []
     @ObservationIgnored var scanCache: [String: Data] = [:]
 

@@ -63,6 +63,20 @@ extension AppStore {
         return msg
     }
 
+    /// Verbindung zum Scanner schon vorab aufbauen, damit „Scannen“ sofort loslegt
+    func prepareScanner() async {
+        guard canScan else { return }
+        if let r = try? await scanner("prepare") {
+            scannerState = r["warm"]?.string ?? scannerState
+            if scannerState == "off" { scannerState = "connecting" }
+        }
+    }
+
+    func refreshScannerState() async {
+        guard canScan, !scanning else { return }
+        if let r = try? await scanner("status") { scannerState = r["warm"]?.string ?? "off" }
+    }
+
     func refreshScans() async {
         guard canScan else { return }
         do {
@@ -188,7 +202,14 @@ struct DocumentsView: View {
                         .font(.footnote).foregroundStyle(.red)
                 }
             } header: {
-                Text("Neuer Scan · Epson ES-60W")
+                HStack {
+                    Text("Neuer Scan · Epson ES-60W")
+                    Spacer()
+                    ScannerStateBadge(state: store.scanning ? "busy" : store.scannerState) {
+                        Task { await store.prepareScanner() }
+                    }
+                    .textCase(nil)
+                }
             } footer: {
                 Text("Blatt mit der Vorderseite nach oben einschieben, bis der Scanner es leicht anzieht. Mehrere Seiten nacheinander nachlegen – alles landet in einer PDF.")
             }
@@ -210,7 +231,15 @@ struct DocumentsView: View {
         .navigationDestination(for: ScanFile.self) { ScanDetailView(scan: $0) }
         .navigationDestination(item: $opened) { ScanDetailView(scan: $0) }
         .refreshable { await store.refreshScans() }
-        .task { await store.refreshScans() }
+        .task {
+            await store.refreshScans()
+            await store.prepareScanner()
+            // solange die Seite offen ist, Verbindungsstatus anzeigen
+            while !Task.isCancelled {
+                try? await Task.sleep(for: .seconds(3))
+                await store.refreshScannerState()
+            }
+        }
     }
 
     private func startScan() {
@@ -224,6 +253,42 @@ struct DocumentsView: View {
             } catch {
                 self.error = error.localizedDescription
             }
+        }
+    }
+}
+
+struct ScannerStateBadge: View {
+    let state: String
+    let connect: () -> Void
+
+    var body: some View {
+        switch state {
+        case "ready":
+            Label("Bereit", systemImage: "circle.fill")
+                .font(.caption.weight(.semibold)).foregroundStyle(.green)
+                .labelStyle(BadgeLabelStyle())
+        case "connecting":
+            HStack(spacing: 4) {
+                ProgressView().controlSize(.mini)
+                Text("Verbinde …").font(.caption)
+            }
+            .foregroundStyle(.orange)
+        case "busy":
+            Text("Scannt …").font(.caption.weight(.semibold)).foregroundStyle(.blue)
+        default:
+            Button(action: connect) {
+                Label("Verbinden", systemImage: "arrow.clockwise").font(.caption.weight(.semibold))
+            }
+            .buttonStyle(.borderless)
+        }
+    }
+}
+
+struct BadgeLabelStyle: LabelStyle {
+    func makeBody(configuration: Configuration) -> some View {
+        HStack(spacing: 4) {
+            configuration.icon.font(.system(size: 7))
+            configuration.title
         }
     }
 }
