@@ -51,13 +51,16 @@ extension AppStore {
         // „get“ liefert die rohe rest_command-Antwort ({status, content, headers}), alles andere direkt das Ergebnis
         let r = raw["content"]?.object != nil ? raw["content"]! : raw
         guard r["ok"]?.string == "true" else {
-            var msg = r["error"]?.string ?? "Unbekannter Fehler vom Scanner."
-            if msg.contains("device I/O") || msg.contains("No route") {
-                msg = "Scanner nicht erreichbar. Ist der ES-60W eingeschaltet und im WLAN? (Er schaltet sich nach einiger Zeit selbst aus.)"
-            }
-            throw ScannerError(message: msg)
+            throw ScannerError(message: Self.friendly(r["error"]?.string ?? "Unbekannter Fehler vom Scanner."))
         }
         return r
+    }
+
+    nonisolated static func friendly(_ msg: String) -> String {
+        if msg.contains("device I/O") || msg.contains("No route") {
+            return "Scanner nicht erreichbar. Ist der ES-60W eingeschaltet und im WLAN? (Er schaltet sich nach einiger Zeit selbst aus.)"
+        }
+        return msg
     }
 
     func refreshScans() async {
@@ -76,8 +79,30 @@ extension AppStore {
     func scan(name: String, mode: ScanMode, resolution: Int) async throws -> ScanFile {
         scanning = true
         defer { scanning = false }
-        let r = try await scanner("scan", ["name": name, "mode": mode.rawValue, "resolution": resolution], timeout: 330)
-        guard let file = r["file"]?.string else { throw ScannerError(message: "Scan ohne Ergebnis.") }
+        // Scan nur anstoßen und dann kurz nachfragen – eine minutenlange Verbindung würde unterwegs getrennt
+        let start = try await scanner("start", ["name": name, "mode": mode.rawValue, "resolution": resolution])
+        let job = start["job"]?.string ?? ""
+        var file: String?
+        var failures = 0
+        let deadline = Date().addingTimeInterval(8 * 60)
+        while file == nil {
+            guard Date() < deadline else { throw ScannerError(message: "Der Scan dauert ungewöhnlich lange. Schau gleich in der Liste nach.") }
+            try await Task.sleep(for: .seconds(2))
+            let st: JSONValue
+            do { st = try await scanner("status"); failures = 0 }
+            catch {
+                failures += 1                               // kurze Netzaussetzer ignorieren
+                if failures > 10 { throw error }
+                continue
+            }
+            guard st["job"]?.string == job, st["running"]?.string == "false",
+                  let result = st["result"], result.object != nil else { continue }
+            guard result["ok"]?.string == "true", let f = result["file"]?.string else {
+                throw ScannerError(message: Self.friendly(result["error"]?.string ?? "Scan fehlgeschlagen."))
+            }
+            file = f
+        }
+        guard let file else { throw ScannerError(message: "Scan ohne Ergebnis.") }
         await refreshScans()
         return scans.first { $0.file == file } ?? ScanFile(file: file, size: 0, time: Date())
     }
