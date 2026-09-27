@@ -35,21 +35,28 @@ struct RootView: View {
                     TodayView()
                         .tabItem { Label("Heute", systemImage: "sun.max.fill") }
                         .tag("heute")
-                    CalendarView()
-                        .tabItem { Label("Kalender", systemImage: "calendar") }
-                        .tag("kalender")
+                    if store.allows(.kalender) {
+                        CalendarView()
+                            .tabItem { Label("Kalender", systemImage: "calendar") }
+                            .tag("kalender")
+                    }
                     ChoresView()
                         .tabItem { Label("Aufgaben", systemImage: "checkmark.circle.fill") }
                         .badge(store.choreBadge)
                         .tag("aufgaben")
-                    ListsView()
-                        .tabItem { Label("Listen", systemImage: "cart.fill") }
-                        .tag("listen")
+                    if store.allows(.listen) {
+                        ListsView()
+                            .tabItem { Label("Listen", systemImage: "cart.fill") }
+                            .tag("listen")
+                    }
                     ControlsView()
                         .tabItem { Label("Zuhause", systemImage: "house.fill") }
                         .tag("zuhause")
                 }
                 .task { store.startPolling(); await store.refreshAll() }
+                .onChange(of: hiddenTabs) { _, hidden in
+                    if hidden.contains(store.selectedTab) { store.selectedTab = "heute" }
+                }
             } else {
                 LoginView()
             }
@@ -64,6 +71,11 @@ struct RootView: View {
         }
         .onChange(of: myName) { _, n in if let n { lastUserName = n } }
         .animation(.default, value: store.isLoggedIn)
+    }
+
+    /// Tabs, die für das aktuelle Kind ausgeblendet sind
+    private var hiddenTabs: [String] {
+        [store.allows(.kalender) ? nil : "kalender", store.allows(.listen) ? nil : "listen"].compactMap { $0 }
     }
 
     /// Name des angemeldeten Familienmitglieds (für die Begrüßung beim nächsten Start)

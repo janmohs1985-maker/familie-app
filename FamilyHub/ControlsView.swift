@@ -74,26 +74,40 @@ struct ControlsView: View {
 
                 SectionTitle("Familie")
                 LazyVGrid(columns: columns, spacing: 12) {
-                    NavigationLink { TimetableView(kid: store.activeKid) } label: {
-                        HubTile(title: "Stundenplan & Freizeit", symbol: "graduationcap.fill", color: .teal)
+                    if store.allows(.stundenplan) {
+                        NavigationLink { TimetableView(kid: store.activeKid) } label: {
+                            HubTile(title: "Stundenplan & Freizeit", symbol: "graduationcap.fill", color: .teal)
+                        }
                     }
-                    NavigationLink { SchoolDocsView(kid: store.activeKid) } label: {
-                        HubTile(title: "Schulmappe", symbol: "folder.fill", color: .cyan)
+                    if store.allows(.schulmappe) {
+                        NavigationLink { SchoolDocsView(kid: store.activeKid) } label: {
+                            HubTile(title: "Schulmappe", symbol: "folder.fill", color: .cyan)
+                        }
                     }
-                    NavigationLink { MealPlanView() } label: {
-                        HubTile(title: "Essensplan", symbol: "fork.knife", color: .orange)
+                    if store.allows(.essensplan) {
+                        NavigationLink { MealPlanView() } label: {
+                            HubTile(title: "Essensplan", symbol: "fork.knife", color: .orange)
+                        }
                     }
-                    NavigationLink { VacuumsView() } label: {
-                        HubTile(title: "Saugroboter", symbol: "fan.fill", color: .mint)
+                    if store.allows(.saugroboter) {
+                        NavigationLink { VacuumsView() } label: {
+                            HubTile(title: "Saugroboter", symbol: "fan.fill", color: .mint)
+                        }
                     }
-                    NavigationLink { PoolView() } label: {
-                        HubTile(title: "Pool", symbol: "figure.pool.swim", color: .blue)
+                    if store.allows(.pool) {
+                        NavigationLink { PoolView() } label: {
+                            HubTile(title: "Pool", symbol: "figure.pool.swim", color: .blue)
+                        }
                     }
-                    NavigationLink { MusicView() } label: {
-                        HubTile(title: "Musik", symbol: "hifispeaker.2.fill", color: .pink)
+                    if store.allows(.musik) {
+                        NavigationLink { MusicView() } label: {
+                            HubTile(title: "Musik", symbol: "hifispeaker.2.fill", color: .pink)
+                        }
                     }
-                    NavigationLink { DoorbellView() } label: {
-                        HubTile(title: "Haustür", symbol: "bell.fill", color: .yellow)
+                    if store.allows(.haustuer) {
+                        NavigationLink { DoorbellView() } label: {
+                            HubTile(title: "Haustür", symbol: "bell.fill", color: .yellow)
+                        }
                     }
                 }
                 .padding(.horizontal)
@@ -530,6 +544,11 @@ struct SettingsView: View {
                     if store.isParent { Text("Zum Ausprobieren: So sieht die App für die Kinder aus.") }
                 }
                 if store.canManageNetwork {
+                    Section("Kinder") {
+                        NavigationLink { KidPermissionsView() } label: {
+                            Label("Was die Kinder sehen dürfen", systemImage: "person.2.badge.gearshape.fill")
+                        }
+                    }
                     Section("Netzwerk") {
                         NavigationLink { GuestWifiView() } label: {
                             Label("Gäste-WLAN", systemImage: "wifi")

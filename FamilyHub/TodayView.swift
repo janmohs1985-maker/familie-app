@@ -14,17 +14,19 @@ struct TodayView: View {
                     weatherCard
                     // Hinweise, die jetzt wichtig sind
                     mailboxBanner
-                    if store.ringRecently { DoorbellCard() }
+                    if store.ringRecently && store.allows(.haustuer) { DoorbellCard() }
                     // Persönliches
                     ParentTodosTodayCard()
-                    MusicTodayCard()
+                    if store.allows(.musik) { MusicTodayCard() }
                     VacuumTodayCard()
                     peopleCard
                     // Kinder
-                    schoolCard
-                    FreizeitTodayCard()
+                    if store.allows(.stundenplan) {
+                        schoolCard
+                        FreizeitTodayCard()
+                    }
                     // Haushalt
-                    MealTodayCard()
+                    if store.allows(.essensplan) { MealTodayCard() }
                     wasteCard
                     upcomingCard
                     if let t = store.lastUpdate {

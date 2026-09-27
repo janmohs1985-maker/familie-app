@@ -186,8 +186,10 @@ struct TimetableView: View {
         }
         .navigationTitle("Stundenplan")
         .toolbar {
-            NavigationLink { SchoolDocsView(kid: store.activeKid) } label: {
-                Label("Schulmappe", systemImage: "folder.fill")
+            if store.allows(.schulmappe) {
+                NavigationLink { SchoolDocsView(kid: store.activeKid) } label: {
+                    Label("Schulmappe", systemImage: "folder.fill")
+                }
             }
         }
         .onAppear { if let own = store.activeKid { kid = own } }
