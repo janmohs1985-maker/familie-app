@@ -15,6 +15,7 @@ struct TodayView: View {
                     peopleCard
                     schoolCard
                     mailboxBanner
+                    MealTodayCard()
                     DoorbellCard()
                     wasteCard
                     upcomingCard

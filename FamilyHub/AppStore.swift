@@ -27,6 +27,8 @@ final class AppStore {
     var pointsHistory: [PointsEntry] = []
     var doorbellRings: [DoorbellRing] = []
     var appControls: [AppControl] = []
+    var meals: [Meal] = []
+    var mealWishes: [MealWish] = []
 
     // UI
     var lastError: String?
@@ -60,7 +62,7 @@ final class AppStore {
     func logout() async {
         await client.logout()
         states = [:]; events = []; calendars = []; todoItems = [:]; pictures = [:]
-        chores = [:]; choreTemplates = []; rewards = []; rewardRequests = []; pointsHistory = []; doorbellRings = []; appControls = []
+        chores = [:]; choreTemplates = []; rewards = []; rewardRequests = []; pointsHistory = []; doorbellRings = []; appControls = []; meals = []; mealWishes = []
         currentUserID = nil; userLookupFailed = false; viewAs = "auto"
     }
 
@@ -87,7 +89,8 @@ final class AppStore {
         async let e: () = loadCurrentUser()
         async let f: () = refreshDoorbell()
         async let g: () = refreshControls()
-        _ = await (b, c, d, e, f, g)
+        async let h: () = refreshMeals()
+        _ = await (b, c, d, e, f, g, h)
     }
 
     func refreshStates() async {
@@ -120,6 +123,9 @@ final class AppStore {
             var cals = try await client.calendars()
             cals = cals.filter { !FamilyConfig.hiddenCalendars.contains($0.entity_id) &&
                 (FamilyConfig.calendars.isEmpty || FamilyConfig.calendars.contains($0.entity_id)) }
+            if !FamilyConfig.calendars.isEmpty {            // Reihenfolge wie in FamilyConfig
+                cals.sort { (FamilyConfig.calendars.firstIndex(of: $0.entity_id) ?? 99) < (FamilyConfig.calendars.firstIndex(of: $1.entity_id) ?? 99) }
+            }
             calendars = cals
             let from = Calendar.current.startOfDay(for: Date())
             let to = Calendar.current.date(byAdding: .day, value: days, to: from)!
@@ -205,6 +211,7 @@ final class AppStore {
     }
 
     func color(for calendarID: String) -> Color {
+        if let c = FamilyConfig.calendarColors[calendarID] { return c }
         let idx = calendars.firstIndex { $0.entity_id == calendarID } ?? 0
         return FamilyConfig.calendarPalette[idx % FamilyConfig.calendarPalette.count]
     }

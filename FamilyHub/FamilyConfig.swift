@@ -47,7 +47,24 @@ enum FamilyConfig {
 
     /// Leer lassen = alle Kalender aus Home Assistant anzeigen.
     /// Sonst nur diese (z. B. ["calendar.familie", "calendar.emma"]).
-    static let calendars: [String] = []
+    static let calendars: [String] = [
+        "calendar.personlicher_kalender",   // Familie (familie@mohs.es)
+        "calendar.jan",
+        "calendar.vanessa",
+        "calendar.emma",
+        "calendar.leoni",
+        "calendar.deutschland_by",          // Feiertage
+    ]
+
+    /// Feste Farben je Kalender (wie im Wochenplaner auf dem Dashboard)
+    static let calendarColors: [String: Color] = [
+        "calendar.personlicher_kalender": .red,
+        "calendar.jan": .orange,
+        "calendar.vanessa": .green,
+        "calendar.emma": .blue,
+        "calendar.leoni": .pink,
+        "calendar.deutschland_by": .gray,
+    ]
 
     /// Kalender, die grundsätzlich ausgeblendet werden.
     static let hiddenCalendars: Set<String> = [
@@ -66,6 +83,12 @@ enum FamilyConfig {
     // (Steuern → Bearbeiten) und in Home Assistant in der Liste „App Schalter“ gespeichert.
 
     static let appControls = "todo.app_schalter"
+
+    // MARK: Essensplan
+
+    static let mealPlan = "todo.essensplan"             // Gericht, Datum = Fälligkeitsdatum, Beschreibung JSON {"mahlzeit","zutaten"}
+    static let mealWishes = "todo.essenswuensche"       // Wünsche, Beschreibung JSON {"von","zeit"}
+    static let shoppingList = "todo.einkaufsliste"      // Ziel für „Zutaten auf die Einkaufsliste“
     static let controllableDomains: Set<String> = ["light", "switch", "input_boolean", "cover", "fan", "lock",
                                                    "scene", "script", "button", "input_button"]
 
@@ -113,7 +136,7 @@ enum FamilyConfig {
 
     /// Diese Listen gehören zu App-Funktionen und erscheinen nicht im Tab „Listen“.
     static var systemTodoLists: Set<String> {
-        Set(kids.map { choreList($0.id) } + [choreTemplates, rewards, rewardRequests, pointsHistory, doorbellHistory, appControls])
+        Set(kids.map { choreList($0.id) } + [choreTemplates, rewards, rewardRequests, pointsHistory, doorbellHistory, appControls, mealPlan, mealWishes])
     }
 
     // MARK: Farben für Kalender (nach Reihenfolge)

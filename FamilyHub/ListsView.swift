@@ -60,6 +60,9 @@ struct ListsView: View {
             .safeAreaInset(edge: .top) { ErrorBanner().padding(.horizontal) }
             .refreshable { await store.refreshTodos() }
             .navigationTitle(store.todoLists.first { $0.entity_id == listID }?.name ?? "Listen")
+            .toolbar {
+                NavigationLink { MealPlanView() } label: { Label("Essensplan", systemImage: "fork.knife") }
+            }
         }
     }
 

@@ -40,8 +40,28 @@ enum Timetables {
          L("11:30", "12:15", "Musik"), L("12:15", "13:00", "Musik")],
     ]
 
-    /// Leoni – folgt
-    static let leoni: [[Lesson]] = []
+    /// Leoni – Klasse 3a, Schuljahr 2026/27 (Beginn 7:45; Stunden à 45 Min., Pausen 20 und 10 Min. angenommen)
+    static let leoni: [[Lesson]] = [
+        // Montag
+        [L("07:45", "08:30", "Deutsch"), L("08:30", "09:15", "Deutsch"), L("09:15", "09:35", "Pause"),
+         L("09:35", "10:20", "Mathe"), L("10:20", "11:05", "Mathe"), L("11:05", "11:15", "Pause"),
+         L("11:15", "12:00", "Englisch"), L("12:00", "12:45", "HSU")],
+        // Dienstag
+        [L("07:45", "08:30", "Sport"), L("08:30", "09:15", "Sport"), L("09:15", "09:35", "Pause"),
+         L("09:35", "10:20", "Kunst"), L("10:20", "11:05", "Kunst"), L("11:05", "11:15", "Pause"),
+         L("11:15", "12:00", "WG"), L("12:00", "12:45", "WG")],
+        // Mittwoch
+        [L("07:45", "08:30", "Mathe"), L("08:30", "09:15", "Mathe"), L("09:15", "09:35", "Pause"),
+         L("09:35", "10:20", "Deutsch"), L("10:20", "11:05", "Musik"), L("11:05", "11:15", "Pause"),
+         L("11:15", "12:00", "Religion / Ethik"), L("12:00", "12:45", "Religion / Ethik")],
+        // Donnerstag
+        [L("07:45", "08:30", "Mathe"), L("08:30", "09:15", "Deutsch"), L("09:15", "09:35", "Pause"),
+         L("09:35", "10:20", "Deutsch / Sport (14-tägig)"), L("10:20", "11:05", "Deutsch / Sport (14-tägig)")],
+        // Freitag
+        [L("07:45", "08:30", "HSU"), L("08:30", "09:15", "HSU"), L("09:15", "09:35", "Pause"),
+         L("09:35", "10:20", "Mathe"), L("10:20", "11:05", "Deutsch"), L("11:05", "11:15", "Pause"),
+         L("11:15", "12:00", "Flex")],
+    ]
 
     static func plan(for kid: String) -> [[Lesson]] {
         switch kid {
@@ -77,8 +97,10 @@ enum Timetables {
         case "Sport": return .green
         case "Musik": return .pink
         case "Kunst", "WG": return .orange
-        case "NT", "GPG": return .teal
-        case "Ethik": return .indigo
+        case "NT", "GPG", "HSU": return .teal
+        case "Ethik", "Religion / Ethik": return .indigo
+        case "Deutsch / Sport (14-tägig)": return .red
+        case "Flex": return .mint
         case "Pause": return .gray
         default: return .brown
         }
