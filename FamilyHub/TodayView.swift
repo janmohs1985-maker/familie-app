@@ -6,35 +6,29 @@ struct TodayView: View {
     @State private var mapPerson: FamilyConfig.Person?
     @State private var showFamilyMap = false
     @State private var showWeather = false
+    @State private var showArrange = false
+    @AppStorage("todayOrder") private var orderRaw = ""
+    @AppStorage("todayHidden") private var hiddenRaw = ""
+    private var hiddenCards: Set<String> { Set(hiddenRaw.split(separator: ",").map(String.init)) }
 
     var body: some View {
         NavigationStack {
             ScrollView {
                 VStack(alignment: .leading, spacing: 16) {
                     ErrorBanner()
-                    weatherCard
-                    // Hinweise, die jetzt wichtig sind
-                    mailboxBanner
-                    if store.ringRecently && store.allows(.haustuer) { DoorbellCard() }
-                    // Persönliches
-                    ParentTodosTodayCard()
-                    if store.allows(.musik) { MusicTodayCard() }
-                    VacuumTodayCard()
-                    peopleCard
-                    // Kinder
-                    if store.allows(.stundenplan) {
-                        schoolCard
-                        FreizeitTodayCard()
+                    ForEach(TodayCardKind.ordered(orderRaw).filter { !hiddenCards.contains($0.rawValue) && store.todayCardAvailable($0) }) { k in
+                        card(k)
                     }
-                    // Haushalt
-                    if store.allows(.essensplan) { MealTodayCard() }
-                    wasteCard
-                    upcomingCard
                     if let t = store.lastUpdate {
                         Text("Aktualisiert \(t.formatted(date: .omitted, time: .shortened))")
                             .font(.caption2).foregroundStyle(.tertiary)
                             .frame(maxWidth: .infinity)
                     }
+                    Button { showArrange = true } label: {
+                        Label("Heute anordnen", systemImage: "arrow.up.arrow.down")
+                            .font(.footnote)
+                    }
+                    .frame(maxWidth: .infinity)
                 }
                 .padding()
             }
@@ -42,10 +36,29 @@ struct TodayView: View {
             .refreshable { await store.refreshAll() }
             .navigationTitle(greeting)
             .toolbar {
+                Button { showArrange = true } label: { Image(systemName: "arrow.up.arrow.down") }
                 Button { showSettings = true } label: { Image(systemName: "gearshape") }
             }
+            .sheet(isPresented: $showArrange) { TodayArrangeView() }
             .sheet(isPresented: $showSettings) { SettingsView() }
             .sheet(isPresented: $showWeather) { WeatherSheet().presentationDetents([.large]) }
+        }
+    }
+
+    @ViewBuilder private func card(_ k: TodayCardKind) -> some View {
+        switch k {
+        case .weather: weatherCard
+        case .mailbox: mailboxBanner
+        case .doorbell: if store.ringRecently { DoorbellCard() }
+        case .parentTodos: ParentTodosTodayCard()
+        case .music: MusicTodayCard()
+        case .vacuum: VacuumTodayCard()
+        case .people: peopleCard
+        case .school: schoolCard
+        case .freizeit: FreizeitTodayCard()
+        case .meal: MealTodayCard()
+        case .waste: wasteCard
+        case .upcoming: upcomingCard
         }
     }
 
