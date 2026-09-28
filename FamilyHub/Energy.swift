@@ -216,7 +216,7 @@ struct EnergyView: View {
     private var todayCard: some View {
         let price = store.num(EnergyConfig.price) ?? 0
         let feed = store.num(EnergyConfig.feedIn) ?? 0
-        return Card(title: "Heute", symbol: "calendar") {
+        return NavigationLink { EnergyHistoryView() } label: { Card(title: "Heute", symbol: "calendar") {
             VStack(spacing: 12) {
                 HStack {
                     StatBlock(value: Fmt.kwh(today.pv), label: "erzeugt", color: .yellow)
@@ -243,7 +243,17 @@ struct EnergyView: View {
                         .frame(maxWidth: .infinity, alignment: .leading)
                 }
             }
+                HStack {
+                    Label("Verlauf: gestern, Monate & Kosten", systemImage: "chart.bar.xaxis")
+                    Spacer()
+                    Image(systemName: "chevron.right")
+                }
+                .font(.subheadline.weight(.semibold))
+                .foregroundStyle(Color.accentColor)
+                .padding(.top, 4)
         }
+        }
+        .buttonStyle(.plain)
     }
 
     // MARK: Verlauf
@@ -437,6 +447,14 @@ struct LoadpointRow: View {
                 if lp.id == EnergyConfig.car.id, let soc = store.num("sensor.evcc_openwb_vehicle_soc"), soc > 0 {
                     Text("\(Int(soc)) %").font(.caption.weight(.semibold))
                 }
+                NavigationLink { ChargeSessionsView(lp: lp) } label: {
+                    Label("Verlauf", systemImage: "clock.arrow.circlepath")
+                        .labelStyle(.iconOnly)
+                        .font(.subheadline)
+                        .frame(width: 34, height: 30)
+                        .background(Color(.tertiarySystemFill), in: Capsule())
+                }
+                .buttonStyle(.plain)
             }
             if editable {
                 ModePicker(select: lp.mode, mode: mode)
