@@ -138,10 +138,11 @@ extension AppStore {
         }
     }
 
-    func setNetRoute(_ id: String, starlink: Bool) async -> String? {
+    func setNetRoute(_ id: String, starlink: Bool, killSwitch: Bool? = nil) async -> String? {
+        var data: [String: Any] = ["aktion": "route_set", "network_id": id, "starlink": starlink]
+        if let killSwitch { data["kill_switch"] = killSwitch }
         do {
-            let r = try await client.callWithResponse("script", NetConfig.script,
-                                                      ["aktion": "route_set", "network_id": id, "starlink": starlink], timeout: 40)
+            let r = try await client.callWithResponse("script", NetConfig.script, data, timeout: 40)
             let c = r["content"] ?? r
             return c["ok"]?.string == "true" ? nil : (c["error"]?.string ?? "Umschalten fehlgeschlagen")
         } catch { return error.localizedDescription }
@@ -153,6 +154,37 @@ extension AppStore {
 
     func pressButton(_ entity: String) async {
         do { _ = try await client.call("button", "press", ["entity_id": entity]) } catch { report(error) }
+    }
+}
+
+/// Zwei Knöpfe 1&1 | Starlink – die gewählte Seite ist grün
+struct WanChooser: View {
+    let starlink: Bool
+    let onChange: (Bool) -> Void
+
+    var body: some View {
+        HStack(spacing: 0) {
+            option("1&1", icon: "network", selected: !starlink) { if starlink { onChange(false) } }
+            option("Starlink", icon: "antenna.radiowaves.left.and.right", selected: starlink) { if !starlink { onChange(true) } }
+        }
+        .padding(3)
+        .background(Color(.systemGray5), in: Capsule())
+    }
+
+    private func option(_ title: String, icon: String, selected: Bool, action: @escaping () -> Void) -> some View {
+        Button(action: action) {
+            HStack(spacing: 4) {
+                Image(systemName: icon).font(.caption2)
+                Text(title).font(.caption.weight(.semibold))
+            }
+            .padding(.horizontal, 10).padding(.vertical, 6)
+            .foregroundStyle(selected ? Color.white : Color.secondary)
+            .background {
+                if selected { Capsule().fill(Color.green.gradient) }
+            }
+        }
+        .buttonStyle(.plain)
+        .animation(.snappy, value: selected)
     }
 }
 
@@ -297,7 +329,7 @@ struct NetworkView: View {
                     if let modeError {
                         Label(modeError, systemImage: "exclamationmark.triangle.fill").font(.caption).foregroundStyle(.red)
                     }
-                    Text(isParent ? "Antippen zum Umschalten. Fällt Starlink aus, springt 1&1 automatisch ein – außer bei Netzen mit 🔒 Notaus."
+                    Text(isParent ? "Grün = so geht das Netz gerade ins Internet. Antippen zum Umschalten."
                                   : "Welches Netz über welchen Anschluss ins Internet geht.")
                         .font(.caption2).foregroundStyle(.secondary)
                 } else {
@@ -308,28 +340,52 @@ struct NetworkView: View {
     }
 
     private func routeRow(_ r: AppStore.NetRoute) -> some View {
-        HStack(spacing: 10) {
-            VStack(alignment: .leading, spacing: 1) {
-                HStack(spacing: 4) {
-                    Text(Self.netLabel(r.name)).font(.subheadline.weight(.medium))
-                    if r.killSwitch && r.starlink { Text("🔒").font(.caption2) }
+        VStack(alignment: .leading, spacing: 8) {
+            HStack(spacing: 10) {
+                VStack(alignment: .leading, spacing: 1) {
+                    Text(Self.netLabel(r.name)).font(.subheadline.weight(.semibold))
+                    if let sub = r.subnet { Text(sub).font(.caption2.monospaced()).foregroundStyle(.tertiary) }
                 }
-                if let sub = r.subnet { Text(sub).font(.caption2.monospaced()).foregroundStyle(.tertiary) }
-            }
-            Spacer()
-            if routeBusy == r.id {
-                ProgressView()
-            } else if isParent {
-                Picker("", selection: Binding(get: { r.starlink }, set: { want in switchRoute(r, to: want) })) {
-                    Text("1&1").tag(false)
-                    Text("Starlink").tag(true)
+                Spacer()
+                if routeBusy == r.id {
+                    ProgressView()
+                } else if isParent {
+                    WanChooser(starlink: r.starlink) { want in switchRoute(r, to: want) }
+                } else {
+                    Text(r.starlink ? "Starlink" : "1&1").font(.caption.weight(.semibold))
+                        .padding(.horizontal, 10).padding(.vertical, 5)
+                        .foregroundStyle(.white)
+                        .background(Color.green.gradient, in: Capsule())
                 }
-                .pickerStyle(.segmented)
-                .frame(width: 150)
-            } else {
-                Text(r.starlink ? "Starlink" : "1&1").font(.caption.weight(.semibold))
-                    .foregroundStyle(r.starlink ? Color.orange : Color.blue)
             }
+            if r.starlink && isParent && routeBusy != r.id {
+                Button { toggleKill(r) } label: {
+                    HStack(spacing: 6) {
+                        Image(systemName: r.killSwitch ? "lock.fill" : "lock.open")
+                        Text(r.killSwitch ? "Notaus an – bei Starlink-Ausfall kein Internet" : "Notaus aus – bei Ausfall springt 1&1 ein")
+                        Spacer()
+                        Text(r.killSwitch ? "aus­schalten" : "an­schalten").foregroundStyle(Color.accentColor)
+                    }
+                    .font(.caption)
+                    .foregroundStyle(r.killSwitch ? Color.red : Color.secondary)
+                }
+                .buttonStyle(.plain)
+            }
+        }
+        .padding(10)
+        .background(Color(.tertiarySystemGroupedBackground), in: RoundedRectangle(cornerRadius: 12))
+    }
+
+    private func toggleKill(_ r: AppStore.NetRoute) {
+        let want = !r.killSwitch
+        confirm = .init(title: want ? "Notaus für \(Self.netLabel(r.name)) einschalten?" : "Notaus für \(Self.netLabel(r.name)) ausschalten?",
+                        message: want
+                        ? "Fällt Starlink aus, hat dieses Netz dann gar kein Internet – es weicht nicht auf 1&1 aus."
+                        : "Fällt Starlink aus, geht dieses Netz automatisch über 1&1 weiter ins Internet.") {
+            routeBusy = r.id
+            modeError = await store.setNetRoute(r.id, starlink: true, killSwitch: want)
+            routes = await store.loadNetRoutes() ?? routes
+            routeBusy = nil
         }
     }
 
