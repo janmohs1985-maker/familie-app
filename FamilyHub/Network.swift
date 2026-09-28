@@ -117,17 +117,31 @@ extension AppStore {
         return s
     }
 
-    /// true = alles über Starlink (eigene Umleitung aktiv), nil = unbekannt
-    func loadNetMode() async -> Bool? {
-        guard let r = try? await client.callWithResponse("script", NetConfig.script, ["aktion": "mode"], timeout: 40) else { return nil }
-        let c = r["content"] ?? r
-        guard c["ok"]?.string == "true" else { return nil }
-        return c["starlink"]?.string == "true"
+    struct NetRoute: Identifiable, Hashable {
+        let id: String
+        let name: String
+        let guest: Bool
+        let subnet: String?
+        var starlink: Bool
+        let killSwitch: Bool
     }
 
-    func setNetMode(starlink: Bool) async -> String? {
+    func loadNetRoutes() async -> [NetRoute]? {
+        guard let r = try? await client.callWithResponse("script", NetConfig.script, ["aktion": "routes"], timeout: 40) else { return nil }
+        let c = r["content"] ?? r
+        guard c["ok"]?.string == "true" else { return nil }
+        return (c["networks"]?.array ?? []).compactMap { n in
+            guard let id = n["id"]?.string else { return nil }
+            return NetRoute(id: id, name: n["name"]?.string ?? "Netz", guest: n["guest"]?.string == "true",
+                            subnet: n["subnet"]?.string, starlink: n["starlink"]?.string == "true",
+                            killSwitch: n["kill_switch"]?.string == "true")
+        }
+    }
+
+    func setNetRoute(_ id: String, starlink: Bool) async -> String? {
         do {
-            let r = try await client.callWithResponse("script", NetConfig.script, ["aktion": "mode_set", "starlink": starlink], timeout: 40)
+            let r = try await client.callWithResponse("script", NetConfig.script,
+                                                      ["aktion": "route_set", "network_id": id, "starlink": starlink], timeout: 40)
             let c = r["content"] ?? r
             return c["ok"]?.string == "true" ? nil : (c["error"]?.string ?? "Umschalten fehlgeschlagen")
         } catch { return error.localizedDescription }
@@ -183,8 +197,8 @@ struct NetworkView: View {
     @State private var loading = true
     @State private var speedRunning = false
     @State private var confirm: ConfirmAction?
-    @State private var viaStarlink: Bool?
-    @State private var modeBusy = false
+    @State private var routes: [AppStore.NetRoute]?
+    @State private var routeBusy: String?
     @State private var modeError: String?
 
     struct ConfirmAction: Identifiable {
@@ -212,7 +226,6 @@ struct NetworkView: View {
                     vpnCard(net)
                 }
                 starlinkCard
-                if isParent { routesCard }
                 if let net { udmCard(net) }
                 if net == nil && !loading {
                     Label("UniFi-Daten gerade nicht verfügbar", systemImage: "wifi.exclamationmark").foregroundStyle(.secondary)
@@ -237,10 +250,10 @@ struct NetworkView: View {
     private func load() async {
         loading = true
         async let n = store.loadNetStatus()
-        async let m = store.loadNetMode()
+        async let m = store.loadNetRoutes()
         async let s: Void = store.refreshStates()
         net = await n
-        viaStarlink = await m
+        routes = await m
         _ = await s
         loading = false
     }
@@ -277,42 +290,65 @@ struct NetworkView: View {
     // MARK: Wohin geht der Verkehr?
 
     private var trafficCard: some View {
-        let familyStarlink = store.states["switch.unifi_network_family_wlan_starlink"]?.state == "on"
-        let guestStarlink = store.states["switch.unifi_network_starlink_guest_wlan"]?.state == "on"
-        let all = viaStarlink == true
-        return Card(title: "Wohin geht der Verkehr?", symbol: "arrow.triangle.swap") {
-            VStack(alignment: .leading, spacing: 12) {
-                RouteLine(name: "Hauptnetz, SmartHome & Co.", via: all ? "Starlink" : "1&1 Versatel", starlink: all)
-                RouteLine(name: "Familien-WLAN", via: (familyStarlink || all) ? "Starlink" : "1&1 Versatel", starlink: familyStarlink || all)
-                RouteLine(name: "Gäste-WLAN", via: (guestStarlink || all) ? "Starlink" : "1&1 Versatel", starlink: guestStarlink || all)
-                if isParent, let v = viaStarlink {
-                    Divider()
-                    Toggle(isOn: Binding(get: { v }, set: { want in
-                        confirm = .init(title: want ? "Alles über Starlink?" : "Zurück zu 1&1 Versatel?",
-                                        message: want
-                                        ? "Der gesamte Internetverkehr geht dann über Starlink. Fällt Starlink aus, springt automatisch wieder 1&1 ein. Laufende Downloads oder Videoanrufe können kurz abbrechen."
-                                        : "Der normale Verkehr geht wieder über 1&1 Versatel (Familien- und Gäste-WLAN bleiben wie eingestellt).") {
-                            modeBusy = true
-                            modeError = await store.setNetMode(starlink: want)
-                            viaStarlink = await store.loadNetMode() ?? viaStarlink
-                            modeBusy = false
-                        }
-                    })) {
-                        VStack(alignment: .leading, spacing: 1) {
-                            Text("Alles über Starlink").font(.subheadline.weight(.semibold))
-                            Text(v ? "Aktiv – 1&1 nur noch als Reserve" : "Aus – normaler Betrieb über 1&1")
-                                .font(.caption).foregroundStyle(v ? Color.orange : Color.secondary)
-                        }
-                    }
-                    .disabled(modeBusy)
-                    .tint(.orange)
-                    if modeBusy { ProgressView().frame(maxWidth: .infinity) }
+        Card(title: "Wohin geht der Verkehr?", symbol: "arrow.triangle.swap") {
+            VStack(alignment: .leading, spacing: 10) {
+                if let routes {
+                    ForEach(routes) { r in routeRow(r) }
                     if let modeError {
                         Label(modeError, systemImage: "exclamationmark.triangle.fill").font(.caption).foregroundStyle(.red)
                     }
+                    Text(isParent ? "Antippen zum Umschalten. Fällt Starlink aus, springt 1&1 automatisch ein – außer bei Netzen mit 🔒 Notaus."
+                                  : "Welches Netz über welchen Anschluss ins Internet geht.")
+                        .font(.caption2).foregroundStyle(.secondary)
+                } else {
+                    ProgressView().frame(maxWidth: .infinity)
                 }
             }
         }
+    }
+
+    private func routeRow(_ r: AppStore.NetRoute) -> some View {
+        HStack(spacing: 10) {
+            VStack(alignment: .leading, spacing: 1) {
+                HStack(spacing: 4) {
+                    Text(Self.netLabel(r.name)).font(.subheadline.weight(.medium))
+                    if r.killSwitch && r.starlink { Text("🔒").font(.caption2) }
+                }
+                if let sub = r.subnet { Text(sub).font(.caption2.monospaced()).foregroundStyle(.tertiary) }
+            }
+            Spacer()
+            if routeBusy == r.id {
+                ProgressView()
+            } else if isParent {
+                Picker("", selection: Binding(get: { r.starlink }, set: { want in switchRoute(r, to: want) })) {
+                    Text("1&1").tag(false)
+                    Text("Starlink").tag(true)
+                }
+                .pickerStyle(.segmented)
+                .frame(width: 150)
+            } else {
+                Text(r.starlink ? "Starlink" : "1&1").font(.caption.weight(.semibold))
+                    .foregroundStyle(r.starlink ? Color.orange : Color.blue)
+            }
+        }
+    }
+
+    private func switchRoute(_ r: AppStore.NetRoute, to want: Bool) {
+        guard want != r.starlink else { return }
+        confirm = .init(title: "\(Self.netLabel(r.name)) über \(want ? "Starlink" : "1&1")?",
+                        message: r.name.lowercased().contains("smarthome")
+                        ? "Home Assistant ist in diesem Netz – die App ist von unterwegs ca. 1 Minute nicht erreichbar, bis Nabu Casa neu verbunden ist."
+                        : "Laufende Downloads oder Videoanrufe in diesem Netz können kurz abbrechen.") {
+            routeBusy = r.id
+            modeError = await store.setNetRoute(r.id, starlink: want)
+            routes = await store.loadNetRoutes() ?? routes
+            routeBusy = nil
+        }
+    }
+
+    static func netLabel(_ n: String) -> String {
+        ["Guest LAN / WLAN": "Gäste-WLAN", "Mohs Family": "Familien-WLAN", "Mohs": "Hauptnetz (Mohs)",
+         "Unifi Management": "UniFi-Geräte"][n] ?? n
     }
 
     // MARK: Gäste-WLAN
