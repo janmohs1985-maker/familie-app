@@ -148,9 +148,6 @@ struct ControlsView: View {
                         NavigationLink { DocumentsView() } label: {
                             HubTile(title: "Dokumente scannen", symbol: "scanner.fill", color: .indigo)
                         }
-                        NavigationLink { GuestWifiView() } label: {
-                            HubTile(title: "Gäste-WLAN", symbol: "wifi", color: .blue)
-                        }
                         Button { showMap = true } label: {
                             HubTile(title: "Wo sind alle?", symbol: "map.fill", color: .green)
                         }

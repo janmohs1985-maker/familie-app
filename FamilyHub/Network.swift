@@ -117,12 +117,45 @@ extension AppStore {
         return s
     }
 
+    /// true = alles über Starlink (eigene Umleitung aktiv), nil = unbekannt
+    func loadNetMode() async -> Bool? {
+        guard let r = try? await client.callWithResponse("script", NetConfig.script, ["aktion": "mode"], timeout: 40) else { return nil }
+        let c = r["content"] ?? r
+        guard c["ok"]?.string == "true" else { return nil }
+        return c["starlink"]?.string == "true"
+    }
+
+    func setNetMode(starlink: Bool) async -> String? {
+        do {
+            let r = try await client.callWithResponse("script", NetConfig.script, ["aktion": "mode_set", "starlink": starlink], timeout: 40)
+            let c = r["content"] ?? r
+            return c["ok"]?.string == "true" ? nil : (c["error"]?.string ?? "Umschalten fehlgeschlagen")
+        } catch { return error.localizedDescription }
+    }
+
     func startSpeedtest() async {
         _ = try? await client.callWithResponse("script", NetConfig.script, ["aktion": "speedtest"], timeout: 40)
     }
 
     func pressButton(_ entity: String) async {
         do { _ = try await client.call("button", "press", ["entity_id": entity]) } catch { report(error) }
+    }
+}
+
+struct RouteLine: View {
+    let name: String
+    let via: String
+    let starlink: Bool
+
+    var body: some View {
+        HStack(spacing: 8) {
+            Text(name).font(.subheadline)
+            Spacer()
+            Image(systemName: starlink ? "antenna.radiowaves.left.and.right" : "network")
+                .font(.caption)
+            Text(via).font(.caption.weight(.semibold))
+        }
+        .foregroundStyle(starlink ? Color.orange : Color.blue)
     }
 }
 
@@ -150,6 +183,9 @@ struct NetworkView: View {
     @State private var loading = true
     @State private var speedRunning = false
     @State private var confirm: ConfirmAction?
+    @State private var viaStarlink: Bool?
+    @State private var modeBusy = false
+    @State private var modeError: String?
 
     struct ConfirmAction: Identifiable {
         let id = UUID()
@@ -169,6 +205,8 @@ struct NetworkView: View {
                 }
                 if let net {
                     headerCard(net)
+                    trafficCard
+                    guestCard
                     ForEach(net.wans) { w in wanCard(w, net: net) }
                     speedCard(net)
                     vpnCard(net)
@@ -199,8 +237,10 @@ struct NetworkView: View {
     private func load() async {
         loading = true
         async let n = store.loadNetStatus()
+        async let m = store.loadNetMode()
         async let s: Void = store.refreshStates()
         net = await n
+        viaStarlink = await m
         _ = await s
         loading = false
     }
@@ -231,6 +271,73 @@ struct NetworkView: View {
         }
         .padding()
         .background(Color(.secondarySystemGroupedBackground), in: RoundedRectangle(cornerRadius: 18))
+    }
+
+
+    // MARK: Wohin geht der Verkehr?
+
+    private var trafficCard: some View {
+        let familyStarlink = store.states["switch.unifi_network_family_wlan_starlink"]?.state == "on"
+        let guestStarlink = store.states["switch.unifi_network_starlink_guest_wlan"]?.state == "on"
+        let all = viaStarlink == true
+        return Card(title: "Wohin geht der Verkehr?", symbol: "arrow.triangle.swap") {
+            VStack(alignment: .leading, spacing: 12) {
+                RouteLine(name: "Hauptnetz, SmartHome & Co.", via: all ? "Starlink" : "1&1 Versatel", starlink: all)
+                RouteLine(name: "Familien-WLAN", via: (familyStarlink || all) ? "Starlink" : "1&1 Versatel", starlink: familyStarlink || all)
+                RouteLine(name: "Gäste-WLAN", via: (guestStarlink || all) ? "Starlink" : "1&1 Versatel", starlink: guestStarlink || all)
+                if isParent, let v = viaStarlink {
+                    Divider()
+                    Toggle(isOn: Binding(get: { v }, set: { want in
+                        confirm = .init(title: want ? "Alles über Starlink?" : "Zurück zu 1&1 Versatel?",
+                                        message: want
+                                        ? "Der gesamte Internetverkehr geht dann über Starlink. Fällt Starlink aus, springt automatisch wieder 1&1 ein. Laufende Downloads oder Videoanrufe können kurz abbrechen."
+                                        : "Der normale Verkehr geht wieder über 1&1 Versatel (Familien- und Gäste-WLAN bleiben wie eingestellt).") {
+                            modeBusy = true
+                            modeError = await store.setNetMode(starlink: want)
+                            viaStarlink = await store.loadNetMode() ?? viaStarlink
+                            modeBusy = false
+                        }
+                    })) {
+                        VStack(alignment: .leading, spacing: 1) {
+                            Text("Alles über Starlink").font(.subheadline.weight(.semibold))
+                            Text(v ? "Aktiv – 1&1 nur noch als Reserve" : "Aus – normaler Betrieb über 1&1")
+                                .font(.caption).foregroundStyle(v ? Color.orange : Color.secondary)
+                        }
+                    }
+                    .disabled(modeBusy)
+                    .tint(.orange)
+                    if modeBusy { ProgressView().frame(maxWidth: .infinity) }
+                    if let modeError {
+                        Label(modeError, systemImage: "exclamationmark.triangle.fill").font(.caption).foregroundStyle(.red)
+                    }
+                }
+            }
+        }
+    }
+
+    // MARK: Gäste-WLAN
+
+    @ViewBuilder private var guestCard: some View {
+        if isParent {
+            let on = store.states[FamilyConfig.guestWifiSwitch]?.state == "on"
+            NavigationLink { GuestWifiView() } label: {
+                Card(title: "Gäste-WLAN", symbol: "wifi") {
+                    HStack(spacing: 12) {
+                        Image(systemName: on ? "wifi" : "wifi.slash")
+                            .font(.title3).foregroundStyle(.white)
+                            .frame(width: 42, height: 42)
+                            .background((on ? Color.blue : Color.gray).gradient, in: RoundedRectangle(cornerRadius: 11))
+                        VStack(alignment: .leading, spacing: 2) {
+                            Text(on ? "„Mohs - Gäste“ ist an" : "Gäste-WLAN ist aus").font(.headline)
+                            Text("Passwort, verbundene Gäste, sperren").font(.caption).foregroundStyle(.secondary)
+                        }
+                        Spacer()
+                        Image(systemName: "chevron.right").font(.caption.weight(.semibold)).foregroundStyle(.tertiary)
+                    }
+                }
+            }
+            .buttonStyle(.plain)
+        }
     }
 
     // MARK: Anschlüsse
