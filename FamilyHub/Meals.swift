@@ -152,12 +152,38 @@ extension AppStore {
 
 // MARK: - Ansicht
 
+enum MealEmoji {
+    /// Passendes Emoji zum Gericht (einfache Stichwortsuche)
+    static func of(_ dish: String) -> String {
+        let d = dish.lowercased()
+        let map: [(String, [String])] = [
+            ("🍕", ["pizza", "flammkuchen"]), ("🍝", ["spaghetti", "nudel", "pasta", "lasagne", "maultasche", "spätzle", "tortellini", "gnocchi"]),
+            ("🍔", ["burger"]), ("🌭", ["wurst", "hot dog", "hotdog", "würstchen"]), ("🌮", ["taco", "wrap", "burrito", "fajita", "quesadilla"]),
+            ("🍣", ["sushi"]), ("🍛", ["curry", "chili"]), ("🍚", ["reis", "risotto", "paella"]), ("🍜", ["ramen", "nudelsuppe", "asia", "wok"]),
+            ("🍲", ["suppe", "eintopf", "gulasch", "ragout"]), ("🥗", ["salat", "bowl"]), ("🐟", ["fisch", "lachs", "forelle", "thunfisch"]),
+            ("🍗", ["hähnchen", "hühn", "chicken", "hendl", "chicken nuggets", "nuggets"]), ("🥩", ["steak", "schnitzel", "braten", "fleisch", "grill"]),
+            ("🥔", ["kartoffel", "pommes", "rösti", "püree"]), ("🥞", ["pfannkuchen", "pancake", "crêpe", "crepe", "kaiserschmarrn"]),
+            ("🧇", ["waffel"]), ("🍳", ["ei", "rührei", "omelett", "spiegelei"]), ("🥪", ["brot", "sandwich", "toast", "vesper", "abendbrot"]),
+            ("🥘", ["auflauf", "gratin", "pfanne"]), ("🥟", ["knödel", "dumpling", "maultaschen"]), ("🧀", ["käse", "raclette", "fondue"]),
+            ("🥦", ["gemüse", "brokkoli", "vegetarisch"]),
+        ]
+        for (emoji, words) in map where words.contains(where: { d.contains($0) }) { return emoji }
+        return "🍽️"
+    }
+}
+
 struct MealPlanView: View {
     @Environment(AppStore.self) private var store
     @State private var wishText = ""
     @State private var editMeal: Meal?
-    @State private var newMealDay: Date?
+    @State private var newSlot: NewMealSlot?
     @State private var planWish: MealWish?
+
+    struct NewMealSlot: Identifiable {
+        let day: Date
+        let slot: String
+        var id: String { "\(day.timeIntervalSince1970)-\(slot)" }
+    }
 
     private var days: [Date] {
         let start = Calendar.current.startOfDay(for: Date())
@@ -165,89 +191,280 @@ struct MealPlanView: View {
     }
 
     var body: some View {
-        List {
-            // Wünsche
-            Section {
-                ForEach(store.mealWishes) { w in
-                    HStack(spacing: 12) {
-                        Image(systemName: "heart.fill").foregroundStyle(.pink)
-                        VStack(alignment: .leading, spacing: 2) {
-                            Text(w.dish).font(.body.weight(.medium))
-                            Text("von \(w.fromName)").font(.caption).foregroundStyle(.secondary)
-                        }
-                        Spacer()
-                        if store.canEditMeals {
-                            Button("Einplanen") { planWish = w }
-                                .buttonStyle(.borderedProminent).font(.caption)
-                            Button { Task { await store.rejectWish(w) } } label: {
-                                Image(systemName: "xmark.circle.fill").font(.title3)
-                            }
-                            .buttonStyle(.borderless).tint(.secondary)
-                        } else if w.from == store.activeKid {
-                            Button { Task { await store.deleteWish(w) } } label: {
-                                Image(systemName: "xmark.circle.fill").font(.title3)
-                            }
-                            .buttonStyle(.borderless).tint(.secondary)
+        ScrollViewReader { proxy in
+            ScrollView {
+                VStack(alignment: .leading, spacing: 16) {
+                    dayStrip(proxy)
+                    todayHero
+                    wishesSection
+                    ForEach(days.dropFirst(), id: \.self) { day in
+                        let list = store.meals(on: day)
+                        if !list.isEmpty || store.canEditMeals {
+                            dayCard(day, list).id(day)
                         }
                     }
-                }
-                HStack {
-                    Image(systemName: "plus.circle.fill").foregroundStyle(.tint).font(.title3)
-                    TextField("Essenswunsch eintragen …", text: $wishText)
-                        .submitLabel(.send)
-                        .onSubmit(sendWish)
-                }
-            } header: {
-                Text("Wünsche")
-            } footer: {
-                if !store.canEditMeals { Text("Mama und Papa sehen deinen Wunsch und planen ihn vielleicht ein.") }
-            }
-
-            // Plan für 14 Tage
-            ForEach(days, id: \.self) { day in
-                let list = store.meals(on: day)
-                if !list.isEmpty || store.canEditMeals {
-                    Section(DayText.label(day)) {
-                        ForEach(list) { m in
-                            MealRow(meal: m)
-                                .contentShape(Rectangle())
-                                .onTapGesture { if store.canEditMeals { editMeal = m } }
-                                .swipeActions(edge: .trailing) {
-                                    if store.canEditMeals {
-                                        Button(role: .destructive) { Task { await store.deleteMeal(m) } } label: {
-                                            Label("Löschen", systemImage: "trash")
-                                        }
-                                    }
-                                }
-                                .swipeActions(edge: .leading) {
-                                    if store.canEditMeals && !m.ingredients.isEmpty {
-                                        Button { Task { await store.addIngredientsToShopping(m) } } label: {
-                                            Label("Einkaufen", systemImage: "cart.badge.plus")
-                                        }
-                                        .tint(.green)
-                                    }
-                                }
-                        }
-                        if store.canEditMeals && list.count < 2 {
-                            Button { newMealDay = day } label: {
-                                Label("Essen planen", systemImage: "plus")
-                            }
-                        }
+                    if !store.canEditMeals && store.meals.filter({ $0.date > Date() }).isEmpty {
+                        Text("Für die nächsten Tage ist noch nichts geplant.")
+                            .foregroundStyle(.secondary).frame(maxWidth: .infinity)
                     }
                 }
-            }
-            if !store.canEditMeals && store.meals.isEmpty {
-                Text("Noch nichts geplant.").foregroundStyle(.secondary)
+                .padding()
             }
         }
+        .background(Color(.systemGroupedBackground))
         .navigationTitle("Essensplan")
         .refreshable { await store.refreshMeals() }
         .task { await store.refreshMeals() }
         .sheet(item: $editMeal) { m in MealEditSheet(meal: m) }
-        .sheet(isPresented: Binding(get: { newMealDay != nil }, set: { if !$0 { newMealDay = nil } })) {
-            MealEditSheet(meal: nil, day: newMealDay ?? Date())
-        }
+        .sheet(item: $newSlot) { n in MealEditSheet(meal: nil, day: n.day, presetSlot: n.slot) }
         .sheet(item: $planWish) { w in MealEditSheet(meal: nil, day: Date(), wish: w) }
+    }
+
+    // MARK: Tagesleiste
+
+    private func dayStrip(_ proxy: ScrollViewProxy) -> some View {
+        ScrollView(.horizontal, showsIndicators: false) {
+            HStack(spacing: 8) {
+                ForEach(days, id: \.self) { day in
+                    let count = store.meals(on: day).count
+                    let today = Calendar.current.isDateInToday(day)
+                    Button {
+                        withAnimation { proxy.scrollTo(day, anchor: .top) }
+                    } label: {
+                        VStack(spacing: 4) {
+                            Text(day.formatted(.dateTime.weekday(.abbreviated)))
+                                .font(.caption2.weight(.semibold))
+                            Text(day.formatted(.dateTime.day()))
+                                .font(.headline)
+                            HStack(spacing: 3) {
+                                ForEach(0..<2, id: \.self) { i in
+                                    Circle().fill(i < count ? (today ? Color.white : Color.orange) : Color.clear)
+                                        .frame(width: 5, height: 5)
+                                }
+                            }
+                        }
+                        .frame(width: 46, height: 64)
+                        .foregroundStyle(today ? Color.white : Color.primary)
+                        .background(today ? AnyShapeStyle(Color.orange.gradient) : AnyShapeStyle(Color(.secondarySystemGroupedBackground)),
+                                    in: RoundedRectangle(cornerRadius: 14))
+                    }
+                    .buttonStyle(.plain)
+                }
+            }
+        }
+        .id(days.first!)
+    }
+
+    // MARK: Heute
+
+    private var todayHero: some View {
+        let list = store.meals(on: Date())
+        return VStack(alignment: .leading, spacing: 12) {
+            HStack {
+                Text("Heute").font(.title2.weight(.bold))
+                Spacer()
+                Text(Date().formatted(.dateTime.weekday(.wide).day().month(.wide)))
+                    .font(.subheadline).foregroundStyle(.secondary)
+            }
+            HStack(spacing: 12) {
+                ForEach(["mittag", "abend"], id: \.self) { slot in
+                    if let m = list.first(where: { $0.slot == slot }) {
+                        heroTile(m)
+                    } else {
+                        emptyTile(day: Date(), slot: slot, tall: true)
+                    }
+                }
+            }
+        }
+    }
+
+    private func heroTile(_ m: Meal) -> some View {
+        VStack(alignment: .leading, spacing: 8) {
+            HStack {
+                Label(m.slotName, systemImage: m.slotSymbol).font(.caption.weight(.semibold))
+                    .foregroundStyle(m.slot == "mittag" ? Color.orange : Color.indigo)
+                Spacer()
+            }
+            Text(MealEmoji.of(m.dish)).font(.system(size: 44))
+            Text(m.dish).font(.headline).lineLimit(2).minimumScaleFactor(0.8)
+            if !m.ingredients.isEmpty {
+                Text(m.ingredients.joined(separator: " · ")).font(.caption2).foregroundStyle(.secondary).lineLimit(2)
+            }
+            Spacer(minLength: 0)
+        }
+        .padding(14)
+        .frame(maxWidth: .infinity, minHeight: 170, alignment: .topLeading)
+        .background(
+            LinearGradient(colors: m.slot == "mittag" ? [Color.orange.opacity(0.22), Color.yellow.opacity(0.12)]
+                                                       : [Color.indigo.opacity(0.22), Color.purple.opacity(0.12)],
+                           startPoint: .topLeading, endPoint: .bottomTrailing),
+            in: RoundedRectangle(cornerRadius: 20))
+        .contentShape(RoundedRectangle(cornerRadius: 20))
+        .onTapGesture { if store.canEditMeals { editMeal = m } }
+        .contextMenu { mealMenu(m) }
+    }
+
+    // MARK: Wünsche
+
+    private var wishesSection: some View {
+        VStack(alignment: .leading, spacing: 10) {
+            HStack {
+                Label("Wünsche", systemImage: "heart.fill").font(.headline).foregroundStyle(.pink)
+                Spacer()
+                if !store.mealWishes.isEmpty {
+                    Text("\(store.mealWishes.count)").font(.caption.weight(.bold))
+                        .padding(.horizontal, 8).padding(.vertical, 2)
+                        .background(Color.pink.opacity(0.15), in: Capsule())
+                }
+            }
+            if !store.mealWishes.isEmpty {
+                ScrollView(.horizontal, showsIndicators: false) {
+                    HStack(spacing: 10) {
+                        ForEach(store.mealWishes) { w in wishCard(w) }
+                    }
+                }
+            }
+            HStack(spacing: 10) {
+                Image(systemName: "plus.circle.fill").foregroundStyle(.pink).font(.title3)
+                TextField(store.canEditMeals ? "Idee oder Wunsch notieren …" : "Was möchtest du gerne essen?", text: $wishText)
+                    .submitLabel(.send)
+                    .onSubmit(sendWish)
+                if !wishText.isEmpty {
+                    Button("Senden", action: sendWish).font(.subheadline.weight(.semibold))
+                }
+            }
+            .padding(12)
+            .background(Color(.secondarySystemGroupedBackground), in: RoundedRectangle(cornerRadius: 14))
+            if !store.canEditMeals {
+                Text("Mama und Papa sehen deinen Wunsch und planen ihn vielleicht ein.")
+                    .font(.caption2).foregroundStyle(.secondary)
+            }
+        }
+    }
+
+    private func wishCard(_ w: MealWish) -> some View {
+        VStack(alignment: .leading, spacing: 6) {
+            HStack(alignment: .top) {
+                Text(MealEmoji.of(w.dish)).font(.title)
+                Spacer()
+                if store.canEditMeals || w.from == store.activeKid {
+                    Button {
+                        Task {
+                            if store.canEditMeals { await store.rejectWish(w) } else { await store.deleteWish(w) }
+                        }
+                    } label: {
+                        Image(systemName: "xmark.circle.fill").foregroundStyle(.secondary)
+                    }
+                    .buttonStyle(.plain)
+                }
+            }
+            Text(w.dish).font(.subheadline.weight(.semibold)).lineLimit(2)
+            Text("von \(w.fromName)").font(.caption2).foregroundStyle(.secondary)
+            if store.canEditMeals {
+                Button { planWish = w } label: {
+                    Text("Einplanen").font(.caption.weight(.semibold)).frame(maxWidth: .infinity)
+                }
+                .buttonStyle(.borderedProminent).tint(.pink).controlSize(.small)
+            }
+        }
+        .padding(12)
+        .frame(width: 150, alignment: .leading)
+        .background(Color(.secondarySystemGroupedBackground), in: RoundedRectangle(cornerRadius: 16))
+    }
+
+    // MARK: Tage
+
+    private func dayCard(_ day: Date, _ list: [Meal]) -> some View {
+        HStack(alignment: .top, spacing: 12) {
+            VStack(spacing: 0) {
+                Text(day.formatted(.dateTime.weekday(.abbreviated))).font(.caption.weight(.semibold)).foregroundStyle(.secondary)
+                Text(day.formatted(.dateTime.day())).font(.title2.weight(.bold))
+                if Calendar.current.isDateInTomorrow(day) {
+                    Text("morgen").font(.caption2).foregroundStyle(.orange)
+                }
+            }
+            .frame(width: 46)
+            .padding(.top, 4)
+            VStack(spacing: 8) {
+                ForEach(["mittag", "abend"], id: \.self) { slot in
+                    if let m = list.first(where: { $0.slot == slot }) {
+                        mealTile(m)
+                    } else if store.canEditMeals {
+                        emptyTile(day: day, slot: slot, tall: false)
+                    }
+                }
+            }
+        }
+        .padding(12)
+        .background(Color(.secondarySystemGroupedBackground), in: RoundedRectangle(cornerRadius: 18))
+    }
+
+    private func mealTile(_ m: Meal) -> some View {
+        HStack(spacing: 12) {
+            Text(MealEmoji.of(m.dish)).font(.system(size: 30))
+                .frame(width: 46, height: 46)
+                .background((m.slot == "mittag" ? Color.orange : Color.indigo).opacity(0.12), in: RoundedRectangle(cornerRadius: 12))
+            VStack(alignment: .leading, spacing: 4) {
+                HStack(spacing: 4) {
+                    Image(systemName: m.slotSymbol).font(.caption2)
+                    Text(m.slotName).font(.caption2.weight(.semibold))
+                }
+                .foregroundStyle(m.slot == "mittag" ? Color.orange : Color.indigo)
+                Text(m.dish).font(.body.weight(.semibold)).lineLimit(2)
+                if !m.ingredients.isEmpty {
+                    ScrollView(.horizontal, showsIndicators: false) {
+                        HStack(spacing: 4) {
+                            ForEach(m.ingredients, id: \.self) { z in
+                                Text(z).font(.caption2)
+                                    .padding(.horizontal, 7).padding(.vertical, 3)
+                                    .background(Color(.tertiarySystemFill), in: Capsule())
+                            }
+                        }
+                    }
+                }
+            }
+            Spacer(minLength: 0)
+        }
+        .contentShape(Rectangle())
+        .onTapGesture { if store.canEditMeals { editMeal = m } }
+        .contextMenu { mealMenu(m) }
+    }
+
+    private func emptyTile(day: Date, slot: String, tall: Bool) -> some View {
+        Button {
+            if store.canEditMeals { newSlot = NewMealSlot(day: day, slot: slot) }
+        } label: {
+            HStack(spacing: 8) {
+                Image(systemName: slot == "mittag" ? "sun.max" : "moon.stars")
+                Text(store.canEditMeals ? "\(slot == "mittag" ? "Mittag" : "Abend") planen" : "noch offen")
+                    .font(.subheadline)
+                Spacer(minLength: 0)
+                if store.canEditMeals { Image(systemName: "plus") }
+            }
+            .foregroundStyle(.secondary)
+            .padding(12)
+            .frame(maxWidth: .infinity, minHeight: tall ? 170 : 46, alignment: tall ? Alignment.top : Alignment.center)
+            .background(
+                RoundedRectangle(cornerRadius: tall ? 20 : 12)
+                    .strokeBorder(style: StrokeStyle(lineWidth: 1.5, dash: [5, 4]))
+                    .foregroundStyle(Color.secondary.opacity(0.4)))
+        }
+        .buttonStyle(.plain)
+        .disabled(!store.canEditMeals)
+    }
+
+    @ViewBuilder private func mealMenu(_ m: Meal) -> some View {
+        if store.canEditMeals {
+            Button { editMeal = m } label: { Label("Bearbeiten", systemImage: "pencil") }
+            if !m.ingredients.isEmpty {
+                Button { Task { await store.addIngredientsToShopping(m) } } label: {
+                    Label("Zutaten auf Einkaufsliste", systemImage: "cart.badge.plus")
+                }
+            }
+            Button(role: .destructive) { Task { await store.deleteMeal(m) } } label: {
+                Label("Löschen", systemImage: "trash")
+            }
+        }
     }
 
     private func sendWish() {
@@ -262,9 +479,9 @@ struct MealRow: View {
     let meal: Meal
     var body: some View {
         HStack(spacing: 12) {
-            Image(systemName: meal.slotSymbol)
-                .foregroundStyle(meal.slot == "mittag" ? Color.orange : Color.indigo)
-                .frame(width: 24)
+            Text(MealEmoji.of(meal.dish)).font(.title2)
+                .frame(width: 38, height: 38)
+                .background((meal.slot == "mittag" ? Color.orange : Color.indigo).opacity(0.12), in: RoundedRectangle(cornerRadius: 10))
             VStack(alignment: .leading, spacing: 2) {
                 Text(meal.dish).font(.body.weight(.medium))
                 Text(meal.ingredients.isEmpty ? meal.slotName : "\(meal.slotName) · \(meal.ingredients.joined(separator: ", "))")
@@ -280,6 +497,7 @@ struct MealEditSheet: View {
     let meal: Meal?
     var day: Date = Date()
     var wish: MealWish? = nil
+    var presetSlot: String? = nil
 
     @State private var dish = ""
     @State private var date = Date()
@@ -304,7 +522,7 @@ struct MealEditSheet: View {
                 Section {
                     TextField("Nudeln, Hackfleisch, Tomaten …", text: $ingredients, axis: .vertical)
                 } header: { Text("Zutaten (optional)") } footer: {
-                    Text("Mit Komma trennen. Im Plan nach rechts wischen → „Einkaufen“ setzt sie auf die Einkaufsliste.")
+                    Text("Mit Komma trennen. Im Plan lange auf das Essen drücken → „Zutaten auf Einkaufsliste“.")
                 }
             }
             .navigationTitle(wish != nil ? "Wunsch einplanen" : meal == nil ? "Essen planen" : "Essen bearbeiten")
@@ -323,6 +541,7 @@ struct MealEditSheet: View {
                     dish = meal.dish; date = meal.date; slot = meal.slot; ingredients = meal.ingredients.joined(separator: ", ")
                 } else {
                     dish = wish?.dish ?? ""; date = day
+                    if let presetSlot { slot = presetSlot }
                 }
             }
         }

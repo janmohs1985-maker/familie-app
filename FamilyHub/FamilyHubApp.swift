@@ -47,6 +47,7 @@ struct RootView: View {
                     if store.allows(.listen) {
                         ListsView()
                             .tabItem { Label("Listen", systemImage: "cart.fill") }
+                            .badge((store.todoItems[FamilyConfig.shoppingList] ?? []).filter { !$0.done }.count)
                             .tag("listen")
                     }
                     ControlsView()
@@ -70,6 +71,10 @@ struct RootView: View {
             }
         }
         .onChange(of: myName) { _, n in if let n { lastUserName = n } }
+        .onOpenURL { url in
+            splashDone = true
+            store.openLink(url)
+        }
         .animation(.default, value: store.isLoggedIn)
     }
 

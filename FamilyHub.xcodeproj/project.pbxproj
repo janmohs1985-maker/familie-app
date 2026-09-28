@@ -181,6 +181,7 @@
 				DEVELOPMENT_TEAM = "";
 				ENABLE_PREVIEWS = YES;
 				GENERATE_INFOPLIST_FILE = YES;
+				INFOPLIST_FILE = "FamilyHub-Info.plist";
 				INFOPLIST_KEY_CFBundleDisplayName = Familie;
 				INFOPLIST_KEY_NSCameraUsageDescription = "Die Kamera wird zum Fotografieren von Schuldokumenten verwendet.";
 				INFOPLIST_KEY_LSApplicationCategoryType = "public.app-category.lifestyle";
@@ -213,6 +214,7 @@
 				DEVELOPMENT_TEAM = "";
 				ENABLE_PREVIEWS = YES;
 				GENERATE_INFOPLIST_FILE = YES;
+				INFOPLIST_FILE = "FamilyHub-Info.plist";
 				INFOPLIST_KEY_CFBundleDisplayName = Familie;
 				INFOPLIST_KEY_NSCameraUsageDescription = "Die Kamera wird zum Fotografieren von Schuldokumenten verwendet.";
 				INFOPLIST_KEY_LSApplicationCategoryType = "public.app-category.lifestyle";

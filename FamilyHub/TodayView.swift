@@ -16,6 +16,7 @@ struct TodayView: View {
             ScrollView {
                 VStack(alignment: .leading, spacing: 16) {
                     ErrorBanner()
+                    AppUpdateBanner()
                     ForEach(TodayCardKind.ordered(orderRaw).filter { !hiddenCards.contains($0.rawValue) && store.todayCardAvailable($0) }) { k in
                         card(k)
                     }
@@ -40,8 +41,11 @@ struct TodayView: View {
                 Button { showSettings = true } label: { Image(systemName: "gearshape") }
             }
             .sheet(isPresented: $showArrange) { TodayArrangeView() }
+            .onChange(of: store.route) { _, r in openPersonRoute(r) }
+            .onAppear { openPersonRoute(store.route) }
             .sheet(isPresented: $showSettings) { SettingsView() }
             .sheet(isPresented: $showWeather) { WeatherSheet().presentationDetents([.large]) }
+            .sheet(item: $mapPerson) { p in PersonMapView(person: p) }
         }
     }
 
@@ -50,6 +54,8 @@ struct TodayView: View {
         case .weather: weatherCard
         case .mailbox: mailboxBanner
         case .doorbell: if store.ringRecently { DoorbellCard() }
+        case .laundry: LaundryTodayCard()
+        case .safety: SafetyTodayCard()
         case .parentTodos: ParentTodosTodayCard()
         case .music: MusicTodayCard()
         case .vacuum: VacuumTodayCard()
@@ -59,6 +65,15 @@ struct TodayView: View {
         case .meal: MealTodayCard()
         case .waste: wasteCard
         case .upcoming: upcomingCard
+        }
+    }
+
+    private func openPersonRoute(_ r: String?) {
+        guard let r, r.hasPrefix("person:") else { return }
+        store.route = nil
+        let id = String(r.dropFirst("person:".count))
+        if canSeeMap, let p = FamilyConfig.people.first(where: { $0.id == id }) {
+            DispatchQueue.main.asyncAfter(deadline: .now() + 0.4) { mapPerson = p }
         }
     }
 
@@ -147,6 +162,11 @@ struct TodayView: View {
                         Text(PersonText.status(st))
                             .font(.caption).foregroundStyle(.secondary)
                             .lineLimit(1).minimumScaleFactor(0.7)
+                        if let kid = store.kidID(forPerson: p.id),
+                           let last = store.doorOpenings(kid: kid).first, Calendar.current.isDateInToday(last.time) {
+                            Label(last.time.formatted(date: .omitted, time: .shortened), systemImage: "key.fill")
+                                .font(.caption2).foregroundStyle(.green)
+                        }
                     }
                     .frame(maxWidth: .infinity)
                     .contentShape(Rectangle())
@@ -164,7 +184,6 @@ struct TodayView: View {
                 .buttonStyle(.bordered)
             }
         }
-        .sheet(item: $mapPerson) { p in PersonMapView(person: p) }
         .sheet(isPresented: $showFamilyMap) { FamilyMapView() }
     }
 

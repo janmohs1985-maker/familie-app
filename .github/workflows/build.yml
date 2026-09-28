@@ -1,5 +1,9 @@
 name: iPhone-App bauen
 
+# Baut die App bei jedem Push. Sind die Apple-Secrets eingetragen
+# (APPLE_TEAM_ID, ASC_KEY_ID, ASC_ISSUER_ID, ASC_KEY_P8), wird sie direkt
+# für eure registrierten iPhones signiert (1 Jahr gültig). Sonst unsigniert wie bisher.
+
 on:
   push:
     branches: [main]
@@ -8,7 +12,7 @@ on:
 jobs:
   build:
     runs-on: macos-15
-    timeout-minutes: 30
+    timeout-minutes: 40
     steps:
       - name: Code holen
         uses: actions/checkout@v4
@@ -16,26 +20,59 @@ jobs:
       - name: Xcode-Version
         run: xcodebuild -version
 
-      - name: App bauen (ohne Signatur)
+      - name: App bauen
+        env:
+          TEAM_ID: ${{ secrets.APPLE_TEAM_ID }}
+          ASC_KEY_ID: ${{ secrets.ASC_KEY_ID }}
+          ASC_ISSUER_ID: ${{ secrets.ASC_ISSUER_ID }}
+          ASC_KEY_P8: ${{ secrets.ASC_KEY_P8 }}
         run: |
-          set -o pipefail
-          xcodebuild \
-            -project FamilyHub.xcodeproj \
-            -target FamilyHub \
-            -configuration Release \
-            -sdk iphoneos \
-            SYMROOT="$PWD/build" \
-            CODE_SIGNING_ALLOWED=NO \
-            CODE_SIGNING_REQUIRED=NO \
-            CODE_SIGN_IDENTITY="" \
-            build | tee build.log | grep -E "error:|BUILD (SUCCEEDED|FAILED)" || true
-          test -d build/Release-iphoneos/Familie.app
-
-      - name: IPA packen
-        run: |
-          mkdir -p Payload
-          cp -R build/Release-iphoneos/Familie.app Payload/
-          zip -qry Familie.ipa Payload
+          VER="1.0.${{ github.run_number }}"
+          BUILD="${{ github.run_number }}"
+          if [ -n "$TEAM_ID" ] && [ -n "$ASC_KEY_ID" ] && [ -n "$ASC_ISSUER_ID" ] && [ -n "$ASC_KEY_P8" ]; then
+            echo "== Signierter Build (Team $TEAM_ID)"
+            mkdir -p "$RUNNER_TEMP/keys"
+            KEY="$RUNNER_TEMP/keys/AuthKey_$ASC_KEY_ID.p8"
+            printf '%s\n' "$ASC_KEY_P8" > "$KEY"
+            AUTH=(-allowProvisioningUpdates -authenticationKeyPath "$KEY" -authenticationKeyID "$ASC_KEY_ID" -authenticationKeyIssuerID "$ASC_ISSUER_ID")
+            xcodebuild archive \
+              -project FamilyHub.xcodeproj -scheme FamilyHub -configuration Release \
+              -destination generic/platform=iOS -archivePath build/Familie.xcarchive \
+              DEVELOPMENT_TEAM="$TEAM_ID" CODE_SIGN_STYLE=Automatic \
+              MARKETING_VERSION="$VER" CURRENT_PROJECT_VERSION="$BUILD" \
+              "${AUTH[@]}" > build.log 2>&1 || true
+            grep -E "error:|ARCHIVE (SUCCEEDED|FAILED)" build.log | sort -u | head -60 || true
+            cat > export.plist <<PLIST
+          <?xml version="1.0" encoding="UTF-8"?>
+          <!DOCTYPE plist PUBLIC "-//Apple//DTD PLIST 1.0//EN" "http://www.apple.com/DTDs/PropertyList-1.0.dtd">
+          <plist version="1.0"><dict>
+            <key>method</key><string>release-testing</string>
+            <key>teamID</key><string>$TEAM_ID</string>
+            <key>signingStyle</key><string>automatic</string>
+            <key>thinning</key><string>&lt;none&gt;</string>
+          </dict></plist>
+          PLIST
+            xcodebuild -exportArchive -archivePath build/Familie.xcarchive \
+              -exportPath export -exportOptionsPlist export.plist \
+              "${AUTH[@]}" >> build.log 2>&1 || true
+            grep -E "error:|EXPORT (SUCCEEDED|FAILED)" build.log | sort -u | head -40 || true
+            rm -f "$KEY"
+            test -f export/Familie.ipa
+            cp export/Familie.ipa Familie.ipa
+          else
+            echo "== Unsignierter Build (keine Apple-Secrets eingetragen)"
+            xcodebuild \
+              -project FamilyHub.xcodeproj -target FamilyHub -configuration Release -sdk iphoneos \
+              SYMROOT="$PWD/build" \
+              CODE_SIGNING_ALLOWED=NO CODE_SIGNING_REQUIRED=NO CODE_SIGN_IDENTITY="" \
+              MARKETING_VERSION="$VER" CURRENT_PROJECT_VERSION="$BUILD" \
+              build > build.log 2>&1 || true
+            grep -E "error:|BUILD (SUCCEEDED|FAILED)" build.log | sort -u | head -60 || true
+            test -f build/Release-iphoneos/Familie.app/Familie
+            mkdir -p Payload
+            cp -R build/Release-iphoneos/Familie.app Payload/
+            zip -qry Familie.ipa Payload
+          fi
           ls -lh Familie.ipa
 
       - name: IPA zum Download bereitstellen
@@ -43,7 +80,7 @@ jobs:
         with:
           name: Familie-ipa
           path: Familie.ipa
-          retention-days: 30
+          retention-days: 90
 
       - name: Build-Log bei Fehler
         if: failure()

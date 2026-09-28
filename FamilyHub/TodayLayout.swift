@@ -3,14 +3,16 @@ import SwiftUI
 // MARK: - Heute: Reihenfolge und sichtbare Karten (pro Handy gespeichert)
 
 enum TodayCardKind: String, CaseIterable, Identifiable {
-    case weather, mailbox, doorbell, parentTodos, music, vacuum, people, school, freizeit, meal, waste, upcoming
+    case safety, weather, mailbox, doorbell, laundry, parentTodos, music, vacuum, people, school, freizeit, meal, waste, upcoming
     var id: String { rawValue }
 
     var title: String {
         switch self {
+        case .safety: "Rauchmelder (nur bei Problemen)"
         case .weather: "Wetter"
         case .mailbox: "Briefkasten"
         case .doorbell: "Klingel (nur nach dem Klingeln)"
+        case .laundry: "Wäsche (nur wenn sie läuft)"
         case .parentTodos: "Unsere Aufgaben"
         case .music: "Musik"
         case .vacuum: "Saugroboter"
@@ -24,9 +26,11 @@ enum TodayCardKind: String, CaseIterable, Identifiable {
     }
     var symbol: String {
         switch self {
+        case .safety: "smoke.fill"
         case .weather: "cloud.sun.fill"
         case .mailbox: "envelope.fill"
         case .doorbell: "bell.fill"
+        case .laundry: "washer.fill"
         case .parentTodos: "checklist"
         case .music: "hifispeaker.2.fill"
         case .vacuum: "fan.fill"
@@ -40,9 +44,11 @@ enum TodayCardKind: String, CaseIterable, Identifiable {
     }
     var color: Color {
         switch self {
+        case .safety: .red
         case .weather: .blue
         case .mailbox: .brown
         case .doorbell: .yellow
+        case .laundry: .teal
         case .parentTodos: .orange
         case .music: .pink
         case .vacuum: .mint
@@ -60,7 +66,9 @@ enum TodayCardKind: String, CaseIterable, Identifiable {
         var out = raw.split(separator: ",").compactMap { TodayCardKind(rawValue: String($0)) }
         var seen = Set<TodayCardKind>()
         out = out.filter { seen.insert($0).inserted }
-        out += allCases.filter { !seen.contains($0) }
+        // Neue Karten hinten anhängen – Warnkarten (Rauchmelder) aber immer ganz nach oben
+        let missing = allCases.filter { !seen.contains($0) }
+        out = missing.filter { $0 == .safety } + out + missing.filter { $0 != .safety }
         return out
     }
 }
@@ -73,6 +81,8 @@ extension AppStore {
         switch k {
         case .parentTodos, .vacuum: return parent
         case .doorbell: return allows(.haustuer)
+        case .laundry: return allows(.waesche)
+        case .safety: return allows(.rauchmelder)
         case .music: return allows(.musik)
         case .school, .freizeit: return allows(.stundenplan)
         case .meal: return allows(.essensplan)

@@ -134,6 +134,15 @@ extension AppStore {
         }
     }
 
+    /// Lampe mit beliebigen Werten einschalten (Farbe, Weißton …)
+    func setLight(_ c: AppControl, _ data: [String: Any]) async {
+        await control(c) {
+            var d = data
+            d["entity_id"] = c.entity
+            try await client.call("light", "turn_on", d)
+        }
+    }
+
     func setBrightness(_ c: AppControl, percent: Int) async {
         await control(c) {
             if percent <= 0 {

@@ -95,6 +95,7 @@ struct PoolView: View {
             VStack(spacing: 16) {
                 ErrorBanner()
                 waterCard
+                if isParent { fillCard }
                 chartCard
                 pumpCard
                 heatCard
@@ -206,6 +207,55 @@ struct PoolView: View {
     }
 
     // MARK: Pumpe
+
+    // MARK: Wasser nachfüllen (OpenSprinkler-Zone „Wassersteckdose Pool“)
+
+    private var fillCard: some View {
+        let zone = IrrigationConfig.zones.first { $0.key == "wassersteckdose_pool" }!
+        let running = store.zoneIsRunning(zone) || store.zoneIsWaiting(zone)
+        let end = store.zoneEnd(zone)
+        return Card(title: "Wasser nachfüllen", symbol: "spigot.fill") {
+            VStack(alignment: .leading, spacing: 12) {
+                if running {
+                    HStack(spacing: 12) {
+                        Image(systemName: "drop.fill")
+                            .font(.title2).foregroundStyle(.white)
+                            .frame(width: 44, height: 44)
+                            .background(Color.blue.gradient, in: RoundedRectangle(cornerRadius: 12))
+                            .symbolEffect(.pulse, isActive: true)
+                        VStack(alignment: .leading, spacing: 2) {
+                            Text("Wasser läuft in den Pool").font(.headline)
+                            if let end {
+                                Text("noch \(end, style: .timer)").font(.subheadline.monospacedDigit()).foregroundStyle(.blue)
+                            }
+                        }
+                        Spacer()
+                    }
+                    Button(role: .destructive) { Task { await store.stopZone(zone) } } label: {
+                        Label("Wasser stoppen", systemImage: "stop.fill").frame(maxWidth: .infinity)
+                    }
+                    .buttonStyle(.borderedProminent)
+                    .tint(.red)
+                } else {
+                    Text("Frischwasser über die Bewässerung einlassen – stoppt automatisch.")
+                        .font(.caption).foregroundStyle(.secondary)
+                    HStack(spacing: 8) {
+                        ForEach([5, 10, 15, 20], id: \.self) { m in
+                            Button { Task { await store.startZone(zone, minutes: m) } } label: {
+                                VStack(spacing: 2) {
+                                    Text("\(m)").font(.title3.weight(.bold))
+                                    Text("Min").font(.caption2)
+                                }
+                                .frame(maxWidth: .infinity, minHeight: 50)
+                            }
+                            .buttonStyle(.bordered)
+                            .tint(.blue)
+                        }
+                    }
+                }
+            }
+        }
+    }
 
     private var pumpCard: some View {
         let mode = store.states[PoolConfig.pumpMode]?.state ?? "off"
