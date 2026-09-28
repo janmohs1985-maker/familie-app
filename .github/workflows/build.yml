@@ -28,6 +28,8 @@ jobs:
             CODE_SIGNING_ALLOWED=NO \
             CODE_SIGNING_REQUIRED=NO \
             CODE_SIGN_IDENTITY="" \
+            MARKETING_VERSION="1.0.${{ github.run_number }}" \
+            CURRENT_PROJECT_VERSION="${{ github.run_number }}" \
             build > build.log 2>&1 || true
           grep -E "error:|BUILD (SUCCEEDED|FAILED)" build.log | sort -u | head -60 || true
           # Nur weiter, wenn das Programm selbst gebaut wurde (nicht nur Bilder)
@@ -45,7 +47,7 @@ jobs:
         with:
           name: Familie-ipa
           path: Familie.ipa
-          retention-days: 30
+          retention-days: 90
 
       - name: Build-Log bei Fehler
         if: failure()
