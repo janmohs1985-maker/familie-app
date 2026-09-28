@@ -4,10 +4,10 @@ import SwiftUI
 //
 // Gespeichert in Home Assistant (input_text.familie_kinder_freigaben), damit es auf allen Handys gilt.
 // Format: gesperrte Bereiche pro Kind, z. B. "emma:pool,musik;leoni:pool" – "-" = nichts gesperrt.
-// Standard: alles erlaubt.
+// Standard: alles erlaubt – außer „Räume“, das muss eigens freigegeben werden.
 
 enum KidFeature: String, CaseIterable, Identifiable {
-    case kalender, listen, stundenplan, schulmappe, essensplan, musik, haustuer, strom, heizung, beschattung, rauchmelder, internet, waesche, pool, bewaesserung, saugroboter
+    case kalender, listen, stundenplan, schulmappe, essensplan, musik, haustuer, strom, heizung, beschattung, rauchmelder, internet, waesche, pool, bewaesserung, saugroboter, raeume
     var id: String { rawValue }
 
     var title: String {
@@ -28,8 +28,13 @@ enum KidFeature: String, CaseIterable, Identifiable {
         case .bewaesserung: "Bewässerung (nur ansehen)"
         case .musik: "Musik / Spotify"
         case .haustuer: "Haustür / Klingel"
+        case .raeume: "Räume (alle Geräte schalten)"
         }
     }
+    /// Standardmäßig gesperrt – muss für ein Kind ausdrücklich erlaubt werden.
+    /// Gespeichert wird dann der Eintrag „raeume“ als *Freigabe* statt als Sperre.
+    var optIn: Bool { self == .raeume }
+
     var symbol: String {
         switch self {
         case .kalender: "calendar"
@@ -48,6 +53,7 @@ enum KidFeature: String, CaseIterable, Identifiable {
         case .bewaesserung: "sprinkler.and.droplets.fill"
         case .musik: "hifispeaker.2.fill"
         case .haustuer: "bell.fill"
+        case .raeume: "square.split.2x2.fill"
         }
     }
 }
@@ -70,18 +76,20 @@ extension AppStore {
 
     /// Darf die aktuelle Ansicht diesen Bereich sehen? Eltern immer.
     func allows(_ f: KidFeature) -> Bool {
-        guard let kid = activeKid else { return true }
-        return !(kidBlocked[kid]?.contains(f.rawValue) ?? false)
+        guard let kid = activeKid else { return f.optIn ? isParent : true }
+        return kidAllows(kid, f)
     }
 
     func kidAllows(_ kid: String, _ f: KidFeature) -> Bool {
-        !(kidBlocked[kid]?.contains(f.rawValue) ?? false)
+        let listed = kidBlocked[kid]?.contains(f.rawValue) ?? false
+        return f.optIn ? listed : !listed
     }
 
     func setKidFeature(_ kid: String, _ f: KidFeature, allowed: Bool) async {
         var map = kidBlocked
         var set = map[kid] ?? []
-        if allowed { set.remove(f.rawValue) } else { set.insert(f.rawValue) }
+        let listed = f.optIn ? allowed : !allowed
+        if listed { set.insert(f.rawValue) } else { set.remove(f.rawValue) }
         map[kid] = set
         let value = map.keys.sorted()
             .compactMap { k in map[k].flatMap { $0.isEmpty ? nil : "\(k):\($0.sorted().joined(separator: ","))" } }

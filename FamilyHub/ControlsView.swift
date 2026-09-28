@@ -51,11 +51,63 @@ struct ControlsView: View {
     private let columns = [GridItem(.flexible(), spacing: 12), GridItem(.flexible(), spacing: 12)]
     private let controlColumns = Array(repeating: GridItem(.flexible(), spacing: 10), count: 3)
     @State private var showReorder = false
+    @AppStorage("zuhauseMode") private var mode = "uebersicht"
 
     var body: some View {
         NavigationStack {
             ScrollView {
                 ErrorBanner().padding(.horizontal)
+                if store.allows(.raeume) {
+                    Picker("Ansicht", selection: $mode) {
+                        Text("Übersicht").tag("uebersicht")
+                        Text("Räume").tag("raeume")
+                    }
+                    .pickerStyle(.segmented)
+                    .padding(.horizontal)
+                    .padding(.top, 4)
+                }
+                if mode == "raeume" && store.allows(.raeume) {
+                    RoomsOverview().padding(.top, 8)
+                } else {
+                    overview
+                }
+                Spacer(minLength: 24)
+            }
+            .background(Color(.systemGroupedBackground))
+            .refreshable { await store.refreshStates(); await store.refreshControls() }
+            .navigationTitle("Zuhause")
+            .toolbar {
+                ToolbarItem(placement: .topBarLeading) {
+                    Button { showSettings = true } label: { Image(systemName: "gearshape") }
+                }
+                if store.isParent && store.activeKid == nil {
+                    ToolbarItem(placement: .primaryAction) {
+                        NavigationLink("Schalter") { ControlsManageView() }
+                    }
+                }
+            }
+            .sheet(isPresented: $showSettings) { SettingsView() }
+            .fullScreenCover(isPresented: $showMap) { FamilyMapView() }
+            .navigationDestination(item: $linkTarget) { t in DeepLinkDestination(target: t) }
+            .onChange(of: store.route) { _, r in takeRoute(r) }
+            .onAppear { takeRoute(store.route) }
+            .task { await store.refreshControls() }
+            .confirmationDialog(pending.map { "\($0.name) wirklich schalten?" } ?? "",
+                                isPresented: Binding(get: { pending != nil }, set: { if !$0 { pending = nil } }),
+                                titleVisibility: .visible) {
+                if let c = pending {
+                    Button(actionTitle(c)) { Task { await store.toggle(c) } }
+                    Button("Abbrechen", role: .cancel) { }
+                }
+            }
+            .sheet(item: $coverSheet) { c in CoverSheet(control: c).presentationDetents([.medium]) }
+            .sheet(item: $lightSheet) { c in LightSheet(control: c).presentationDetents([.medium, .large]) }
+            .sheet(isPresented: $showReorder) { ControlsReorderView() }
+        }
+    }
+
+    @ViewBuilder
+    private var overview: some View {
                 if store.visibleControls.isEmpty {
                     ContentUnavailableView("Keine Schalter", systemImage: "switch.2",
                         description: Text(store.isParent && store.activeKid == nil
@@ -189,39 +241,6 @@ struct ControlsView: View {
                     .padding(.horizontal)
                     .buttonStyle(.plain)
                 }
-                Spacer(minLength: 24)
-            }
-            .background(Color(.systemGroupedBackground))
-            .refreshable { await store.refreshStates(); await store.refreshControls() }
-            .navigationTitle("Zuhause")
-            .toolbar {
-                ToolbarItem(placement: .topBarLeading) {
-                    Button { showSettings = true } label: { Image(systemName: "gearshape") }
-                }
-                if store.isParent && store.activeKid == nil {
-                    ToolbarItem(placement: .primaryAction) {
-                        NavigationLink("Schalter") { ControlsManageView() }
-                    }
-                }
-            }
-            .sheet(isPresented: $showSettings) { SettingsView() }
-            .fullScreenCover(isPresented: $showMap) { FamilyMapView() }
-            .navigationDestination(item: $linkTarget) { t in DeepLinkDestination(target: t) }
-            .onChange(of: store.route) { _, r in takeRoute(r) }
-            .onAppear { takeRoute(store.route) }
-            .task { await store.refreshControls() }
-            .confirmationDialog(pending.map { "\($0.name) wirklich schalten?" } ?? "",
-                                isPresented: Binding(get: { pending != nil }, set: { if !$0 { pending = nil } }),
-                                titleVisibility: .visible) {
-                if let c = pending {
-                    Button(actionTitle(c)) { Task { await store.toggle(c) } }
-                    Button("Abbrechen", role: .cancel) { }
-                }
-            }
-            .sheet(item: $coverSheet) { c in CoverSheet(control: c).presentationDetents([.medium]) }
-            .sheet(item: $lightSheet) { c in LightSheet(control: c).presentationDetents([.medium, .large]) }
-            .sheet(isPresented: $showReorder) { ControlsReorderView() }
-        }
     }
 
     private func takeRoute(_ r: String?) {
