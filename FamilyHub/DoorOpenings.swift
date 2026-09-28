@@ -57,15 +57,41 @@ struct DoorOpeningsSection: View {
         Section {
             if let end = store.states["sensor.\(kid)_schulende_heute_full"]?.state, end.contains(":"),
                store.states["automation.familie_\(kid)_nach_der_schule_nicht_zu_hause"] != nil {
-                let cameHome = today.contains { $0.time >= (HADate.serviceDateTime.date(from: store.states["input_datetime.\(kid)_schule_zuletzt"]?.state ?? "") ?? .distantFuture) }
+                let nineAM = Calendar.current.date(bySettingHour: 9, minute: 0, second: 0, of: Date()) ?? Date()
+                let cameHome = today.contains { $0.time >= nineAM }
+                let noSchoolID = "input_boolean.\(kid)_heute_keine_schule"
+                let noSchool = store.states[noSchoolID]?.state == "on"
+                let holiday = store.states["calendar.schulferien_bayern"]?.state == "on" || store.states["calendar.deutschland_by"]?.state == "on"
+                let weekend = Calendar.current.isDateInWeekend(Date())
                 HStack(spacing: 10) {
-                    Image(systemName: cameHome ? "checkmark.circle.fill" : "clock.badge.exclamationmark")
-                        .foregroundStyle(cameHome ? Color.green : Color.orange)
+                    Image(systemName: cameHome ? "checkmark.circle.fill" : (noSchool || holiday || weekend ? "moon.zzz.fill" : "clock.badge.exclamationmark"))
+                        .foregroundStyle(cameHome ? Color.green : (noSchool || holiday || weekend ? Color.secondary : Color.orange))
                     VStack(alignment: .leading, spacing: 1) {
-                        Text("Schule heute bis \(end) Uhr").font(.subheadline.weight(.semibold))
-                        Text(cameHome ? "Nach der Schule zu Hause angekommen"
-                                      : "Ihr bekommt eine Meldung, wenn sie 1 Stunde danach noch nicht da ist")
-                            .font(.caption).foregroundStyle(.secondary)
+                        if holiday || weekend {
+                            Text(holiday ? (store.states["calendar.schulferien_bayern"]?.attr("message")?.string ?? "Feiertag") : "Wochenende")
+                                .font(.subheadline.weight(.semibold))
+                            Text("Heute keine Meldung").font(.caption).foregroundStyle(.secondary)
+                        } else {
+                            Text("Schule heute bis \(end) Uhr").font(.subheadline.weight(.semibold))
+                            Text(cameHome ? "Nach der Schule zu Hause angekommen"
+                                 : (noSchool ? "Heute keine Schule – keine Meldung"
+                                             : "Ihr bekommt eine Meldung, wenn sie 1 Stunde danach noch nicht da ist"))
+                                .font(.caption).foregroundStyle(.secondary)
+                        }
+                    }
+                }
+                if store.isParent && store.activeKid == nil && !holiday && !weekend && store.states[noSchoolID] != nil {
+                    Toggle(isOn: Binding(get: { noSchool }, set: { v in
+                        Task {
+                            _ = try? await store.client.call("input_boolean", v ? "turn_on" : "turn_off", ["entity_id": noSchoolID])
+                            try? await Task.sleep(for: .milliseconds(500))
+                            await store.refreshStates()
+                        }
+                    })) {
+                        VStack(alignment: .leading, spacing: 1) {
+                            Text("Heute keine Schule").font(.subheadline)
+                            Text("z. B. krank – gilt bis Mitternacht").font(.caption2).foregroundStyle(.secondary)
+                        }
                     }
                 }
             }
