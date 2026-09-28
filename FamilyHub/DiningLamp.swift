@@ -99,12 +99,18 @@ struct DiningLampCard: View {
         return nil
     }
 
+    private var statusLine: String {
+        if let movingText { return movingText }
+        if offline { return "Steuerung offline" }
+        return on ? "An" : "Aus"
+    }
+
     var body: some View {
         VStack(alignment: .leading, spacing: 14) {
             HStack {
                 VStack(alignment: .leading, spacing: 2) {
                     Text("Esstischlampe").font(.headline)
-                    Text(movingText ?? (offline ? "Steuerung offline" : (on ? "An" : "Aus")))
+                    Text(statusLine)
                         .font(.caption).foregroundStyle(movingText != nil ? Color.orange : .secondary)
                 }
                 Spacer()
@@ -208,6 +214,36 @@ struct DiningLampCard: View {
     }
 }
 
+/// Maße der Zeichnung – vorab berechnet, damit der Compiler es leicht hat
+struct LampGeometry {
+    let w: CGFloat
+    let h: CGFloat
+    let tableY: CGFloat
+    let topY: CGFloat
+    let lampY: CGFloat
+    let center: CGFloat
+    let lampW: CGFloat
+    let tableW: CGFloat
+    var midX: CGFloat { w / 2 }
+
+    init(size: CGSize, height: Double, width: Double) {
+        w = size.width
+        h = size.height
+        topY = 10
+        tableY = size.height - 34
+        let lowest: CGFloat = tableY - 70
+        let highest: CGFloat = topY + 36
+        let hFrac = CGFloat(min(max(height, 0), 100) / 100)
+        lampY = lowest - (lowest - highest) * hFrac
+        center = 110
+        let room: CGFloat = max(0, (size.width - 110 - 40) / 2)
+        let wFrac = CGFloat(min(max(width, 0), 100) / 100)
+        let extra: CGFloat = wFrac * min(90, room)
+        lampW = 110 + extra * 2
+        tableW = min(size.width * 0.8, 300)
+    }
+}
+
 /// Gezeichnete Lampe über dem Tisch – bewegt sich mit Höhe und Auszug
 struct DiningLampDrawing: View {
     let height: Double      // 0–100, 100 = ganz oben
@@ -218,81 +254,96 @@ struct DiningLampDrawing: View {
 
     @State private var blink = false
 
+    private var glow: Color {
+        warm ? Color(red: 1.0, green: 0.78, blue: 0.42) : Color(red: 0.82, green: 0.9, blue: 1.0)
+    }
+
     var body: some View {
         GeometryReader { g in
-            let w = g.size.width
-            let h = g.size.height
-            let tableY = h - 34
-            let topY: CGFloat = 10
-            let lowest = tableY - 70            // tiefste Position
-            let highest = topY + 36             // höchste Position
-            let lampY = lowest - (lowest - highest) * CGFloat(min(max(height, 0), 100) / 100)
-            let center: CGFloat = 110
-            let extra = CGFloat(min(max(width, 0), 100) / 100) * min(90, (w - center - 40) / 2)
-            let lampW = center + extra * 2
-            let glow = warm ? Color(red: 1.0, green: 0.78, blue: 0.42) : Color(red: 0.82, green: 0.9, blue: 1.0)
-
-            ZStack {
-                // Decke
-                Capsule().fill(Color.secondary.opacity(0.35))
-                    .frame(width: w * 0.7, height: 4)
-                    .position(x: w / 2, y: topY)
-
-                // Lichtkegel
-                if on {
-                    Path { p in
-                        p.move(to: CGPoint(x: w / 2 - lampW / 2 + 6, y: lampY + 6))
-                        p.addLine(to: CGPoint(x: w / 2 + lampW / 2 - 6, y: lampY + 6))
-                        p.addLine(to: CGPoint(x: w / 2 + lampW / 2 + 40, y: tableY))
-                        p.addLine(to: CGPoint(x: w / 2 - lampW / 2 - 40, y: tableY))
-                        p.closeSubpath()
-                    }
-                    .fill(LinearGradient(colors: [glow.opacity(0.55), glow.opacity(0.05)], startPoint: .top, endPoint: .bottom))
-                    .blur(radius: 6)
-                }
-
-                // Seile
-                ForEach([-1.0, 1.0], id: \.self) { side in
-                    Path { p in
-                        p.move(to: CGPoint(x: w / 2 + side * 40, y: topY))
-                        p.addLine(to: CGPoint(x: w / 2 + side * 40, y: lampY - 4))
-                    }
-                    .stroke(Color.secondary.opacity(0.6), lineWidth: 1.2)
-                }
-
-                // Lampe: Mittelteil + zwei ausfahrbare Seitenteile
-                RoundedRectangle(cornerRadius: 4)
-                    .fill(Color.primary.opacity(0.75))
-                    .frame(width: lampW, height: 7)
-                    .position(x: w / 2, y: lampY)
-                RoundedRectangle(cornerRadius: 3)
-                    .fill(Color.primary.opacity(0.9))
-                    .frame(width: center, height: 11)
-                    .position(x: w / 2, y: lampY)
-                Capsule()
-                    .fill(on ? AnyShapeStyle(glow) : AnyShapeStyle(Color.secondary.opacity(0.3)))
-                    .frame(width: lampW - 8, height: 3)
-                    .position(x: w / 2, y: lampY + 6)
-                    .shadow(color: on ? glow : .clear, radius: 8)
-
-                // Tisch
-                RoundedRectangle(cornerRadius: 3)
-                    .fill(Color.brown.opacity(0.7))
-                    .frame(width: min(w * 0.8, 300), height: 8)
-                    .position(x: w / 2, y: tableY)
-                ForEach([-1.0, 1.0], id: \.self) { side in
-                    Rectangle().fill(Color.brown.opacity(0.55))
-                        .frame(width: 6, height: 26)
-                        .position(x: w / 2 + side * (min(w * 0.8, 300) / 2 - 18), y: tableY + 17)
-                }
-            }
-            .animation(.easeInOut(duration: 0.8), value: height)
-            .animation(.easeInOut(duration: 0.8), value: width)
-            .animation(.easeInOut(duration: 0.4), value: on)
-            .opacity(moving && blink ? 0.85 : 1)
+            scene(LampGeometry(size: g.size, height: height, width: width))
         }
+        .animation(.easeInOut(duration: 0.8), value: height)
+        .animation(.easeInOut(duration: 0.8), value: width)
+        .animation(.easeInOut(duration: 0.4), value: on)
+        .opacity(moving && blink ? 0.85 : 1)
         .onAppear {
             withAnimation(.easeInOut(duration: 0.7).repeatForever(autoreverses: true)) { blink = true }
+        }
+    }
+
+    private func scene(_ m: LampGeometry) -> some View {
+        ZStack {
+            ceiling(m)
+            if on { cone(m) }
+            cables(m)
+            lamp(m)
+            table(m)
+        }
+    }
+
+    private func ceiling(_ m: LampGeometry) -> some View {
+        Capsule().fill(Color.secondary.opacity(0.35))
+            .frame(width: m.w * 0.7, height: 4)
+            .position(x: m.midX, y: m.topY)
+    }
+
+    private func cone(_ m: LampGeometry) -> some View {
+        let top: CGFloat = m.lampY + 6
+        let half: CGFloat = m.lampW / 2
+        let path = Path { p in
+            p.move(to: CGPoint(x: m.midX - half + 6, y: top))
+            p.addLine(to: CGPoint(x: m.midX + half - 6, y: top))
+            p.addLine(to: CGPoint(x: m.midX + half + 40, y: m.tableY))
+            p.addLine(to: CGPoint(x: m.midX - half - 40, y: m.tableY))
+            p.closeSubpath()
+        }
+        let fill = LinearGradient(colors: [glow.opacity(0.55), glow.opacity(0.05)], startPoint: .top, endPoint: .bottom)
+        return path.fill(fill).blur(radius: 6)
+    }
+
+    private func cables(_ m: LampGeometry) -> some View {
+        let path = Path { p in
+            for side: CGFloat in [-40, 40] {
+                p.move(to: CGPoint(x: m.midX + side, y: m.topY))
+                p.addLine(to: CGPoint(x: m.midX + side, y: m.lampY - 4))
+            }
+        }
+        return path.stroke(Color.secondary.opacity(0.6), lineWidth: 1.2)
+    }
+
+    private func lamp(_ m: LampGeometry) -> some View {
+        let strip: AnyShapeStyle = on ? AnyShapeStyle(glow) : AnyShapeStyle(Color.secondary.opacity(0.3))
+        return ZStack {
+            RoundedRectangle(cornerRadius: 4)
+                .fill(Color.primary.opacity(0.75))
+                .frame(width: m.lampW, height: 7)
+                .position(x: m.midX, y: m.lampY)
+            RoundedRectangle(cornerRadius: 3)
+                .fill(Color.primary.opacity(0.9))
+                .frame(width: m.center, height: 11)
+                .position(x: m.midX, y: m.lampY)
+            Capsule()
+                .fill(strip)
+                .frame(width: m.lampW - 8, height: 3)
+                .position(x: m.midX, y: m.lampY + 6)
+                .shadow(color: on ? glow : .clear, radius: 8)
+        }
+    }
+
+    private func table(_ m: LampGeometry) -> some View {
+        let legOffset: CGFloat = m.tableW / 2 - 18
+        let legY: CGFloat = m.tableY + 17
+        return ZStack {
+            RoundedRectangle(cornerRadius: 3)
+                .fill(Color.brown.opacity(0.7))
+                .frame(width: m.tableW, height: 8)
+                .position(x: m.midX, y: m.tableY)
+            Rectangle().fill(Color.brown.opacity(0.55))
+                .frame(width: 6, height: 26)
+                .position(x: m.midX - legOffset, y: legY)
+            Rectangle().fill(Color.brown.opacity(0.55))
+                .frame(width: 6, height: 26)
+                .position(x: m.midX + legOffset, y: legY)
         }
     }
 }
