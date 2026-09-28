@@ -12,19 +12,26 @@ struct RoomItem: Codable, Hashable {
     var kind: String?          // "light" (Schalter, der eine Lampe ist) | "button" (nur auslösen)
     var status: String?        // Entität, die den Zustand zeigt (z. B. Garagentor)
     var confirm: Bool?
+    var icon: String?          // eigenes Symbol
 
     var domain: String { String(e.split(separator: ".").first ?? "") }
-    var isLight: Bool { domain == "light" || kind == "light" }
+    var isLight: Bool { domain == "light" || kind == "light" || kind == "esstisch" }
+    var isSpecial: Bool { kind == "esstisch" }
     var isCover: Bool { domain == "cover" }
     var isPlug: Bool { !isLight && kind == nil && (domain == "switch" || domain == "input_boolean") }
 
     var control: AppControl {
         if domain == "script", let status {
             return AppControl(uid: "room:" + e, name: n, entity: status, script: e, kids: [],
-                              confirm: confirm ?? false, from: nil, to: nil, sort: 0)
+                              confirm: confirm ?? false, from: nil, to: nil, sort: 0, icon: icon ?? defaultIcon)
         }
         return AppControl(uid: "room:" + e, name: n, entity: e, script: nil, kids: [],
-                          confirm: confirm ?? false, from: nil, to: nil, sort: 0)
+                          confirm: confirm ?? false, from: nil, to: nil, sort: 0, icon: icon ?? defaultIcon)
+    }
+
+    /// Schalter, die als Lampe markiert sind, bekommen automatisch eine Glühbirne
+    private var defaultIcon: String? {
+        kind == "light" && domain != "light" ? "lightbulb" : nil
     }
 }
 
@@ -114,6 +121,13 @@ final class RoomsModel {
 
 @MainActor
 extension AppStore {
+    /// Nur Jan darf Aufbau und Anordnung für alle ändern
+    static let adminPerson = "person.mohs"
+    var isAdmin: Bool {
+        guard isParent, activeKid == nil, let uid = currentUserID, !uid.isEmpty else { return false }
+        return states[Self.adminPerson]?.attr("user_id")?.string == uid
+    }
+
     func isItemOn(_ i: RoomItem) -> Bool { isOn(i.control) }
 
     func roomLightsOn(_ r: Room) -> Int { r.list.filter { $0.isLight && isItemOn($0) }.count }
@@ -185,6 +199,7 @@ enum RoomText {
         case "pool": return "figure.pool.swim"
         case "strom": return "ev.charger.fill"
         case "waesche": return "washer.fill"
+        case "haushalt": return "oven.fill"
         case "bewaesserung": return "sprinkler.and.droplets.fill"
         default: break
         }
@@ -208,10 +223,11 @@ struct RoomsOverview: View {
     @Environment(AppStore.self) private var store
     @State private var model = RoomsModel.shared
     @State private var editFloor: Floor?
+    @State private var addDevice = false
     @AppStorage("roomsFloor") private var floorID = "eg"
 
     private var floors: [Floor] { model.floors }
-    private var canEdit: Bool { store.isParent && store.activeKid == nil }
+    private var canEdit: Bool { store.isAdmin }
 
     private var floor: Floor? { floors.first { $0.id == floorID } ?? floors.first }
     private let columns = [GridItem(.flexible(), spacing: 10), GridItem(.flexible(), spacing: 10)]
@@ -248,9 +264,17 @@ struct RoomsOverview: View {
                     }
                     .padding(.horizontal)
                     if canEdit {
-                        Button { editFloor = floor } label: {
-                            Label("Räume von \(floor.name) bearbeiten", systemImage: "square.and.pencil")
-                                .font(.footnote)
+                        HStack(spacing: 10) {
+                            Button { addDevice = true } label: {
+                                Label("Gerät hinzufügen", systemImage: "plus.circle.fill")
+                                    .font(.footnote.weight(.semibold))
+                            }
+                            .buttonStyle(.bordered).buttonBorderShape(.capsule)
+                            Button { editFloor = floor } label: {
+                                Label("Räume bearbeiten", systemImage: "square.and.pencil")
+                                    .font(.footnote.weight(.semibold))
+                            }
+                            .buttonStyle(.bordered).buttonBorderShape(.capsule)
                         }
                         .frame(maxWidth: .infinity)
                         .padding(.top, 4)
@@ -260,6 +284,7 @@ struct RoomsOverview: View {
         }
         .task { await model.load(store) }
         .sheet(item: $editFloor) { f in FloorEditView(floorID: f.id) }
+        .sheet(isPresented: $addDevice) { AddDeviceView(startFloor: floorID) }
     }
 }
 
@@ -326,6 +351,7 @@ struct RoomCard: View {
             case "pool": return "Wasser, Pumpe, Wärmepumpe"
             case "strom": return "Laden & Strom"
             case "waesche": return "Waschmaschine & Trockner"
+            case "haushalt": return "Backofen, Spüler, Dampfgarer"
             case "bewaesserung": return "OpenSprinkler"
             default: return "Öffnen"
             }
@@ -388,7 +414,8 @@ struct RoomView: View {
 
     private let columns = Array(repeating: GridItem(.flexible(), spacing: 10), count: 3)
 
-    private var lights: [RoomItem] { room.list.filter(\.isLight) }
+    private var lights: [RoomItem] { room.list.filter { $0.isLight && !$0.isSpecial } }
+    private var hasDiningLamp: Bool { room.list.contains { $0.kind == "esstisch" } }
     private var plugs: [RoomItem] { room.list.filter(\.isPlug) }
     private var covers: [RoomItem] { room.list.filter(\.isCover) }
     private var others: [RoomItem] { room.list.filter { !$0.isLight && !$0.isPlug && !$0.isCover } }
@@ -399,6 +426,9 @@ struct RoomView: View {
                 ErrorBanner()
                 if let c = room.climate, let s = store.states[c] {
                     climateCard(s)
+                }
+                if hasDiningLamp {
+                    DiningLampCard().padding(.top, 4)
                 }
                 section("Licht", lights)
                 section("Steckdosen", plugs)
@@ -411,10 +441,10 @@ struct RoomView: View {
         .background(Color(.systemGroupedBackground))
         .navigationTitle(room.name)
         .toolbar {
-            if lights.contains(where: { store.isItemOn($0) }) {
-                Button("Alles aus") { Task { await store.lightsOff(lights) } }
+            if room.list.contains(where: { $0.isLight && store.isItemOn($0) }) {
+                Button("Alles aus") { Task { await store.lightsOff(room.list) } }
             }
-            if store.isParent && store.activeKid == nil {
+            if store.isAdmin {
                 Button("Bearbeiten") { editing = true }
             }
         }
@@ -471,13 +501,14 @@ struct RoomView: View {
             if c.domain == "cover" {
                 Button { coverSheet = c } label: { Label("Position", systemImage: "slider.horizontal.3") }
             }
-            if store.isParent && store.activeKid == nil {
+            if store.isAdmin {
                 if store.isFavorite(i) {
                     Label("Schon in den Favoriten", systemImage: "star.fill")
                 } else {
                     Button {
                         Task {
-                            await store.addControl(entity: c.entity, name: room.name + " " + i.n)
+                            await store.addControl(entity: c.entity, name: room.name + " " + i.n,
+                                                   script: c.script, icon: i.icon, confirm: c.confirm)
                             show("Zu Favoriten hinzugefügt")
                         }
                     } label: { Label("Zu Favoriten", systemImage: "star") }

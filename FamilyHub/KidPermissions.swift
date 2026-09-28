@@ -22,7 +22,7 @@ enum KidFeature: String, CaseIterable, Identifiable {
         case .internet: "Internet (nur ansehen)"
         case .beschattung: "Beschattung (nur ansehen)"
         case .rauchmelder: "Rauchmelder (nur ansehen)"
-        case .waesche: "Wäsche"
+        case .waesche: "Haushaltsgeräte (Wäsche & Küche)"
         case .saugroboter: "Saugroboter"
         case .pool: "Pool"
         case .bewaesserung: "Bewässerung (nur ansehen)"

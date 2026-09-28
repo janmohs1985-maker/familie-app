@@ -18,6 +18,7 @@ struct AppControl: Identifiable, Hashable {
     var from: String?          // "07:00"
     var to: String?            // "20:00"
     var sort: Int
+    var icon: String? = nil    // eigenes Symbol (SF Symbol), sonst automatisch
 
     var id: String { uid }
     var domain: String { String(entity.split(separator: ".").first ?? "") }
@@ -28,6 +29,7 @@ struct AppControl: Identifiable, Hashable {
         if let script { d["skript"] = script }
         if confirm { d["fragen"] = true }
         if let from, let to { d["von"] = from; d["bis"] = to }
+        if let icon { d["icon"] = icon }
         return ChoreText.jsonString(d)
     }
 }
@@ -48,7 +50,7 @@ extension AppStore {
                                   kids: cfg["kinder"]?.array?.compactMap(\.string) ?? [],
                                   confirm: cfg["fragen"]?.string == "true",
                                   from: cfg["von"]?.string, to: cfg["bis"]?.string,
-                                  sort: cfg["sort"]?.int ?? 999)
+                                  sort: cfg["sort"]?.int ?? 999, icon: cfg["icon"]?.string)
             }.sorted { ($0.sort, $0.name) < ($1.sort, $1.name) }
         } catch { report(error) }
     }
@@ -160,9 +162,9 @@ extension AppStore {
 
     // MARK: Bearbeiten (Eltern)
 
-    func addControl(entity: String, name: String) async {
-        let c = AppControl(uid: "", name: name, entity: entity, script: nil, kids: [], confirm: false,
-                           from: nil, to: nil, sort: (appControls.map(\.sort).max() ?? -1) + 1)
+    func addControl(entity: String, name: String, script: String? = nil, icon: String? = nil, confirm: Bool = false) async {
+        let c = AppControl(uid: "", name: name, entity: entity, script: script, kids: [], confirm: confirm,
+                           from: nil, to: nil, sort: (appControls.map(\.sort).max() ?? -1) + 1, icon: icon)
         do {
             try await client.call("todo", "add_item", ["entity_id": FamilyConfig.appControls, "item": name, "description": c.json])
         } catch { report(error) }

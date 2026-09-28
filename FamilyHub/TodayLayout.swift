@@ -1,9 +1,12 @@
 import SwiftUI
 
-// MARK: - Heute: Reihenfolge und sichtbare Karten (pro Handy gespeichert)
+// MARK: - Heute: Reihenfolge und sichtbare Karten
+//
+// Für alle gleich: gespeichert in input_text.familie_heute_layout als "reihenfolge|ausgeblendet"
+// (z. B. "weather,people,meal|music,vacuum"), "-" = Standard. Nur Jan kann es ändern.
 
 enum TodayCardKind: String, CaseIterable, Identifiable {
-    case safety, weather, mailbox, doorbell, laundry, parentTodos, music, vacuum, people, school, freizeit, meal, waste, upcoming
+    case safety, weather, mailbox, doorbell, laundry, kitchen, parentTodos, music, vacuum, people, school, freizeit, meal, waste, upcoming
     var id: String { rawValue }
 
     var title: String {
@@ -13,6 +16,7 @@ enum TodayCardKind: String, CaseIterable, Identifiable {
         case .mailbox: "Briefkasten"
         case .doorbell: "Klingel (nur nach dem Klingeln)"
         case .laundry: "Wäsche (nur wenn sie läuft)"
+        case .kitchen: "Küchengeräte (nur wenn sie laufen)"
         case .parentTodos: "Unsere Aufgaben"
         case .music: "Musik"
         case .vacuum: "Saugroboter"
@@ -31,6 +35,7 @@ enum TodayCardKind: String, CaseIterable, Identifiable {
         case .mailbox: "envelope.fill"
         case .doorbell: "bell.fill"
         case .laundry: "washer.fill"
+        case .kitchen: "oven.fill"
         case .parentTodos: "checklist"
         case .music: "hifispeaker.2.fill"
         case .vacuum: "fan.fill"
@@ -49,6 +54,7 @@ enum TodayCardKind: String, CaseIterable, Identifiable {
         case .mailbox: .brown
         case .doorbell: .yellow
         case .laundry: .teal
+        case .kitchen: .orange
         case .parentTodos: .orange
         case .music: .pink
         case .vacuum: .mint
@@ -75,13 +81,40 @@ enum TodayCardKind: String, CaseIterable, Identifiable {
 
 @MainActor
 extension AppStore {
+    static let todayLayoutEntity = "input_text.familie_heute_layout"
+
+    private var todayLayoutParts: [String] {
+        let raw = states[Self.todayLayoutEntity]?.state ?? ""
+        guard raw.contains(",") || raw.contains("|") else { return ["", ""] }
+        let parts = raw.split(separator: "|", maxSplits: 1, omittingEmptySubsequences: false).map(String.init)
+        return [parts.first ?? "", parts.count > 1 ? parts[1] : ""]
+    }
+    var todayOrderRaw: String { todayLayoutParts[0] }
+    var todayHidden: Set<String> { Set(todayLayoutParts[1].split(separator: ",").map(String.init)) }
+
+    func saveTodayLayout(order: [TodayCardKind], hidden: Set<String>) async {
+        let value = order.map(\.rawValue).joined(separator: ",") + "|" + hidden.sorted().joined(separator: ",")
+        do {
+            _ = try await client.call("input_text", "set_value", ["entity_id": Self.todayLayoutEntity, "value": value])
+            try? await Task.sleep(for: .milliseconds(400))
+            await refreshStates()
+        } catch { report(error) }
+    }
+
+    func resetTodayLayout() async {
+        do {
+            _ = try await client.call("input_text", "set_value", ["entity_id": Self.todayLayoutEntity, "value": "-"])
+            await refreshStates()
+        } catch { report(error) }
+    }
+
     /// Karten, die für diese Person überhaupt in Frage kommen
     func todayCardAvailable(_ k: TodayCardKind) -> Bool {
         let parent = isParent && activeKid == nil
         switch k {
         case .parentTodos, .vacuum: return parent
         case .doorbell: return allows(.haustuer)
-        case .laundry: return allows(.waesche)
+        case .laundry, .kitchen: return allows(.waesche)
         case .safety: return allows(.rauchmelder)
         case .music: return allows(.musik)
         case .school, .freizeit: return allows(.stundenplan)
@@ -94,11 +127,8 @@ extension AppStore {
 struct TodayArrangeView: View {
     @Environment(AppStore.self) private var store
     @Environment(\.dismiss) private var dismiss
-    @AppStorage("todayOrder") private var orderRaw = ""
-    @AppStorage("todayHidden") private var hiddenRaw = ""
     @State private var order: [TodayCardKind] = []
-
-    private var hidden: Set<String> { Set(hiddenRaw.split(separator: ",").map(String.init)) }
+    @State private var hidden: Set<String> = []
 
     var body: some View {
         NavigationStack {
@@ -124,12 +154,13 @@ struct TodayArrangeView: View {
                     }
                     .onMove(perform: move)
                 } footer: {
-                    Text("Mit ≡ rechts ziehen zum Sortieren, mit dem Auge ein- oder ausblenden. Gilt nur für dieses Handy.")
+                    Text("Mit ≡ rechts ziehen zum Sortieren, mit dem Auge ein- oder ausblenden. Gilt für alle Handys – die Kinder sehen davon nur ihre Karten.")
                 }
                 Section {
                     Button("Standard wiederherstellen", role: .destructive) {
-                        orderRaw = ""; hiddenRaw = ""
                         order = TodayCardKind.ordered("")
+                        hidden = []
+                        Task { await store.resetTodayLayout() }
                     }
                 }
             }
@@ -137,7 +168,10 @@ struct TodayArrangeView: View {
             .navigationTitle("Heute anordnen")
             .navigationBarTitleDisplayMode(.inline)
             .toolbar { Button("Fertig") { dismiss() } }
-            .onAppear { order = TodayCardKind.ordered(orderRaw) }
+            .onAppear {
+                order = TodayCardKind.ordered(store.todayOrderRaw)
+                hidden = store.todayHidden
+            }
         }
     }
 
@@ -147,12 +181,11 @@ struct TodayArrangeView: View {
         shown.move(fromOffsets: source, toOffset: destination)
         let others = order.filter { !store.todayCardAvailable($0) }
         order = shown + others
-        orderRaw = order.map(\.rawValue).joined(separator: ",")
+        Task { await store.saveTodayLayout(order: order, hidden: hidden) }
     }
 
     private func toggle(_ k: TodayCardKind) {
-        var h = hidden
-        if h.contains(k.rawValue) { h.remove(k.rawValue) } else { h.insert(k.rawValue) }
-        hiddenRaw = h.sorted().joined(separator: ",")
+        if hidden.contains(k.rawValue) { hidden.remove(k.rawValue) } else { hidden.insert(k.rawValue) }
+        Task { await store.saveTodayLayout(order: order, hidden: hidden) }
     }
 }

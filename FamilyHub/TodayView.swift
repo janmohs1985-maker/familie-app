@@ -7,9 +7,8 @@ struct TodayView: View {
     @State private var showFamilyMap = false
     @State private var showWeather = false
     @State private var showArrange = false
-    @AppStorage("todayOrder") private var orderRaw = ""
-    @AppStorage("todayHidden") private var hiddenRaw = ""
-    private var hiddenCards: Set<String> { Set(hiddenRaw.split(separator: ",").map(String.init)) }
+    private var orderRaw: String { store.todayOrderRaw }
+    private var hiddenCards: Set<String> { store.todayHidden }
 
     var body: some View {
         NavigationStack {
@@ -25,11 +24,13 @@ struct TodayView: View {
                             .font(.caption2).foregroundStyle(.tertiary)
                             .frame(maxWidth: .infinity)
                     }
-                    Button { showArrange = true } label: {
-                        Label("Heute anordnen", systemImage: "arrow.up.arrow.down")
-                            .font(.footnote)
+                    if store.isAdmin {
+                        Button { showArrange = true } label: {
+                            Label("Heute anordnen", systemImage: "arrow.up.arrow.down")
+                                .font(.footnote)
+                        }
+                        .frame(maxWidth: .infinity)
                     }
-                    .frame(maxWidth: .infinity)
                 }
                 .padding()
             }
@@ -37,7 +38,9 @@ struct TodayView: View {
             .refreshable { await store.refreshAll() }
             .navigationTitle(greeting)
             .toolbar {
-                Button { showArrange = true } label: { Image(systemName: "arrow.up.arrow.down") }
+                if store.isAdmin {
+                    Button { showArrange = true } label: { Image(systemName: "arrow.up.arrow.down") }
+                }
                 Button { showSettings = true } label: { Image(systemName: "gearshape") }
             }
             .sheet(isPresented: $showArrange) { TodayArrangeView() }
@@ -55,6 +58,7 @@ struct TodayView: View {
         case .mailbox: mailboxBanner
         case .doorbell: if store.ringRecently { DoorbellCard() }
         case .laundry: LaundryTodayCard()
+        case .kitchen: KitchenTodayCard()
         case .safety: SafetyTodayCard()
         case .parentTodos: ParentTodosTodayCard()
         case .music: MusicTodayCard()

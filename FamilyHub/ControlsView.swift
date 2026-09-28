@@ -80,7 +80,7 @@ struct ControlsView: View {
                 ToolbarItem(placement: .topBarLeading) {
                     Button { showSettings = true } label: { Image(systemName: "gearshape") }
                 }
-                if store.isParent && store.activeKid == nil {
+                if store.isAdmin {
                     ToolbarItem(placement: .primaryAction) {
                         NavigationLink("Schalter") { ControlsManageView() }
                     }
@@ -110,7 +110,7 @@ struct ControlsView: View {
     private var overview: some View {
                 if store.visibleControls.isEmpty {
                     ContentUnavailableView("Keine Schalter", systemImage: "switch.2",
-                        description: Text(store.isParent && store.activeKid == nil
+                        description: Text(store.isAdmin
                                           ? "Über „Schalter“ oben rechts kannst du Geräte hinzufügen."
                                           : "Mama oder Papa haben noch nichts für dich freigegeben."))
                         .padding(.top, 12)
@@ -118,7 +118,7 @@ struct ControlsView: View {
                 if !store.visibleControls.isEmpty {
                     HStack(alignment: .lastTextBaseline) {
                         SectionTitle("Schalten")
-                        if store.isParent && store.activeKid == nil && store.appControls.count > 1 {
+                        if store.isAdmin && store.appControls.count > 1 {
                             Button { showReorder = true } label: {
                                 Label("Anordnen", systemImage: "arrow.up.arrow.down").font(.subheadline)
                             }
@@ -170,8 +170,8 @@ struct ControlsView: View {
                             }
                         }
                         if store.allows(.waesche) {
-                            NavigationLink { LaundryView() } label: {
-                                HubTile(title: "Wäsche", symbol: "washer.fill", color: .teal)
+                            NavigationLink { AppliancesView() } label: {
+                                HubTile(title: "Haushaltsgeräte", symbol: "washer.fill", color: .teal)
                             }
                         }
                         if store.allows(.pool) {
@@ -386,6 +386,11 @@ struct ControlTile: View {
 
 enum ControlIcons {
     static func symbol(_ c: AppControl, on: Bool) -> String {
+        if let icon = c.icon, !icon.isEmpty {
+            // eigenes Symbol – eingeschaltet die gefüllte Variante, wenn es sie gibt
+            if on, !icon.hasSuffix(".fill"), UIImage(systemName: icon + ".fill") != nil { return icon + ".fill" }
+            return icon
+        }
         if c.script != nil || c.entity.contains("garagentor") { return on ? "door.garage.open" : "door.garage.closed" }
         switch c.domain {
         case "light": return on ? "lightbulb.fill" : "lightbulb"
@@ -658,6 +663,15 @@ struct ControlEditView: View {
             }
             Section {
                 Toggle("Vor dem Schalten nachfragen", isOn: $control.confirm)
+                NavigationLink {
+                    IconPickerView(selection: $control.icon, fallback: ControlIcons.symbol(
+                        AppControl(uid: "", name: "", entity: control.entity, script: control.script, kids: [], confirm: false,
+                                   from: nil, to: nil, sort: 0), on: true))
+                } label: {
+                    LabeledContent("Symbol") {
+                        Image(systemName: ControlIcons.symbol(control, on: true)).foregroundStyle(Color.accentColor)
+                    }
+                }
             }
         }
         .navigationTitle(control.name)

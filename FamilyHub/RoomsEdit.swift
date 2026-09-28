@@ -188,8 +188,17 @@ struct RoomItemEditView: View {
                     Text("Automatisch").tag("")
                     Text("Lampe").tag("light")
                     Text("Nur auslösen").tag("button")
+                    Text("Esstischlampe (Spezialansicht)").tag("esstisch")
                 }
                 Toggle("Vor dem Schalten fragen", isOn: confirm)
+                NavigationLink {
+                    IconPickerView(selection: $item.icon, fallback: ControlIcons.symbol(
+                        RoomItem(e: item.e, n: item.n, kind: item.kind, status: item.status, confirm: nil, icon: nil).control, on: true))
+                } label: {
+                    LabeledContent("Symbol") {
+                        Image(systemName: ControlIcons.symbol(item.control, on: true)).foregroundStyle(Color.accentColor)
+                    }
+                }
             } footer: {
                 Text("„Lampe“ für Schalter, an denen ein Licht hängt – dann zählt es bei „Alle aus“ mit. „Nur auslösen“ für Taster wie die Markise.")
             }
@@ -245,7 +254,7 @@ struct RoomEntityPicker: View {
         NavigationStack {
             List(candidates) { s in
                 Button {
-                    onPick(RoomItem(e: s.entity_id, n: shortName(s.name), kind: nil, status: nil, confirm: nil))
+                    onPick(RoomItem(e: s.entity_id, n: shortName(s.name), kind: nil, status: nil, confirm: nil, icon: nil))
                     dismiss()
                 } label: {
                     HStack(spacing: 12) {
