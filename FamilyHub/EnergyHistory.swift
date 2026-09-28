@@ -106,13 +106,24 @@ struct EnergyHistoryView: View {
         if mode == "tage" { return Array(days.suffix(30)) }
         let cal = Calendar.current
         let grouped = Dictionary(grouping: days) { cal.date(from: cal.dateComponents([.year, .month], from: $0.date))! }
-        return grouped.map { month, list in
-            EnergyDay(date: month, pv: list.reduce(0) { $0 + ($1.pv ?? 0) },
-                      bought: list.reduce(0) { $0 + ($1.bought ?? 0) }, sold: list.reduce(0) { $0 + ($1.sold ?? 0) })
+        var months: [EnergyDay] = []
+        for (month, list) in grouped {
+            months.append(Self.sum(list, date: month))
         }
-        .sorted { $0.date < $1.date }
-        .suffix(12)
-        .map { $0 }
+        months.sort { $0.date < $1.date }
+        return Array(months.suffix(12))
+    }
+
+    static func sum(_ list: [EnergyDay], date: Date) -> EnergyDay {
+        var pv: Double = 0
+        var bought: Double = 0
+        var sold: Double = 0
+        for d in list {
+            pv += d.pv ?? 0
+            bought += d.bought ?? 0
+            sold += d.sold ?? 0
+        }
+        return EnergyDay(date: date, pv: pv, bought: bought, sold: sold)
     }
 
     private var unit: Calendar.Component { mode == "tage" ? .day : .month }
@@ -158,6 +169,11 @@ struct EnergyHistoryView: View {
         }
     }
 
+    private func dim(_ d: EnergyDay) -> Bool {
+        guard let sel = selectedEntry else { return false }
+        return sel.id != d.id
+    }
+
     private var chartCard: some View {
         Card(title: mode == "tage" ? "Letzte 30 Tage" : "Letzte 12 Monate", symbol: "chart.bar.fill") {
             VStack(alignment: .leading, spacing: 8) {
@@ -165,10 +181,10 @@ struct EnergyHistoryView: View {
                     ForEach(entries) { d in
                         BarMark(x: .value("Datum", d.date, unit: unit), y: .value("kWh", d.own))
                             .foregroundStyle(by: .value("Art", "Eigener Solarstrom"))
-                            .opacity(selectedEntry == nil || selectedEntry?.id == d.id ? 1 : 0.35)
+                            .opacity(dim(d) ? 0.35 : 1)
                         BarMark(x: .value("Datum", d.date, unit: unit), y: .value("kWh", d.bought ?? 0))
                             .foregroundStyle(by: .value("Art", "Aus dem Netz"))
-                            .opacity(selectedEntry == nil || selectedEntry?.id == d.id ? 1 : 0.35)
+                            .opacity(dim(d) ? 0.35 : 1)
                     }
                 }
                 .chartForegroundStyleScale(["Eigener Solarstrom": Color.green, "Aus dem Netz": Color.red.opacity(0.75)])
@@ -192,19 +208,23 @@ struct EnergyHistoryView: View {
 
     @ViewBuilder private var detailCard: some View {
         if let d = selectedEntry {
-            let title = mode == "tage"
-                ? (Calendar.current.isDateInYesterday(d.date) ? "Gestern" : (Calendar.current.isDateInToday(d.date) ? "Heute (bisher)" : d.date.formatted(.dateTime.weekday(.wide).day().month(.wide))))
-                : d.date.formatted(.dateTime.month(.wide).year())
+            let title: String = detailTitle(d.date)
             Card(title: title, symbol: "calendar") {
                 EnergySummaryBlock(e: d, price: price, feed: feed)
             }
         }
     }
 
+    private func detailTitle(_ date: Date) -> String {
+        let cal = Calendar.current
+        if mode != "tage" { return date.formatted(.dateTime.month(.wide).year()) }
+        if cal.isDateInYesterday(date) { return "Gestern" }
+        if cal.isDateInToday(date) { return "Heute (bisher)" }
+        return date.formatted(.dateTime.weekday(.wide).day().month(.wide))
+    }
+
     private var sumCard: some View {
-        let total = entries.reduce(EnergyDay(date: .now, pv: 0, bought: 0, sold: 0)) { a, d in
-            EnergyDay(date: a.date, pv: (a.pv ?? 0) + (d.pv ?? 0), bought: (a.bought ?? 0) + (d.bought ?? 0), sold: (a.sold ?? 0) + (d.sold ?? 0))
-        }
+        let total = Self.sum(entries, date: Date())
         return Card(title: mode == "tage" ? "Summe 30 Tage" : "Summe 12 Monate", symbol: "sum") {
             EnergySummaryBlock(e: total, price: price, feed: feed)
         }
@@ -317,15 +337,16 @@ struct ChargeSessionsView: View {
             } else {
                 Chart {
                     ForEach(months, id: \.self) { m in
-                        let list = sessions(m)
-                        let kwh = list.reduce(0) { $0 + $1.kwh }
-                        let solarKwh = list.reduce(0) { $0 + $1.kwh * ($1.solar ?? 0) / 100 }
+                        let t = SessionTotals(sessions(m))
+                        let barOpacity: Double = Calendar.current.isDate(m, equalTo: month, toGranularity: .month) ? 1 : 0.45
+                        let solarKwh: Double = t.solarKwh
+                        let gridKwh: Double = t.kwh - t.solarKwh
                         BarMark(x: .value("Monat", m, unit: .month), y: .value("kWh", solarKwh))
                             .foregroundStyle(by: .value("Art", "Sonne"))
-                            .opacity(Calendar.current.isDate(m, equalTo: month, toGranularity: .month) ? 1 : 0.45)
-                        BarMark(x: .value("Monat", m, unit: .month), y: .value("kWh", kwh - solarKwh))
+                            .opacity(barOpacity)
+                        BarMark(x: .value("Monat", m, unit: .month), y: .value("kWh", gridKwh))
                             .foregroundStyle(by: .value("Art", "Netz/Akku"))
-                            .opacity(Calendar.current.isDate(m, equalTo: month, toGranularity: .month) ? 1 : 0.45)
+                            .opacity(barOpacity)
                     }
                 }
                 .chartForegroundStyleScale(["Sonne": Color.yellow, "Netz/Akku": Color.gray.opacity(0.6)])
@@ -359,11 +380,11 @@ struct ChargeSessionsView: View {
 
     private var monthSummary: some View {
         let list = sessions(month)
-        let kwh = list.reduce(0) { $0 + $1.kwh }
-        let cost = list.reduce(0) { $0 + ($1.price ?? 0) }
-        let solar = kwh > 0 ? list.reduce(0) { $0 + $1.kwh * ($1.solar ?? 0) / 100 } / kwh : 0
-        let fallback = store.num(EnergyConfig.price) ?? 0.29
-        let reference = list.reduce(0) { $0 + $1.kwh * ($1.referencePerKWh ?? fallback) }
+        let t = SessionTotals(list, fallbackPrice: store.num(EnergyConfig.price) ?? 0.29)
+        let kwh: Double = t.kwh
+        let cost: Double = t.cost
+        let solar: Double = t.solarShare
+        let reference: Double = t.reference
         return Card(title: "\(list.count) Ladevorgänge", symbol: lp.symbol) {
             VStack(spacing: 12) {
                 HStack {
@@ -399,6 +420,25 @@ struct ChargeSessionsView: View {
             }
         }
     }
+}
+
+struct SessionTotals {
+    var kwh: Double = 0
+    var solarKwh: Double = 0
+    var cost: Double = 0
+    var reference: Double = 0
+
+    init(_ list: [ChargeSession], fallbackPrice: Double = 0.29) {
+        for s in list {
+            let solarShare: Double = (s.solar ?? 0) / 100
+            let refPrice: Double = s.referencePerKWh ?? fallbackPrice
+            kwh += s.kwh
+            solarKwh += s.kwh * solarShare
+            cost += s.price ?? 0
+            reference += s.kwh * refPrice
+        }
+    }
+    var solarShare: Double { kwh > 0 ? solarKwh / kwh : 0 }
 }
 
 struct SessionRow: View {
