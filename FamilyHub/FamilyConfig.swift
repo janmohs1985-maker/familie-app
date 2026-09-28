@@ -134,6 +134,7 @@ enum FamilyConfig {
     static let doorbellEvent = "event.doorbird_ture_knopf"
     static let doorbellLastRing = "camera.doorbird_ture_letztes_klingeln"
     static let doorbellLive = "camera.doorbird_ture_live"
+    static let doorHistory = "todo.tuer_verlauf"                     // ekey: wann Emma/Leoni die Tür geöffnet haben
     static let doorbellHistory = "todo.klingel_verlauf"              // Bilder liegen unter /media/local/<datei>
 
     /// Diese Listen gehören zu App-Funktionen und erscheinen nicht im Tab „Listen“.
@@ -192,7 +193,7 @@ enum FamilyConfig {
     static let schoolDocsList = "todo.schulmappe"             // Schulmappe (Fotos über das Scanner-Add-on)
 
     static var systemTodoLists: Set<String> {
-        Set(kids.map { choreList($0.id) } + [choreTemplates, rewards, rewardRequests, pointsHistory, doorbellHistory, appControls, mealPlan, mealWishes, freizeitList, schoolDocsList, parentTodoList, shoppingMeta])
+        Set(kids.map { choreList($0.id) } + [choreTemplates, rewards, rewardRequests, pointsHistory, doorbellHistory, appControls, mealPlan, mealWishes, freizeitList, schoolDocsList, parentTodoList, shoppingMeta, doorHistory])
     }
 
     // MARK: Farben für Kalender (nach Reihenfolge)

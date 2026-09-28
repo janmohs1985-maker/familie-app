@@ -91,6 +91,10 @@ struct PersonMapView: View {
                     }
                 }
 
+                if let kid = store.kidID(forPerson: person.id) {
+                    DoorOpeningsSection(kid: kid)
+                }
+
                 if let coord, state?.state != "home" {
                     Section {
                         Button {

@@ -196,7 +196,7 @@ struct ControlsView: View {
     }
 
     private func takeRoute(_ r: String?) {
-        guard let r else { return }
+        guard let r, DeepLink.zuhausePages[r] != nil else { return }
         store.route = nil
         linkTarget = nil
         DispatchQueue.main.asyncAfter(deadline: .now() + 0.35) { linkTarget = r }

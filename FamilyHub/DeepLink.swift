@@ -25,6 +25,14 @@ extension AppStore {
         case "einkauf", "listen": if allows(.listen) { selectedTab = "listen" }
         case "aufgaben": selectedTab = "aufgaben"
         case "wir": selectedTab = "aufgaben"; aufgabenMode = "wir"
+        case let t where t.hasPrefix("tuer_"):
+            // familie://tuer_emma → Heute, Emmas Seite mit den Türöffnungen
+            let kid = String(t.dropFirst(5))
+            selectedTab = "heute"
+            if let k = FamilyConfig.kid(kid) {
+                Task { await refreshDoorOpenings() }
+                route = "person:" + k.person
+            }
         default:
             guard let feature = DeepLink.zuhausePages[target] else { selectedTab = "heute"; return }
             if let f = feature, !allows(f) { selectedTab = "heute"; return }

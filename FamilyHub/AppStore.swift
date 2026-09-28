@@ -14,7 +14,8 @@ final class AppStore {
     var events: [HAEvent] = []
     var todoLists: [HAState] = []
     var todoItems: [String: [TodoItem]] = [:]
-    var shopMeta: [String: ShopMetaEntry] = [:]      // Zusatzinfos je Listen-Eintrag (uid)
+    var shopMeta: [String: ShopMetaEntry] = [:]
+    var doorOpenings: [DoorOpening] = []             // ekey: Emma/Leoni öffnen die Haustür      // Zusatzinfos je Listen-Eintrag (uid)
     var pictures: [String: UIImage] = [:]
 
     // Aufgaben & Belohnungen
@@ -112,7 +113,8 @@ final class AppStore {
         async let i: () = refreshFreizeit()
         async let j: () = refreshSchool()
         async let k: () = refreshParentTodos()
-        _ = await (b, c, d, e, f, g, h, i, j, k)
+        async let l: () = refreshDoorOpenings()
+        _ = await (b, c, d, e, f, g, h, i, j, k, l)
     }
 
     func refreshStates() async {
