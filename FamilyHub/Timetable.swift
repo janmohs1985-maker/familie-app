@@ -40,27 +40,28 @@ enum Timetables {
          L("11:30", "12:15", "Musik"), L("12:15", "13:00", "Musik")],
     ]
 
-    /// Leoni – Klasse 3a, Schuljahr 2026/27 (Beginn 7:45; Stunden à 45 Min., Pausen 20 und 10 Min. angenommen)
+    /// Leoni – Klasse 3a, Schuljahr 2026/27 (Beginn 8:00; Schulschluss laut Schule:
+    /// Mo–Mi 13:00, Do 11:25, Fr 12:15 – Pausen wie bei Emma angenommen)
     static let leoni: [[Lesson]] = [
         // Montag
-        [L("07:45", "08:30", "Deutsch"), L("08:30", "09:15", "Deutsch"), L("09:15", "09:35", "Pause"),
-         L("09:35", "10:20", "Mathe"), L("10:20", "11:05", "Mathe"), L("11:05", "11:15", "Pause"),
-         L("11:15", "12:00", "Englisch"), L("12:00", "12:45", "HSU")],
+        [L("08:00", "08:45", "Deutsch"), L("08:45", "09:30", "Deutsch"), L("09:30", "09:50", "Pause"),
+         L("09:50", "10:35", "Mathe"), L("10:35", "11:20", "Mathe"), L("11:20", "11:30", "Pause"),
+         L("11:30", "12:15", "Englisch"), L("12:15", "13:00", "HSU")],
         // Dienstag
-        [L("07:45", "08:30", "Sport"), L("08:30", "09:15", "Sport"), L("09:15", "09:35", "Pause"),
-         L("09:35", "10:20", "Kunst"), L("10:20", "11:05", "Kunst"), L("11:05", "11:15", "Pause"),
-         L("11:15", "12:00", "WG"), L("12:00", "12:45", "WG")],
+        [L("08:00", "08:45", "Sport"), L("08:45", "09:30", "Sport"), L("09:30", "09:50", "Pause"),
+         L("09:50", "10:35", "Kunst"), L("10:35", "11:20", "Kunst"), L("11:20", "11:30", "Pause"),
+         L("11:30", "12:15", "WG"), L("12:15", "13:00", "WG")],
         // Mittwoch
-        [L("07:45", "08:30", "Mathe"), L("08:30", "09:15", "Mathe"), L("09:15", "09:35", "Pause"),
-         L("09:35", "10:20", "Deutsch"), L("10:20", "11:05", "Musik"), L("11:05", "11:15", "Pause"),
-         L("11:15", "12:00", "Religion / Ethik"), L("12:00", "12:45", "Religion / Ethik")],
+        [L("08:00", "08:45", "Mathe"), L("08:45", "09:30", "Mathe"), L("09:30", "09:50", "Pause"),
+         L("09:50", "10:35", "Deutsch"), L("10:35", "11:20", "Musik"), L("11:20", "11:30", "Pause"),
+         L("11:30", "12:15", "Religion / Ethik"), L("12:15", "13:00", "Religion / Ethik")],
         // Donnerstag
-        [L("07:45", "08:30", "Mathe"), L("08:30", "09:15", "Deutsch"), L("09:15", "09:35", "Pause"),
-         L("09:35", "10:20", "Deutsch / Sport (14-tägig)"), L("10:20", "11:05", "Deutsch / Sport (14-tägig)")],
+        [L("08:00", "08:45", "Mathe"), L("08:45", "09:30", "Deutsch"), L("09:30", "09:50", "Pause"),
+         L("09:50", "10:35", "Deutsch / Sport (14-tägig)"), L("10:35", "11:25", "Deutsch / Sport (14-tägig)")],
         // Freitag
-        [L("07:45", "08:30", "HSU"), L("08:30", "09:15", "HSU"), L("09:15", "09:35", "Pause"),
-         L("09:35", "10:20", "Mathe"), L("10:20", "11:05", "Deutsch"), L("11:05", "11:15", "Pause"),
-         L("11:15", "12:00", "Flex")],
+        [L("08:00", "08:45", "HSU"), L("08:45", "09:30", "HSU"), L("09:30", "09:50", "Pause"),
+         L("09:50", "10:35", "Mathe"), L("10:35", "11:20", "Deutsch"), L("11:20", "11:30", "Pause"),
+         L("11:30", "12:15", "Flex")],
     ]
 
     static func plan(for kid: String) -> [[Lesson]] {

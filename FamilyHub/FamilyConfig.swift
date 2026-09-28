@@ -54,6 +54,7 @@ enum FamilyConfig {
         "calendar.emma",
         "calendar.leoni",
         "calendar.deutschland_by",          // Feiertage
+        "calendar.schulferien_bayern",      // Schulferien
     ]
 
     /// Feste Farben je Kalender (wie im Wochenplaner auf dem Dashboard)
@@ -64,6 +65,7 @@ enum FamilyConfig {
         "calendar.emma": .blue,
         "calendar.leoni": .pink,
         "calendar.deutschland_by": .gray,
+        "calendar.schulferien_bayern": .teal,
     ]
 
     /// Kalender, die grundsätzlich ausgeblendet werden.

@@ -144,7 +144,7 @@ final class AppStore {
         }
     }
 
-    func refreshCalendar(days: Int = 21) async {
+    func refreshCalendar(days: Int = 120) async {
         guard isLoggedIn else { return }
         do {
             var cals = try await client.calendars()
