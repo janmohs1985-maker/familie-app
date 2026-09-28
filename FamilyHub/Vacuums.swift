@@ -19,8 +19,13 @@ extension AppStore {
     func vacSensor(_ v: FamilyConfig.Vacuum, _ key: String) -> HAState? { states["sensor.\(v.prefix)_\(key)"] }
     func vacBinary(_ v: FamilyConfig.Vacuum, _ key: String) -> Bool { states["binary_sensor.\(v.prefix)_\(key)"]?.state == "on" }
 
+    /// Aktiv = arbeitet gerade (saugt, wischt, wäscht Wischtuch, fährt zur Station …)
     func vacIsCleaning(_ v: FamilyConfig.Vacuum) -> Bool {
-        ["cleaning", "returning"].contains(vacState(v)?.state ?? "")
+        if ["cleaning", "returning"].contains(vacState(v)?.state ?? "") { return true }
+        return VacText.activeStatuses.contains(vacSensor(v, "status")?.state ?? "")
+    }
+    func vacIsPaused(_ v: FamilyConfig.Vacuum) -> Bool {
+        vacState(v)?.state == "paused" || vacSensor(v, "status")?.state == "paused"
     }
 
     /// Restlaufzeit der Verschleißteile in Stunden
@@ -76,15 +81,37 @@ extension AppStore {
 }
 
 enum VacText {
+    /// Zustände, in denen der Roboter noch arbeitet
+    static let activeStatuses: Set<String> = [
+        "starting", "cleaning", "returning_home", "spot_cleaning", "docking", "going_to_target", "zoned_cleaning",
+        "segment_cleaning", "washing_the_mop", "going_to_wash_the_mop", "mapping", "patrol",
+        "attaching_the_mop", "detaching_the_mop", "robot_status_mopping", "clean_mop_cleaning", "clean_mop_mopping",
+        "segment_mopping", "segment_clean_mop_cleaning", "segment_clean_mop_mopping", "zoned_mopping",
+        "zoned_clean_mop_cleaning", "zoned_clean_mop_mopping", "back_to_dock_washing_duster",
+        "manual_mode", "remote_control_active",
+    ]
+
     static func status(_ s: String) -> String {
         [
-            "charging": "Lädt", "charging_complete": "Voll geladen", "charger_disconnected": "Nicht in der Station",
-            "idle": "Bereit", "cleaning": "Saugt", "segment_cleaning": "Reinigt Räume", "zoned_cleaning": "Reinigt Zone",
-            "spot_cleaning": "Punktreinigung", "returning_home": "Fährt zur Station", "docking": "Dockt an",
-            "paused": "Pausiert", "error": "Fehler", "emptying_the_bin": "Leert Behälter",
-            "washing_the_mop": "Wäscht Mopp", "going_to_wash_the_mop": "Fährt zum Mopp-Waschen",
-            "drying_the_mop": "Trocknet Mopp", "mapping": "Erstellt Karte", "remote_control_active": "Fernsteuerung",
-            "updating": "Update", "sleeping": "Schläft", "manual_mode": "Manuell", "locked": "Gesperrt",
+            "unknown": "Unbekannt", "starting": "Startet", "charger_disconnected": "Nicht in der Station",
+            "idle": "Bereit", "remote_control_active": "Fernsteuerung", "cleaning": "Saugt",
+            "returning_home": "Fährt zur Station", "manual_mode": "Manuell", "charging": "Lädt",
+            "charging_problem": "Ladeproblem", "paused": "Pausiert", "spot_cleaning": "Punktreinigung",
+            "error": "Fehler", "shutting_down": "Schaltet aus", "updating": "Update", "docking": "Dockt an",
+            "going_to_target": "Fährt zum Ziel", "zoned_cleaning": "Reinigt Zone", "segment_cleaning": "Reinigt Räume",
+            "emptying_the_bin": "Leert Behälter", "washing_the_mop": "Wäscht Wischtuch",
+            "going_to_wash_the_mop": "Fährt zum Wischtuch-Waschen", "in_call": "Im Gespräch",
+            "mapping": "Erstellt Karte", "egg_attack": "Easter Egg", "patrol": "Patrouille",
+            "attaching_the_mop": "Setzt Wischtuch ein", "detaching_the_mop": "Nimmt Wischtuch ab",
+            "charging_complete": "Voll geladen", "device_offline": "Offline", "locked": "Gesperrt",
+            "air_drying_stopping": "Trocknung endet", "robot_status_mopping": "Wischt",
+            "clean_mop_cleaning": "Saugt & wischt", "clean_mop_mopping": "Saugt & wischt",
+            "segment_mopping": "Wischt Räume", "segment_clean_mop_cleaning": "Saugt & wischt Räume",
+            "segment_clean_mop_mopping": "Saugt & wischt Räume", "zoned_mopping": "Wischt Zone",
+            "zoned_clean_mop_cleaning": "Saugt & wischt Zone", "zoned_clean_mop_mopping": "Saugt & wischt Zone",
+            "back_to_dock_washing_duster": "Fährt zum Waschen", "drying_the_mop": "Trocknet Wischtuch",
+            "sleeping": "Schläft", "docked": "In der Station", "returning": "Fährt zur Station",
+            "unavailable": "Nicht erreichbar",
         ][s] ?? s.replacingOccurrences(of: "_", with: " ").capitalized
     }
     static func fan(_ s: String) -> String {
@@ -192,15 +219,19 @@ struct VacuumCard: View {
             // Bedienung (nur Eltern)
             if canControl && state != "unavailable" {
                 HStack(spacing: 10) {
-                    if state == "cleaning" {
+                    if store.vacIsPaused(v) {
+                        VacButton(title: "Weiter", symbol: "play.fill", tint: .blue) { Task { await store.vacAction(v, "start") } }
+                        VacButton(title: "Stopp", symbol: "stop.fill", tint: .red) { Task { await store.vacAction(v, "stop") } }
+                        VacButton(title: "Station", symbol: "house.fill", tint: .green) { Task { await store.vacAction(v, "return_to_base") } }
+                    } else if cleaning {
                         VacButton(title: "Pause", symbol: "pause.fill", tint: .orange) { Task { await store.vacAction(v, "pause") } }
+                        VacButton(title: "Stopp", symbol: "stop.fill", tint: .red) { Task { await store.vacAction(v, "stop") } }
+                        VacButton(title: "Station", symbol: "house.fill", tint: .green) { Task { await store.vacAction(v, "return_to_base") } }
                     } else {
-                        VacButton(title: state == "paused" ? "Weiter" : "Start", symbol: "play.fill", tint: .blue) {
-                            Task { await store.vacAction(v, "start") }
-                        }
+                        VacButton(title: "Start", symbol: "play.fill", tint: .blue) { Task { await store.vacAction(v, "start") } }
+                        VacButton(title: "Station", symbol: "house.fill", tint: .green) { Task { await store.vacAction(v, "return_to_base") } }
+                        VacButton(title: "Finden", symbol: "speaker.wave.2.fill", tint: .gray) { Task { await store.vacAction(v, "locate") } }
                     }
-                    VacButton(title: "Station", symbol: "house.fill", tint: .green) { Task { await store.vacAction(v, "return_to_base") } }
-                    VacButton(title: "Finden", symbol: "speaker.wave.2.fill", tint: .gray) { Task { await store.vacAction(v, "locate") } }
                 }
 
                 if !v.programs.isEmpty {
@@ -356,7 +387,7 @@ struct VacuumTodayCard: View {
                                 Spacer()
                                 if store.vacIsCleaning(v) {
                                     let p = Int(Double(store.vacSensor(v, "reinigungsfortschritt")?.state ?? "") ?? 0)
-                                    Text("saugt · \(p) %").font(.subheadline).foregroundStyle(.blue)
+                                    Text("\(VacText.status(store.vacSensor(v, "status")?.state ?? "cleaning")) · \(p) %").font(.subheadline).foregroundStyle(.blue)
                                 } else if let w = store.vacWarnings(v).first {
                                     Label(w.text, systemImage: w.symbol).font(.subheadline)
                                         .foregroundStyle(w.severe ? Color.red : Color.orange)
