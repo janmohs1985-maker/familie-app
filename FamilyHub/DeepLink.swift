@@ -9,7 +9,7 @@ enum DeepLink {
     /// Ziele, die als Seite unter „Zuhause“ geöffnet werden
     static let zuhausePages: [String: KidFeature?] = [
         "essen": .essensplan, "sauger": .saugroboter, "pool": .pool, "strom": .strom, "heizung": .heizung,
-        "bewaesserung": .bewaesserung, "internet": .internet, "beschattung": .beschattung, "waesche": .waesche, "haustuer": .haustuer, "musik": .musik, "schule": .schulmappe,
+        "bewaesserung": .bewaesserung, "internet": .internet, "rauchmelder": .rauchmelder, "geraete": nil, "beschattung": .beschattung, "waesche": .waesche, "haustuer": .haustuer, "musik": .musik, "schule": .schulmappe,
         "stundenplan": .stundenplan, "scanner": nil, "gaeste": nil,
     ]
 }
@@ -57,6 +57,8 @@ struct DeepLinkDestination: View {
         case "heizung": HeatingView()
         case "bewaesserung": IrrigationView()
         case "internet": NetworkView()
+        case "rauchmelder": SmokeView()
+        case "geraete": DevicesView()
         case "beschattung": ShadingView()
         case "waesche": LaundryView()
         case "haustuer": DoorbellView()

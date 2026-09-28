@@ -49,6 +49,8 @@ struct ControlsView: View {
     @State private var linkTarget: String?
 
     private let columns = [GridItem(.flexible(), spacing: 12), GridItem(.flexible(), spacing: 12)]
+    private let controlColumns = Array(repeating: GridItem(.flexible(), spacing: 10), count: 3)
+    @State private var showReorder = false
 
     var body: some View {
         NavigationStack {
@@ -62,9 +64,17 @@ struct ControlsView: View {
                         .padding(.top, 12)
                 }
                 if !store.visibleControls.isEmpty {
-                    SectionTitle("Schalten")
+                    HStack(alignment: .lastTextBaseline) {
+                        SectionTitle("Schalten")
+                        if store.isParent && store.activeKid == nil && store.appControls.count > 1 {
+                            Button { showReorder = true } label: {
+                                Label("Anordnen", systemImage: "arrow.up.arrow.down").font(.subheadline)
+                            }
+                            .padding(.trailing)
+                        }
+                    }
                 }
-                LazyVGrid(columns: columns, spacing: 12) {
+                LazyVGrid(columns: controlColumns, spacing: 10) {
                     ForEach(store.visibleControls) { c in
                         ControlTile(control: c) { tap(c) } more: {
                             if c.domain == "cover" { coverSheet = c } else if store.isDimmable(c) { lightSheet = c }
@@ -73,7 +83,7 @@ struct ControlsView: View {
                 }
                 .padding(.horizontal)
 
-                if [KidFeature.strom, .heizung, .beschattung, .internet, .waesche, .pool, .bewaesserung, .saugroboter].contains(where: { store.allows($0) }) {
+                if [KidFeature.strom, .heizung, .beschattung, .rauchmelder, .internet, .waesche, .pool, .bewaesserung, .saugroboter].contains(where: { store.allows($0) }) {
                     SectionTitle("Haus")
                     LazyVGrid(columns: columns, spacing: 12) {
                         if store.allows(.strom) {
@@ -89,6 +99,17 @@ struct ControlsView: View {
                         if store.allows(.beschattung) {
                             NavigationLink { ShadingView() } label: {
                                 HubTile(title: "Beschattung", symbol: "blinds.horizontal.closed", color: .orange)
+                            }
+                        }
+                        if store.allows(.rauchmelder) {
+                            NavigationLink { SmokeView() } label: {
+                                HubTile(title: store.smokeAlarm.isEmpty ? (store.smokeProblems.isEmpty ? "Rauchmelder" : "Rauchmelder ⚠︎") : "RAUCH!",
+                                        symbol: "smoke.fill", color: store.smokeAlarm.isEmpty ? .gray : .red)
+                            }
+                        }
+                        if store.isParent && store.activeKid == nil {
+                            NavigationLink { DevicesView() } label: {
+                                HubTile(title: "Zigbee-Geräte", symbol: "dot.radiowaves.left.and.right", color: .purple)
                             }
                         }
                         if store.allows(.internet) {
@@ -198,7 +219,8 @@ struct ControlsView: View {
                 }
             }
             .sheet(item: $coverSheet) { c in CoverSheet(control: c).presentationDetents([.medium]) }
-            .sheet(item: $lightSheet) { c in LightSheet(control: c).presentationDetents([.height(260)]) }
+            .sheet(item: $lightSheet) { c in LightSheet(control: c).presentationDetents([.medium, .large]) }
+            .sheet(isPresented: $showReorder) { ControlsReorderView() }
         }
     }
 
@@ -239,47 +261,69 @@ struct ControlTile: View {
     private var busy: Bool { store.busy.contains(control.uid) }
     private var hasMore: Bool { control.domain == "cover" || store.isDimmable(control) }
 
+    /// Farbe der Kachel: Lampen in ihrer Lichtfarbe, sonst Akzentfarbe
+    private var tint: Color {
+        guard on else { return .accentColor }
+        if control.domain == "light" {
+            if let rgb = state?.attr("rgb_color")?.array?.compactMap(\.double), rgb.count == 3 {
+                return Color(red: rgb[0] / 255, green: rgb[1] / 255, blue: rgb[2] / 255)
+            }
+            return Color(red: 1.0, green: 0.78, blue: 0.3)
+        }
+        return .accentColor
+    }
+
     var body: some View {
-        VStack(alignment: .leading, spacing: 10) {
+        VStack(alignment: .leading, spacing: 6) {
             HStack(alignment: .top) {
                 Image(systemName: ControlIcons.symbol(control, on: on))
-                    .font(.title2)
-                    .foregroundStyle(on ? Color.white : Color.accentColor)
-                    .frame(width: 44, height: 44)
-                    .background(on ? Color.accentColor : Color.accentColor.opacity(0.12), in: Circle())
-                Spacer()
+                    .font(.body.weight(.semibold))
+                    .foregroundStyle(on ? Color.white : tint)
+                    .frame(width: 34, height: 34)
+                    .background(on ? AnyShapeStyle(tint.gradient) : AnyShapeStyle(tint.opacity(0.12)), in: Circle())
+                    .shadow(color: on ? tint.opacity(0.5) : .clear, radius: 6)
+                Spacer(minLength: 0)
                 if busy {
-                    ProgressView()
+                    ProgressView().controlSize(.small)
                 } else if hasMore {
                     Button(action: more) {
-                        Image(systemName: "slider.horizontal.3").font(.subheadline)
-                            .padding(8).background(Color(.tertiarySystemFill), in: Circle())
+                        Image(systemName: "ellipsis").font(.caption.weight(.bold))
+                            .frame(width: 24, height: 24)
+                            .background(Color(.tertiarySystemFill), in: Circle())
                     }
                     .buttonStyle(.borderless)
                     .disabled(!allowed || unavailable)
                 }
             }
-            Text(control.name).font(.headline).lineLimit(2)
-            Text(stateText).font(.subheadline).foregroundStyle(.secondary)
-
-            if control.domain == "cover" && control.script == nil {
-                HStack(spacing: 8) {
-                    coverButton("chevron.up", "open_cover")
-                    coverButton("stop.fill", "stop_cover")
-                    coverButton("chevron.down", "close_cover")
+            Spacer(minLength: 0)
+            Text(control.name).font(.footnote.weight(.semibold)).lineLimit(2).minimumScaleFactor(0.85)
+            Text(stateText).font(.caption2).foregroundStyle(.secondary).lineLimit(1)
+            if let level = levelFraction {
+                GeometryReader { g in
+                    ZStack(alignment: .leading) {
+                        Capsule().fill(Color(.tertiarySystemFill))
+                        Capsule().fill(tint.gradient).frame(width: max(g.size.width * level, 4))
+                    }
                 }
-                .disabled(!allowed || unavailable || busy)
+                .frame(height: 4)
             }
         }
-        .padding()
-        .frame(maxWidth: .infinity, minHeight: 130, alignment: .topLeading)
-        .background(Color(.secondarySystemGroupedBackground), in: RoundedRectangle(cornerRadius: 20))
-        .overlay(RoundedRectangle(cornerRadius: 20).stroke(on ? Color.accentColor.opacity(0.5) : .clear, lineWidth: 2))
-        .contentShape(RoundedRectangle(cornerRadius: 20))
+        .padding(10)
+        .frame(maxWidth: .infinity, minHeight: 104, alignment: .topLeading)
+        .background(Color(.secondarySystemGroupedBackground), in: RoundedRectangle(cornerRadius: 16))
+        .overlay(RoundedRectangle(cornerRadius: 16).stroke(on ? tint.opacity(0.6) : .clear, lineWidth: 1.5))
+        .contentShape(RoundedRectangle(cornerRadius: 16))
         .onTapGesture { if allowed && !unavailable && !busy { tap() } }
         .onLongPressGesture { if hasMore && allowed && !unavailable { more() } }
         .opacity(unavailable || !allowed ? 0.5 : 1)
         .sensoryFeedback(.impact, trigger: state?.state)
+    }
+
+    /// Füllstand für Helligkeit / Rollladen (nil = kein Balken)
+    private var levelFraction: Double? {
+        if control.domain == "cover", control.script == nil, let p = store.coverPosition(control) { return Double(p) / 100 }
+        if store.isDimmable(control) { return on ? Double(store.brightnessPercent(control) ?? 100) / 100 : 0 }
+        return nil
     }
 
     private func coverButton(_ symbol: String, _ action: String) -> some View {
@@ -388,26 +432,127 @@ struct LightSheet: View {
     @Environment(AppStore.self) private var store
     let control: AppControl
     @State private var level: Double = 0
-    @State private var editing = false
+    @State private var kelvin: Double = 3000
+    @State private var pickColor: Color = .orange
+
+    private var state: HAState? { store.states[control.entity] }
+    private var modes: [String] { state?.attr("supported_color_modes")?.array?.compactMap(\.string) ?? [] }
+    private var hasColor: Bool { modes.contains { ["hs", "rgb", "rgbw", "rgbww", "xy"].contains($0) } }
+    private var hasTemp: Bool { modes.contains("color_temp") }
+    private var minK: Double { state?.attr("min_color_temp_kelvin")?.double ?? 2200 }
+    private var maxK: Double { state?.attr("max_color_temp_kelvin")?.double ?? 6500 }
+
+    private let swatches: [(String, [Int])] = [
+        ("Warm", [255, 180, 107]), ("Rot", [255, 40, 40]), ("Orange", [255, 140, 0]), ("Gelb", [255, 220, 40]),
+        ("Grün", [40, 220, 90]), ("Türkis", [40, 210, 210]), ("Blau", [40, 90, 255]), ("Lila", [160, 60, 255]), ("Pink", [255, 60, 170]),
+    ]
 
     var body: some View {
-        VStack(spacing: 20) {
-            Text(control.name).font(.title3.bold()).padding(.top, 24)
-            Text(Int(level) == 0 ? "Aus" : "\(Int(level)) %")
-                .font(.system(size: 34, weight: .semibold, design: .rounded))
-                .contentTransition(.numericText())
-            HStack {
-                Image(systemName: "sun.min")
-                Slider(value: $level, in: 0...100, step: 5, onEditingChanged: { e in
-                    editing = e
-                    if !e { Task { await store.setBrightness(control, percent: Int(level)) } }
-                })
-                Image(systemName: "sun.max.fill")
+        ScrollView {
+            VStack(spacing: 22) {
+                Text(control.name).font(.title3.bold()).padding(.top, 24)
+                // Helligkeit
+                VStack(spacing: 10) {
+                    Text(Int(level) == 0 ? "Aus" : "\(Int(level)) %")
+                        .font(.system(size: 34, weight: .semibold, design: .rounded))
+                        .contentTransition(.numericText())
+                    HStack {
+                        Image(systemName: "sun.min")
+                        Slider(value: $level, in: 0...100, step: 5, onEditingChanged: { e in
+                            if !e { Task { await store.setBrightness(control, percent: Int(level)) } }
+                        })
+                        .tint(.yellow)
+                        Image(systemName: "sun.max.fill")
+                    }
+                }
+                .padding(.horizontal)
+
+                if hasTemp {
+                    VStack(alignment: .leading, spacing: 6) {
+                        Text("Weißton").font(.subheadline.weight(.semibold))
+                        Slider(value: $kelvin, in: minK...maxK, step: 100, onEditingChanged: { e in
+                            if !e { Task { await store.setLight(control, ["color_temp_kelvin": Int(kelvin)]) } }
+                        })
+                        .tint(Color(red: 1, green: 0.85, blue: 0.6))
+                        HStack {
+                            Text("warm").font(.caption2)
+                            Spacer()
+                            Text("\(Int(kelvin)) K").font(.caption2.monospacedDigit())
+                            Spacer()
+                            Text("kalt").font(.caption2)
+                        }
+                        .foregroundStyle(.secondary)
+                    }
+                    .padding(.horizontal)
+                }
+
+                if hasColor {
+                    VStack(alignment: .leading, spacing: 10) {
+                        Text("Farbe").font(.subheadline.weight(.semibold))
+                        LazyVGrid(columns: Array(repeating: GridItem(.flexible()), count: 5), spacing: 12) {
+                            ForEach(swatches.indices, id: \.self) { i in
+                                let name = swatches[i].0
+                                let rgb = swatches[i].1
+                                Button {
+                                    Task { await store.setLight(control, ["rgb_color": rgb]) }
+                                } label: {
+                                    Circle()
+                                        .fill(Color(red: Double(rgb[0]) / 255, green: Double(rgb[1]) / 255, blue: Double(rgb[2]) / 255).gradient)
+                                        .frame(width: 40, height: 40)
+                                        .overlay(Circle().stroke(Color.primary.opacity(0.15), lineWidth: 1))
+                                }
+                                .buttonStyle(.plain)
+                                .accessibilityLabel(name)
+                            }
+                            ColorPicker("", selection: $pickColor, supportsOpacity: false)
+                                .labelsHidden()
+                                .frame(width: 40, height: 40)
+                        }
+                    }
+                    .padding(.horizontal)
+                    .onChange(of: pickColor) { _, c in
+                        let u = UIColor(c)
+                        var r: CGFloat = 0, g: CGFloat = 0, b: CGFloat = 0, a: CGFloat = 0
+                        u.getRed(&r, green: &g, blue: &b, alpha: &a)
+                        let rgb = [Int(r * 255), Int(g * 255), Int(b * 255)].map { max(0, min(255, $0)) }
+                        Task { await store.setLight(control, ["rgb_color": rgb]) }
+                    }
+                }
             }
-            .padding(.horizontal)
-            Spacer()
+            .padding(.bottom, 24)
         }
-        .onAppear { level = Double(store.isOn(control) ? (store.brightnessPercent(control) ?? 100) : 0) }
+        .onAppear {
+            level = Double(store.isOn(control) ? (store.brightnessPercent(control) ?? 100) : 0)
+            if let k = state?.attr("color_temp_kelvin")?.double { kelvin = k } else { kelvin = (minK + maxK) / 2 }
+        }
+    }
+}
+
+/// Reihenfolge der Schalter (gilt für alle, weil in Home Assistant gespeichert)
+struct ControlsReorderView: View {
+    @Environment(AppStore.self) private var store
+    @Environment(\.dismiss) private var dismiss
+
+    var body: some View {
+        NavigationStack {
+            List {
+                Section {
+                    ForEach(store.appControls) { c in
+                        HStack(spacing: 12) {
+                            Image(systemName: ControlIcons.symbol(c, on: true)).foregroundStyle(Color.accentColor).frame(width: 26)
+                            Text(c.name)
+                        }
+                    }
+                    .onMove { from, to in Task { await store.moveControls(from: from, to: to) } }
+                } footer: {
+                    Text("Mit ≡ ziehen. Die Reihenfolge gilt auf allen Handys.")
+                }
+            }
+            .environment(\.editMode, .constant(.active))
+            .navigationTitle("Schalter anordnen")
+            .navigationBarTitleDisplayMode(.inline)
+            .toolbar { Button("Fertig") { dismiss() } }
+        }
     }
 }
 
