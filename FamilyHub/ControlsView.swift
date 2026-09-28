@@ -72,7 +72,7 @@ struct ControlsView: View {
                 }
                 .padding(.horizontal)
 
-                if [KidFeature.strom, .heizung, .pool, .saugroboter].contains(where: { store.allows($0) }) {
+                if [KidFeature.strom, .heizung, .pool, .bewaesserung, .saugroboter].contains(where: { store.allows($0) }) {
                     SectionTitle("Haus")
                     LazyVGrid(columns: columns, spacing: 12) {
                         if store.allows(.strom) {
@@ -88,6 +88,11 @@ struct ControlsView: View {
                         if store.allows(.pool) {
                             NavigationLink { PoolView() } label: {
                                 HubTile(title: "Pool", symbol: "figure.pool.swim", color: .blue)
+                            }
+                        }
+                        if store.allows(.bewaesserung) {
+                            NavigationLink { IrrigationView() } label: {
+                                HubTile(title: "Bewässerung", symbol: "sprinkler.and.droplets.fill", color: .cyan)
                             }
                         }
                         if store.allows(.saugroboter) {

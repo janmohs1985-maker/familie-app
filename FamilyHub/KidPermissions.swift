@@ -7,7 +7,7 @@ import SwiftUI
 // Standard: alles erlaubt.
 
 enum KidFeature: String, CaseIterable, Identifiable {
-    case kalender, listen, stundenplan, schulmappe, essensplan, musik, haustuer, strom, heizung, pool, saugroboter
+    case kalender, listen, stundenplan, schulmappe, essensplan, musik, haustuer, strom, heizung, pool, bewaesserung, saugroboter
     var id: String { rawValue }
 
     var title: String {
@@ -21,6 +21,7 @@ enum KidFeature: String, CaseIterable, Identifiable {
         case .heizung: "Heizung (eigenes Zimmer einstellen)"
         case .saugroboter: "Saugroboter"
         case .pool: "Pool"
+        case .bewaesserung: "Bewässerung (nur ansehen)"
         case .musik: "Musik / Spotify"
         case .haustuer: "Haustür / Klingel"
         }
@@ -36,6 +37,7 @@ enum KidFeature: String, CaseIterable, Identifiable {
         case .heizung: "heat.waves"
         case .saugroboter: "fan.fill"
         case .pool: "figure.pool.swim"
+        case .bewaesserung: "sprinkler.and.droplets.fill"
         case .musik: "hifispeaker.2.fill"
         case .haustuer: "bell.fill"
         }
