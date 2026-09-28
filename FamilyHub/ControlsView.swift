@@ -711,6 +711,7 @@ struct SettingsView: View {
     @Environment(\.dismiss) private var dismiss
     @State private var serverStatus: String?
     @AppStorage("startAnimation") private var startAnimation = true
+    @AppStorage("appearance") private var appearance = "system"
 
     var body: some View {
         NavigationStack {
@@ -748,8 +749,15 @@ struct SettingsView: View {
                 }
                 AppVersionSection()
                 Section {
+                    Picker("Erscheinungsbild", selection: $appearance) {
+                        Text("Wie iPhone").tag("system")
+                        Text("Hell").tag("light")
+                        Text("Dunkel").tag("dark")
+                    }
                     Toggle("Startanimation", isOn: $startAnimation)
-                } header: { Text("Darstellung") }
+                } header: { Text("Darstellung") } footer: {
+                    Text("„Wie iPhone“ wechselt automatisch mit dem Dunkelmodus des Handys.")
+                }
                 Section("Gefunden") {
                     LabeledContent("Kalender", value: "\(store.calendars.count)")
                     LabeledContent("Listen", value: "\(store.todoLists.count)")

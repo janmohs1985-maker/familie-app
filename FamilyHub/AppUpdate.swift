@@ -47,6 +47,7 @@ struct AppUpdateBanner: View {
     @Environment(\.openURL) private var openURL
     @State private var info: AppVersionInfo?
     @AppStorage("updateBannerHiddenBuild") private var hiddenBuild = 0
+    @Environment(\.scenePhase) private var scenePhase
 
     var body: some View {
         Group {
@@ -75,6 +76,10 @@ struct AppUpdateBanner: View {
             }
         }
         .task { info = await AppUpdate.check(store) }
+        .onChange(of: scenePhase) { _, p in
+            // beim Zurückkehren in die App erneut nachsehen
+            if p == .active { Task { info = await AppUpdate.check(store) } }
+        }
     }
 }
 

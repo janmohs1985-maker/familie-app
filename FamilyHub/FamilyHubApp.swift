@@ -4,12 +4,14 @@ import SwiftUI
 struct FamilyHubApp: App {
     @State private var store = AppStore()
     @Environment(\.scenePhase) private var scenePhase
+    @AppStorage("appearance") private var appearance = "system"
 
     var body: some Scene {
         WindowGroup {
             RootView()
                 .environment(store)
                 .tint(.indigo)
+                .preferredColorScheme(appearance == "dark" ? .dark : (appearance == "light" ? .light : nil))
         }
         .onChange(of: scenePhase) { _, phase in
             if phase == .active, store.isLoggedIn {
