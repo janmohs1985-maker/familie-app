@@ -60,12 +60,13 @@ extension AppStore {
         blindAutoOn(b) && blindPausedUntil(b) == nil && states[b.sun]?.state == "on" && states[b.status]?.state == "active"
     }
 
-    /// Automatik für die Beschattungen pausieren, ohne dass etwas fährt
+    /// Automatik für die Beschattungen pausieren, ohne dass etwas fährt.
+    /// Endzeit mit Zeitzone schicken (UTC „Z“) – ohne liest Adaptive Cover die Zeit als UTC.
     func pauseBlinds(_ blinds: [ShadingConfig.Blind], until end: Date) async {
         let ids = blinds.map(\.auto)
         do {
             _ = try await client.call("adaptive_cover_pro", "engage_manual_override",
-                                      ["entity_id": ids, "end_time": HADate.iso.string(from: end)]  // mit Zeitzone (UTC „Z“) – ohne würde ACP die Zeit als UTC lesen)
+                                      ["entity_id": ids, "end_time": HADate.iso.string(from: end)])
             try? await Task.sleep(for: .seconds(1))
             await refreshStates()
         } catch { report(error) }
