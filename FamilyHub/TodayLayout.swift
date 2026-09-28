@@ -3,7 +3,7 @@ import SwiftUI
 // MARK: - Heute: Reihenfolge und sichtbare Karten (pro Handy gespeichert)
 
 enum TodayCardKind: String, CaseIterable, Identifiable {
-    case weather, mailbox, doorbell, parentTodos, music, vacuum, people, school, freizeit, meal, waste, upcoming
+    case weather, mailbox, doorbell, laundry, parentTodos, music, vacuum, people, school, freizeit, meal, waste, upcoming
     var id: String { rawValue }
 
     var title: String {
@@ -11,6 +11,7 @@ enum TodayCardKind: String, CaseIterable, Identifiable {
         case .weather: "Wetter"
         case .mailbox: "Briefkasten"
         case .doorbell: "Klingel (nur nach dem Klingeln)"
+        case .laundry: "Wäsche (nur wenn sie läuft)"
         case .parentTodos: "Unsere Aufgaben"
         case .music: "Musik"
         case .vacuum: "Saugroboter"
@@ -27,6 +28,7 @@ enum TodayCardKind: String, CaseIterable, Identifiable {
         case .weather: "cloud.sun.fill"
         case .mailbox: "envelope.fill"
         case .doorbell: "bell.fill"
+        case .laundry: "washer.fill"
         case .parentTodos: "checklist"
         case .music: "hifispeaker.2.fill"
         case .vacuum: "fan.fill"
@@ -43,6 +45,7 @@ enum TodayCardKind: String, CaseIterable, Identifiable {
         case .weather: .blue
         case .mailbox: .brown
         case .doorbell: .yellow
+        case .laundry: .teal
         case .parentTodos: .orange
         case .music: .pink
         case .vacuum: .mint
@@ -73,6 +76,7 @@ extension AppStore {
         switch k {
         case .parentTodos, .vacuum: return parent
         case .doorbell: return allows(.haustuer)
+        case .laundry: return allows(.waesche)
         case .music: return allows(.musik)
         case .school, .freizeit: return allows(.stundenplan)
         case .meal: return allows(.essensplan)

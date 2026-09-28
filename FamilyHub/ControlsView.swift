@@ -73,7 +73,7 @@ struct ControlsView: View {
                 }
                 .padding(.horizontal)
 
-                if [KidFeature.strom, .heizung, .internet, .pool, .bewaesserung, .saugroboter].contains(where: { store.allows($0) }) {
+                if [KidFeature.strom, .heizung, .beschattung, .internet, .waesche, .pool, .bewaesserung, .saugroboter].contains(where: { store.allows($0) }) {
                     SectionTitle("Haus")
                     LazyVGrid(columns: columns, spacing: 12) {
                         if store.allows(.strom) {
@@ -86,9 +86,19 @@ struct ControlsView: View {
                                 HubTile(title: "Heizung", symbol: "heat.waves", color: .red)
                             }
                         }
+                        if store.allows(.beschattung) {
+                            NavigationLink { ShadingView() } label: {
+                                HubTile(title: "Beschattung", symbol: "blinds.horizontal.closed", color: .orange)
+                            }
+                        }
                         if store.allows(.internet) {
                             NavigationLink { NetworkView() } label: {
                                 HubTile(title: "Internet", symbol: "globe.europe.africa.fill", color: .indigo)
+                            }
+                        }
+                        if store.allows(.waesche) {
+                            NavigationLink { LaundryView() } label: {
+                                HubTile(title: "Wäsche", symbol: "washer.fill", color: .teal)
                             }
                         }
                         if store.allows(.pool) {

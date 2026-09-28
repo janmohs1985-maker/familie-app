@@ -53,6 +53,7 @@ struct TodayView: View {
         case .weather: weatherCard
         case .mailbox: mailboxBanner
         case .doorbell: if store.ringRecently { DoorbellCard() }
+        case .laundry: LaundryTodayCard()
         case .parentTodos: ParentTodosTodayCard()
         case .music: MusicTodayCard()
         case .vacuum: VacuumTodayCard()
