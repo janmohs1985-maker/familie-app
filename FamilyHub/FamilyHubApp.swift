@@ -47,6 +47,7 @@ struct RootView: View {
                     if store.allows(.listen) {
                         ListsView()
                             .tabItem { Label("Listen", systemImage: "cart.fill") }
+                            .badge((store.todoItems[FamilyConfig.shoppingList] ?? []).filter { !$0.done }.count)
                             .tag("listen")
                     }
                     ControlsView()

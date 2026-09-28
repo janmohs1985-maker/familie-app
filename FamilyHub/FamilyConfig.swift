@@ -88,6 +88,7 @@ enum FamilyConfig {
 
     static let mealPlan = "todo.essensplan"             // Gericht, Datum = Fälligkeitsdatum, Beschreibung JSON {"mahlzeit","zutaten"}
     static let mealWishes = "todo.essenswuensche"       // Wünsche, Beschreibung JSON {"von","zeit"}
+    static let shoppingMeta = "todo.einkauf_details"    // wer hat was eingetragen / gekauft / „haben wir noch“
     static let shoppingList = "todo.einkaufsliste"      // Ziel für „Zutaten auf die Einkaufsliste“
     static let controllableDomains: Set<String> = ["light", "switch", "input_boolean", "cover", "fan", "lock",
                                                    "scene", "script", "button", "input_button"]
@@ -191,7 +192,7 @@ enum FamilyConfig {
     static let schoolDocsList = "todo.schulmappe"             // Schulmappe (Fotos über das Scanner-Add-on)
 
     static var systemTodoLists: Set<String> {
-        Set(kids.map { choreList($0.id) } + [choreTemplates, rewards, rewardRequests, pointsHistory, doorbellHistory, appControls, mealPlan, mealWishes, freizeitList, schoolDocsList, parentTodoList])
+        Set(kids.map { choreList($0.id) } + [choreTemplates, rewards, rewardRequests, pointsHistory, doorbellHistory, appControls, mealPlan, mealWishes, freizeitList, schoolDocsList, parentTodoList, shoppingMeta])
     }
 
     // MARK: Farben für Kalender (nach Reihenfolge)

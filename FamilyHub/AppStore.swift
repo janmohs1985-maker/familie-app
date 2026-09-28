@@ -14,6 +14,7 @@ final class AppStore {
     var events: [HAEvent] = []
     var todoLists: [HAState] = []
     var todoItems: [String: [TodoItem]] = [:]
+    var shopMeta: [String: ShopMetaEntry] = [:]      // Zusatzinfos je Listen-Eintrag (uid)
     var pictures: [String: UIImage] = [:]
 
     // Aufgaben & Belohnungen
@@ -175,6 +176,7 @@ final class AppStore {
                 }
             } catch { report(error) }
         }
+        await refreshShopMeta()
     }
 
     // MARK: - Aktionen
