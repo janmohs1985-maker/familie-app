@@ -1,0 +1,61 @@
+import SwiftUI
+
+// MARK: - Links aus Mitteilungen: familie://einkauf, familie://sauger, …
+//
+// Home Assistant hängt an jede Familie-Mitteilung einen solchen Link. Beim Antippen öffnet iOS die App
+// und wir springen auf die passende Seite.
+
+enum DeepLink {
+    /// Ziele, die als Seite unter „Zuhause“ geöffnet werden
+    static let zuhausePages: [String: KidFeature?] = [
+        "essen": .essensplan, "sauger": .saugroboter, "pool": .pool, "strom": .strom, "heizung": .heizung,
+        "bewaesserung": .bewaesserung, "internet": .internet, "haustuer": .haustuer, "musik": .musik, "schule": .schulmappe,
+        "stundenplan": .stundenplan, "scanner": nil, "gaeste": nil,
+    ]
+}
+
+@MainActor
+extension AppStore {
+    func openLink(_ url: URL) {
+        guard url.scheme == "familie" else { return }
+        let target = (url.host ?? url.path).trimmingCharacters(in: CharacterSet(charactersIn: "/")).lowercased()
+        switch target {
+        case "heute", "wetter", "": selectedTab = "heute"
+        case "kalender", "termine": if allows(.kalender) { selectedTab = "kalender" }
+        case "einkauf", "listen": if allows(.listen) { selectedTab = "listen" }
+        case "aufgaben": selectedTab = "aufgaben"
+        case "wir": selectedTab = "aufgaben"; aufgabenMode = "wir"
+        default:
+            guard let feature = DeepLink.zuhausePages[target] else { selectedTab = "heute"; return }
+            if let f = feature, !allows(f) { selectedTab = "heute"; return }
+            if feature == nil && !(isParent && activeKid == nil) { selectedTab = "heute"; return }
+            selectedTab = "zuhause"
+            route = target
+        }
+    }
+}
+
+/// Seite zu einem Link-Ziel
+struct DeepLinkDestination: View {
+    @Environment(AppStore.self) private var store
+    let target: String
+
+    var body: some View {
+        switch target {
+        case "essen": MealPlanView()
+        case "sauger": VacuumsView()
+        case "pool": PoolView()
+        case "strom": EnergyView()
+        case "heizung": HeatingView()
+        case "bewaesserung": IrrigationView()
+        case "internet": NetworkView()
+        case "haustuer": DoorbellView()
+        case "musik": MusicView()
+        case "schule": SchoolDocsView(kid: store.activeKid)
+        case "stundenplan": TimetableView(kid: store.activeKid)
+        case "scanner": DocumentsView()
+        case "gaeste": GuestWifiView()
+        default: Text("Seite nicht gefunden").foregroundStyle(.secondary)
+        }
+    }
+}

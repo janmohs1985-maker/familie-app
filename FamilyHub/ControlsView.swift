@@ -46,6 +46,7 @@ struct ControlsView: View {
     @State private var lightSheet: AppControl?
     @State private var showSettings = false
     @State private var showMap = false
+    @State private var linkTarget: String?
 
     private let columns = [GridItem(.flexible(), spacing: 12), GridItem(.flexible(), spacing: 12)]
 
@@ -72,7 +73,7 @@ struct ControlsView: View {
                 }
                 .padding(.horizontal)
 
-                if [KidFeature.strom, .heizung, .pool, .bewaesserung, .saugroboter].contains(where: { store.allows($0) }) {
+                if [KidFeature.strom, .heizung, .internet, .pool, .bewaesserung, .saugroboter].contains(where: { store.allows($0) }) {
                     SectionTitle("Haus")
                     LazyVGrid(columns: columns, spacing: 12) {
                         if store.allows(.strom) {
@@ -83,6 +84,11 @@ struct ControlsView: View {
                         if store.allows(.heizung) {
                             NavigationLink { HeatingView() } label: {
                                 HubTile(title: "Heizung", symbol: "heat.waves", color: .red)
+                            }
+                        }
+                        if store.allows(.internet) {
+                            NavigationLink { NetworkView() } label: {
+                                HubTile(title: "Internet", symbol: "globe.europe.africa.fill", color: .indigo)
                             }
                         }
                         if store.allows(.pool) {
@@ -172,6 +178,9 @@ struct ControlsView: View {
             }
             .sheet(isPresented: $showSettings) { SettingsView() }
             .fullScreenCover(isPresented: $showMap) { FamilyMapView() }
+            .navigationDestination(item: $linkTarget) { t in DeepLinkDestination(target: t) }
+            .onChange(of: store.route) { _, r in takeRoute(r) }
+            .onAppear { takeRoute(store.route) }
             .task { await store.refreshControls() }
             .confirmationDialog(pending.map { "\($0.name) wirklich schalten?" } ?? "",
                                 isPresented: Binding(get: { pending != nil }, set: { if !$0 { pending = nil } }),
@@ -184,6 +193,13 @@ struct ControlsView: View {
             .sheet(item: $coverSheet) { c in CoverSheet(control: c).presentationDetents([.medium]) }
             .sheet(item: $lightSheet) { c in LightSheet(control: c).presentationDetents([.height(260)]) }
         }
+    }
+
+    private func takeRoute(_ r: String?) {
+        guard let r else { return }
+        store.route = nil
+        linkTarget = nil
+        DispatchQueue.main.asyncAfter(deadline: .now() + 0.35) { linkTarget = r }
     }
 
     private func tap(_ c: AppControl) {

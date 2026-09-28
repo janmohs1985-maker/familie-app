@@ -71,6 +71,10 @@ struct RootView: View {
             }
         }
         .onChange(of: myName) { _, n in if let n { lastUserName = n } }
+        .onOpenURL { url in
+            splashDone = true
+            store.openLink(url)
+        }
         .animation(.default, value: store.isLoggedIn)
     }
 

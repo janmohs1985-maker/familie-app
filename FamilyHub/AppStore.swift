@@ -36,6 +36,7 @@ final class AppStore {
 
     // Navigation
     var selectedTab = "heute"
+    var route: String?                            // Ziel aus einem Mitteilungs-Link (familie://…)
     var aufgabenMode = "wir"                      // Eltern: "wir" oder "kinder"
 
     // Dokumente / Scanner (nur Eltern)
