@@ -218,13 +218,15 @@ push auf main
 ```
 
 - **Versionsnummer:** Die Datei `VERSION` enthält die Nummer des Update-Pakets, daraus wird zum Beispiel **1.0.59**. Die Build-Nummer ist die Nummer des GitHub-Laufs, damit Updates immer erkannt werden. In der App steht das unter Einstellungen → App, etwa „1.0.59 (55)“.
-- **Signierung:** automatisch über einen App-Store-Connect-API-Schlüssel, Methode *release-testing* (Ad Hoc). Nötige **GitHub-Secrets**:
+- **Signierung:** mit einem festen **Apple-Distribution-Zertifikat**. Das Ad-hoc-Profil mit allen eingetragenen iPhones holt der Workflow bei jedem Build selbst über die App-Store-Connect-API (`.github/scripts/adhoc_profile.py`), Methode *release-testing*. Es entstehen dabei keine neuen Zertifikate. Nötige **GitHub-Secrets**:
   - `APPLE_TEAM_ID`
   - `ASC_KEY_ID`
   - `ASC_ISSUER_ID`
   - `ASC_KEY_P8`
+  - `DIST_P12`: das Zertifikat samt privatem Schlüssel als .p12, base64
+  - `DIST_P12_PASSWORD`
 
-  Fehlen sie, baut der Workflow unsigniert.
+  Fehlen alle, baut der Workflow unsigniert.
 - **Neues iPhone:** Die UDID im Apple-Entwicklerkonto unter *Devices* eintragen, dann unter *Actions → Run workflow* neu bauen und die Installationsseite in **Safari** öffnen.
 - **Gültigkeit:** Die App läuft ein Jahr, danach das Entwicklerkonto verlängern und neu bauen.
 
