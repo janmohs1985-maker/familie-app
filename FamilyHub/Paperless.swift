@@ -229,6 +229,11 @@ extension AppStore {
         }
     }
 
+    /// Dokument löschen – Paperless legt es in den Papierkorb (dort wiederherstellbar)
+    func paperlessDelete(_ id: Int) async throws {
+        _ = try await paperless(["aktion": "loeschen", "id": id])
+    }
+
     func paperlessFile(_ id: Int) async throws -> Data {
         let r = try await paperless(["aktion": "datei", "id": id], timeout: 120)
         guard let b64 = r["data"]?.string, let d = Data(base64Encoded: b64) else {
@@ -288,6 +293,11 @@ struct PaperlessView: View {
         .onChange(of: text) { _, t in if t.isEmpty { Task { await reload() } } }
         .refreshable { await start() }
         .task { if status == nil { await start() } }
+    }
+
+    private func removed(_ id: Int) {
+        docs.removeAll { $0.id == id }
+        total = max(0, total - 1)
     }
 
     private func updated(_ changed: PaperlessDoc) {
@@ -388,7 +398,8 @@ struct PaperlessView: View {
             }
             ForEach(docs) { d in
                 NavigationLink {
-                    PaperlessDocView(doc: d, meta: meta) { changed in updated(changed) }
+                    PaperlessDocView(doc: d, meta: meta, changed: { changed in updated(changed) },
+                                     deleted: { id in removed(id) })
                 } label: {
                     PaperlessDocRow(doc: d)
                 }
@@ -503,7 +514,10 @@ struct PaperlessDocView: View {
     @State var doc: PaperlessDoc
     let meta: PaperlessMeta
     var changed: (PaperlessDoc) -> Void = { _ in }
+    var deleted: (Int) -> Void = { _ in }
 
+    @Environment(\.dismiss) private var dismiss
+    @State private var confirmDelete = false
     @State private var data: Data?
     @State private var shareURL: URL?
     @State private var error: String?
@@ -532,6 +546,16 @@ struct PaperlessDocView: View {
             ToolbarItem(placement: .primaryAction) {
                 Button("Einordnen") { editing = true }
             }
+            ToolbarItem(placement: .secondaryAction) {
+                Button(role: .destructive) { confirmDelete = true } label: {
+                    Label("Löschen", systemImage: "trash")
+                }
+            }
+        }
+        .confirmationDialog("„\(doc.title)“ löschen?", isPresented: $confirmDelete, titleVisibility: .visible) {
+            Button("Löschen", role: .destructive) { Task { await remove() } }
+        } message: {
+            Text("Das Dokument kommt in den Papierkorb von Paperless und kann dort 30 Tage lang wiederhergestellt werden.")
         }
         .fileExporter(isPresented: $exporting, document: data.map { PDFFile(data: $0) },
                       contentType: .pdf, defaultFilename: doc.title) { _ in }
@@ -588,6 +612,18 @@ struct PaperlessDocView: View {
         }
         .padding()
         .background(.bar)
+    }
+
+    private func remove() async {
+        busy = true
+        do {
+            try await store.paperlessDelete(doc.id)
+            deleted(doc.id)
+            dismiss()
+        } catch {
+            self.error = error.localizedDescription
+        }
+        busy = false
     }
 
     /// Posteingang-Tag entfernen
@@ -946,6 +982,7 @@ struct PaperlessUploadSheet: View {
     @State private var error: String?
     @State private var newDoc: PaperlessDoc?
     @State private var info = ""
+    @State private var confirmDelete = false
 
     private var apiReady: Bool { status?.ready == true }
 
@@ -958,6 +995,19 @@ struct PaperlessUploadSheet: View {
                     ToolbarItem(placement: .cancellationAction) {
                         Button(closeTitle) { dismiss() }
                     }
+                    if phase == .review && newDoc != nil {
+                        ToolbarItem(placement: .bottomBar) {
+                            Button(role: .destructive) { confirmDelete = true } label: {
+                                Label("Dokument wieder löschen", systemImage: "trash")
+                            }
+                            .tint(.red)
+                        }
+                    }
+                }
+                .confirmationDialog("Dokument in Paperless löschen?", isPresented: $confirmDelete, titleVisibility: .visible) {
+                    Button("Löschen", role: .destructive) { Task { await removeNew() } }
+                } message: {
+                    Text("Es kommt in den Papierkorb von Paperless (30 Tage wiederherstellbar). Der Scan in der App bleibt erhalten.")
                 }
         }
         .task { await prepare() }
@@ -1041,6 +1091,19 @@ struct PaperlessUploadSheet: View {
                 }
                 .disabled(sending)
             }
+        }
+    }
+
+    private func removeNew() async {
+        guard let d = newDoc else { return }
+        do {
+            try await store.paperlessDelete(d.id)
+            store.sentScans.remove(scan.file)
+            done("In Paperless wieder gelöscht.")
+            dismiss()
+        } catch {
+            self.error = error.localizedDescription
+            phase = .failed
         }
     }
 
