@@ -834,6 +834,7 @@ struct SettingsView: View {
                     }
                 }
                 AppVersionSection()
+                AppLockSection()
                 Section {
                     Picker("Erscheinungsbild", selection: $appearance) {
                         Text("Wie iPhone").tag("system")

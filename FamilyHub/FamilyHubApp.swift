@@ -10,10 +10,12 @@ struct FamilyHubApp: App {
         WindowGroup {
             RootView()
                 .environment(store)
+                .overlay { LockOverlay() }
                 .tint(.indigo)
                 .preferredColorScheme(appearance == "dark" ? .dark : (appearance == "light" ? .light : nil))
         }
         .onChange(of: scenePhase) { _, phase in
+            AppLock.shared.sceneChanged(phase)
             if phase == .active, store.isLoggedIn {
                 store.startPolling()
                 Task { await store.refreshAll(); await store.reportDevice() }
@@ -108,5 +110,22 @@ struct ErrorBanner: View {
             .padding(10)
             .background(.orange.opacity(0.12), in: RoundedRectangle(cornerRadius: 12))
         }
+    }
+}
+
+/// Sperre bzw. Sichtschutz über der ganzen App
+struct LockOverlay: View {
+    @State private var lock = AppLock.shared
+
+    var body: some View {
+        Group {
+            if lock.locked {
+                LockScreen()
+            } else if lock.covered {
+                PrivacyCover()
+            }
+        }
+        .animation(.easeInOut(duration: 0.2), value: lock.locked)
+        .task { if lock.locked { await lock.unlock() } }
     }
 }
