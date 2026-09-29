@@ -223,6 +223,10 @@ struct DoorbellView: View {
     @State private var liveTick = 0
     @State private var showLive = true
     @State private var zoom: DoorbellRing?
+    @State private var deleting: DoorbellRing?
+    @State private var confirmAll = false
+
+    private var canDelete: Bool { store.isParent && store.activeKid == nil }
 
     private let columns = [GridItem(.flexible(), spacing: 10), GridItem(.flexible(), spacing: 10)]
 
@@ -239,7 +243,15 @@ struct DoorbellView: View {
                     }
                 }
 
-                Text("Letzte Besucher").font(.headline).padding(.horizontal, 4)
+                HStack {
+                    Text("Letzte Besucher").font(.headline)
+                    Spacer()
+                    if canDelete && !store.doorbellRings.isEmpty {
+                        Button("Alle löschen", role: .destructive) { confirmAll = true }
+                            .font(.subheadline)
+                    }
+                }
+                .padding(.horizontal, 4)
                 if store.doorbellRings.isEmpty {
                     Text("Noch keine Aufnahmen. Ab jetzt wird bei jedem Klingeln ein Bild gespeichert (die letzten 10).")
                         .font(.subheadline).foregroundStyle(.secondary).padding(.horizontal, 4)
@@ -256,7 +268,16 @@ struct DoorbellView: View {
                             }
                         }
                         .buttonStyle(.plain)
+                        .contextMenu {
+                            if canDelete {
+                                Button(role: .destructive) { deleting = r } label: { Label("Löschen", systemImage: "trash") }
+                            }
+                        }
                     }
+                }
+                if canDelete && !store.doorbellRings.isEmpty {
+                    Text("Bild lange drücken zum Löschen").font(.caption2).foregroundStyle(.tertiary)
+                        .frame(maxWidth: .infinity)
                 }
             }
             .padding()
@@ -277,8 +298,38 @@ struct DoorbellView: View {
                     .background(Color.black)
                     .navigationTitle(r.time.map { $0.formatted(date: .abbreviated, time: .shortened) } ?? r.label)
                     .navigationBarTitleDisplayMode(.inline)
-                    .toolbar { Button("Fertig") { zoom = nil } }
+                    .toolbar {
+                        ToolbarItem(placement: .confirmationAction) { Button("Fertig") { zoom = nil } }
+                        if canDelete {
+                            ToolbarItem(placement: .bottomBar) {
+                                Button(role: .destructive) { deleting = r } label: { Label("Löschen", systemImage: "trash") }
+                                    .tint(.red)
+                            }
+                        }
+                    }
+                    .confirmationDialog("Dieses Bild löschen?", isPresented: Binding(get: { deleting != nil && zoom != nil },
+                                                                                    set: { if !$0 { deleting = nil } }),
+                                        titleVisibility: .visible) {
+                        Button("Löschen", role: .destructive) {
+                            if let d = deleting { Task { await store.deleteDoorbellRing(d); deleting = nil; zoom = nil } }
+                        }
+                    }
             }
+        }
+        .confirmationDialog("Dieses Bild löschen?", isPresented: Binding(get: { deleting != nil && zoom == nil },
+                                                                        set: { if !$0 { deleting = nil } }),
+                            titleVisibility: .visible) {
+            Button("Löschen", role: .destructive) {
+                if let d = deleting { Task { await store.deleteDoorbellRing(d); deleting = nil } }
+            }
+        }
+        .confirmationDialog("Alle Besucher-Bilder löschen?", isPresented: $confirmAll, titleVisibility: .visible) {
+            Button("Alle löschen", role: .destructive) {
+                let all = store.doorbellRings
+                Task { for r in all { await store.deleteDoorbellRing(r) } }
+            }
+        } message: {
+            Text("Einträge und Bilder werden endgültig entfernt.")
         }
     }
 }

@@ -23,6 +23,16 @@ extension AppStore {
         } catch { report(error) }
     }
 
+    /// Besuch aus dem Verlauf löschen – Eintrag und Bild
+    func deleteDoorbellRing(_ r: DoorbellRing) async {
+        do {
+            try await client.call("todo", "remove_item", ["entity_id": FamilyConfig.doorbellHistory, "item": r.uid])
+            _ = try? await paperless(["aktion": "klingelbild_loeschen", "file": r.file])
+            doorbellRings.removeAll { $0.id == r.id }
+        } catch { report(error) }
+        await refreshDoorbell()
+    }
+
     /// Zeitpunkt des letzten Klingelns (Zustand der Event-Entität ist ein Zeitstempel)
     var lastRing: Date? { HADate.parse(states[FamilyConfig.doorbellEvent]?.state) }
 
