@@ -101,7 +101,8 @@ extension AppStore {
         switch v {
         case .string(let s): return s == text || s.contains(text)
         case .array(let a): return a.contains { jsonMentions($0, text) }
-        case .object(let o): return o.values.contains { jsonMentions($0, text) }
+        // Adaptive Cover nennt den Rollladen als Schlüssel, z. B. actual_positions = {"cover.wohnzimmer_sud": 18}
+        case .object(let o): return o.keys.contains(text) || o.values.contains { jsonMentions($0, text) }
         default: return false
         }
     }
