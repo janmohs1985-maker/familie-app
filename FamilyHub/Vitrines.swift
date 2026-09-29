@@ -380,8 +380,16 @@ struct DoorView: View {
         )
         .animation(.easeInOut(duration: 0.4), value: color)
         .accessibilityElement()
-        .accessibilityLabel(door.kind == .decor ? "Dekortür" : door.kind == .open ? "offenes Fach" : "Fach \(door.id), \(color == nil ? "aus" : "an")")
+        .accessibilityLabel(a11yLabel)
         .accessibilityAddTraits(door.inactive ? [] : .isButton)
+    }
+
+    private var a11yLabel: String {
+        switch door.kind {
+        case .decor: return "Dekortür"
+        case .open: return "offenes Fach"
+        case .glass, .noLight: return "Fach \(door.id), \(color == nil ? "aus" : "an")"
+        }
     }
 
     @ViewBuilder

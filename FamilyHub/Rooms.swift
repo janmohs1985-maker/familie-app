@@ -698,10 +698,7 @@ struct CoverRow: View {
                 VStack(alignment: .leading, spacing: 6) {
                     HStack(spacing: 6) {
                         Text(item.n).font(.subheadline.weight(.semibold)).foregroundStyle(.primary)
-                        if store.blind(for: item.e).map({ store.blindShading($0) }) == true {
-                            Image(systemName: "sun.max.fill").font(.caption2).foregroundStyle(.orange)
-                                .accessibilityLabel("Automatik beschattet")
-                        }
+                        if let b = store.blind(for: item.e) { ShadingBadge(blind: b) }
                     }
                     Text(stateText).font(.caption).foregroundStyle(moving ? Color.orange : .secondary).lineLimit(1)
                     GeometryReader { g in

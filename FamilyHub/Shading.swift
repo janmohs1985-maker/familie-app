@@ -39,6 +39,9 @@ enum ShadingConfig {
         Blind(prefix: "og_nord_kinderbad", name: "Kinderbad", floor: "OG", venetian: false),
     ]
 
+    /// Beschattungen, deren Zielposition den Rollladen nicht in den Attributen nennt
+    static let coverFallback: [String: String] = ["cover.kinderbad": "og_nord_kinderbad"]
+
     static func statusText(_ s: String) -> String {
         [
             "active": "Automatik aktiv", "sun_not_visible": "Keine Sonne auf dem Fenster",
@@ -87,7 +90,8 @@ extension AppStore {
 
     /// Welche Beschattungs-Automatik steuert diesen Rollladen? (steht in den Attributen der Zielposition)
     func blind(for cover: String) -> ShadingConfig.Blind? {
-        ShadingConfig.blinds.first { b in
+        if let p = ShadingConfig.coverFallback[cover] { return ShadingConfig.blinds.first { $0.prefix == p } }
+        return ShadingConfig.blinds.first { b in
             guard let attrs = states[b.target]?.attributes else { return false }
             return attrs.values.contains { v in Self.jsonMentions(v, cover) }
         }
@@ -349,5 +353,37 @@ struct BlindRow: View {
                     .labelsHidden()
             }
         }
+    }
+}
+
+/// Kleines Abzeichen: Steuert gerade die Automatik diesen Rollladen?
+struct ShadingBadge: View {
+    @Environment(AppStore.self) private var store
+    let blind: ShadingConfig.Blind
+    /// nur das Symbol (für kleine Kacheln)
+    var compact = false
+
+    var body: some View {
+        let i = info
+        HStack(spacing: 3) {
+            Image(systemName: i.0).font(.system(size: 9, weight: .bold))
+            if !compact { Text(i.1).font(.caption2.weight(.semibold)) }
+        }
+        .accessibilityElement(children: .ignore)
+        .accessibilityLabel(i.1)
+        .foregroundStyle(i.2)
+        .padding(.horizontal, 6).padding(.vertical, 2)
+        .background(i.2.opacity(0.14), in: Capsule())
+        .fixedSize()
+    }
+
+    private var info: (String, String, Color) {
+        if !store.blindAutoOn(blind) { return ("hand.raised.fill", "Manuell", .secondary) }
+        if let until = store.blindPausedUntil(blind) {
+            let t = until == .distantFuture ? "Pause" : "Pause bis " + until.formatted(date: .omitted, time: .shortened)
+            return ("pause.fill", t, .orange)
+        }
+        if store.blindShading(blind) { return ("sun.max.fill", "Auto · beschattet", .orange) }
+        return ("a.circle.fill", "Auto", .green)
     }
 }

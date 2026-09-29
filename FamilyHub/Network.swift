@@ -232,6 +232,7 @@ struct NetworkView: View {
     @State private var routes: [AppStore.NetRoute]?
     @State private var routeBusy: String?
     @State private var modeError: String?
+    @State private var trafficOpen = false
 
     struct ConfirmAction: Identifiable {
         let id = UUID()
@@ -321,14 +322,33 @@ struct NetworkView: View {
 
     // MARK: Wohin geht der Verkehr?
 
+    /// Zugeklappt: nur eine Zeile „x über 1&1 · y über Starlink“, aufgeklappt die Umschalter
     private var trafficCard: some View {
-        Card(title: "Wohin geht der Verkehr?", symbol: "arrow.triangle.swap") {
-            VStack(alignment: .leading, spacing: 10) {
+        VStack(alignment: .leading, spacing: 10) {
+            Button {
+                withAnimation(.snappy) { trafficOpen.toggle() }
+            } label: {
+                HStack(spacing: 10) {
+                    Image(systemName: "arrow.triangle.swap")
+                        .font(.subheadline.weight(.semibold)).foregroundStyle(Color.accentColor)
+                        .frame(width: 30, height: 30)
+                        .background(Color.accentColor.opacity(0.12), in: Circle())
+                    VStack(alignment: .leading, spacing: 2) {
+                        Text("Wohin geht der Verkehr?").font(.subheadline.weight(.semibold)).foregroundStyle(.primary)
+                        Text(trafficSummary).font(.caption).foregroundStyle(.secondary)
+                    }
+                    Spacer()
+                    Image(systemName: "chevron.down")
+                        .font(.caption.weight(.bold)).foregroundStyle(.secondary)
+                        .rotationEffect(.degrees(trafficOpen ? 180 : 0))
+                }
+                .contentShape(Rectangle())
+            }
+            .buttonStyle(.plain)
+
+            if trafficOpen {
                 if let routes {
                     ForEach(routes) { r in routeRow(r) }
-                    if let modeError {
-                        Label(modeError, systemImage: "exclamationmark.triangle.fill").font(.caption).foregroundStyle(.red)
-                    }
                     Text(isParent ? "Grün = so geht das Netz gerade ins Internet. Antippen zum Umschalten."
                                   : "Welches Netz über welchen Anschluss ins Internet geht.")
                         .font(.caption2).foregroundStyle(.secondary)
@@ -336,7 +356,24 @@ struct NetworkView: View {
                     ProgressView().frame(maxWidth: .infinity)
                 }
             }
+            if let modeError {
+                Label(modeError, systemImage: "exclamationmark.triangle.fill").font(.caption).foregroundStyle(.red)
+            }
         }
+        .padding()
+        .frame(maxWidth: .infinity, alignment: .leading)
+        .background(Color(.secondarySystemGroupedBackground), in: RoundedRectangle(cornerRadius: 18))
+    }
+
+    private var trafficSummary: String {
+        guard let routes else { return "wird geladen …" }
+        let sl = routes.filter(\.starlink).count
+        let one = routes.count - sl
+        var parts: [String] = []
+        if one > 0 { parts.append("\(one) \(one == 1 ? "Netz" : "Netze") über 1&1") }
+        if sl > 0 { parts.append("\(sl) über Starlink") }
+        if routes.contains(where: { $0.starlink && $0.killSwitch }) { parts.append("Notaus an") }
+        return parts.isEmpty ? "keine Umleitungen" : parts.joined(separator: " · ")
     }
 
     private func routeRow(_ r: AppStore.NetRoute) -> some View {

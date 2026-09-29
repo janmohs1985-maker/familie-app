@@ -96,22 +96,37 @@ struct EnergyHistoryView: View {
     @State private var mode = "tage"
     @State private var days: [EnergyDay] = []
     @State private var loading = true
-    @State private var selected: Date?
+    /// Der Tag bzw. Monat, der unten im Detail steht
+    @State private var selected: Date = Calendar.current.date(byAdding: .day, value: -1, to: Date())!
+    /// Nur solange der Finger auf dem Diagramm liegt (Charts setzt das danach wieder auf nil)
+    @State private var chartTouch: Date?
+    /// Richtung der Blätter-Animation
+    @State private var forward = true
 
     private var price: Double { store.num(EnergyConfig.price) ?? 0.29 }
     private var feed: Double { store.num(EnergyConfig.feedIn) ?? 0.11 }
+    private var unit: Calendar.Component { mode == "tage" ? .day : .month }
 
-    /// Tage oder zu Monaten zusammengefasst
-    private var entries: [EnergyDay] {
-        if mode == "tage" { return Array(days.suffix(30)) }
+    /// Alle geladenen Tage bzw. Monate (für das Blättern im Detail)
+    private var all: [EnergyDay] {
+        if mode == "tage" { return days }
         let cal = Calendar.current
         let grouped = Dictionary(grouping: days) { cal.date(from: cal.dateComponents([.year, .month], from: $0.date))! }
-        var months: [EnergyDay] = []
-        for (month, list) in grouped {
-            months.append(Self.sum(list, date: month))
-        }
-        months.sort { $0.date < $1.date }
-        return Array(months.suffix(12))
+        return grouped.map { Self.sum($0.value, date: $0.key) }.sorted { $0.date < $1.date }
+    }
+
+    private var selectedIndex: Int? {
+        all.firstIndex { Calendar.current.isDate($0.date, equalTo: selected, toGranularity: unit) }
+    }
+
+    /// Diagramm: 30 Tage bzw. 12 Monate rund um die Auswahl
+    private var entries: [EnergyDay] {
+        let list = all
+        let window = mode == "tage" ? 30 : 12
+        guard list.count > window, let idx = selectedIndex else { return Array(list.suffix(window)) }
+        if idx >= list.count - window { return Array(list.suffix(window)) }
+        let start = max(0, idx - window / 2)
+        return Array(list[start..<min(list.count, start + window)])
     }
 
     static func sum(_ list: [EnergyDay], date: Date) -> EnergyDay {
@@ -126,12 +141,7 @@ struct EnergyHistoryView: View {
         return EnergyDay(date: date, pv: pv, bought: bought, sold: sold)
     }
 
-    private var unit: Calendar.Component { mode == "tage" ? .day : .month }
-
-    private var selectedEntry: EnergyDay? {
-        guard let selected else { return nil }
-        return entries.first { Calendar.current.isDate($0.date, equalTo: selected, toGranularity: unit) }
-    }
+    private var selectedEntry: EnergyDay? { selectedIndex.map { all[$0] } }
 
     var body: some View {
         ScrollView {
@@ -144,11 +154,11 @@ struct EnergyHistoryView: View {
 
                 if loading {
                     ProgressView().frame(height: 220)
-                } else if entries.isEmpty {
+                } else if all.isEmpty {
                     ContentUnavailableView("Keine Daten", systemImage: "chart.bar")
                 } else {
-                    chartCard
                     detailCard
+                    chartCard
                     sumCard
                 }
                 Text("Kosten gerechnet mit dem aktuellen Tarif (\(Int((price * 100).rounded())) ct Bezug, \(Int((feed * 100).rounded())) ct Einspeisung).")
@@ -159,13 +169,16 @@ struct EnergyHistoryView: View {
         .background(Color(.systemGroupedBackground))
         .navigationTitle("Strom-Verlauf")
         .task {
-            let start = Calendar.current.date(byAdding: .month, value: -12, to: Date())!
+            let start = Calendar.current.date(byAdding: .month, value: -24, to: Date())!
             days = await store.energyDays(since: Calendar.current.startOfDay(for: start))
             loading = false
-            selected = Calendar.current.date(byAdding: .day, value: -1, to: Date())   // „gestern“ vorauswählen
+            if mode == "tage", selectedIndex == nil, let last = days.last { selected = last.date }
         }
         .onChange(of: mode) { _, m in
-            selected = m == "tage" ? Calendar.current.date(byAdding: .day, value: -1, to: Date()) : Date()
+            selected = m == "tage" ? (Calendar.current.date(byAdding: .day, value: -1, to: Date()) ?? Date()) : Date()
+        }
+        .onChange(of: chartTouch) { _, t in
+            if let t { selected = t }
         }
     }
 
@@ -174,8 +187,119 @@ struct EnergyHistoryView: View {
         return sel.id != d.id
     }
 
+    // MARK: Detail mit Blättern
+
+    private func step(_ by: Int) {
+        guard let idx = selectedIndex else { return }
+        let n = idx + by
+        guard all.indices.contains(n) else { return }
+        forward = by > 0
+        withAnimation(.snappy) { selected = all[n].date }
+    }
+
+    private var canBack: Bool { (selectedIndex ?? 0) > 0 }
+    private var canForward: Bool { (selectedIndex ?? all.count) < all.count - 1 }
+
+    @ViewBuilder private var detailCard: some View {
+        VStack(alignment: .leading, spacing: 12) {
+            HStack(spacing: 8) {
+                Button { step(-1) } label: {
+                    Image(systemName: "chevron.left").font(.subheadline.weight(.semibold)).frame(width: 32, height: 32)
+                }
+                .disabled(!canBack)
+                Spacer()
+                VStack(spacing: 1) {
+                    Text(detailTitle(selected)).font(.headline)
+                    if mode == "tage", !isNear(selected) {
+                        Text(selected.formatted(.dateTime.day().month(.wide).year())).font(.caption).foregroundStyle(.secondary)
+                    }
+                }
+                .contentTransition(.numericText())
+                Spacer()
+                Button { step(1) } label: {
+                    Image(systemName: "chevron.right").font(.subheadline.weight(.semibold)).frame(width: 32, height: 32)
+                }
+                .disabled(!canForward)
+            }
+            .buttonStyle(.borderless)
+            .overlay(alignment: .trailing) { datePickerButton.padding(.trailing, 40) }
+
+            Group {
+                if let d = selectedEntry {
+                    EnergySummaryBlock(e: d, price: price, feed: feed)
+                        .id(d.id)
+                        .transition(.asymmetric(insertion: .move(edge: forward ? .trailing : .leading).combined(with: .opacity),
+                                                removal: .opacity))
+                } else {
+                    Text("Für diesen Tag gibt es keine Messwerte.")
+                        .font(.subheadline).foregroundStyle(.secondary)
+                        .frame(maxWidth: .infinity, minHeight: 120)
+                }
+            }
+            .clipped()
+            Text(mode == "tage" ? "Wischen für andere Tage" : "Wischen für andere Monate")
+                .font(.caption2).foregroundStyle(.tertiary).frame(maxWidth: .infinity)
+        }
+        .padding()
+        .frame(maxWidth: .infinity, alignment: .leading)
+        .background(Color(.secondarySystemGroupedBackground), in: RoundedRectangle(cornerRadius: 18))
+        .contentShape(Rectangle())
+        .simultaneousGesture(
+            DragGesture(minimumDistance: 25)
+                .onEnded { v in
+                    guard abs(v.translation.width) > abs(v.translation.height) else { return }
+                    if v.translation.width > 50 { step(-1) }       // nach rechts ziehen = früher
+                    else if v.translation.width < -50 { step(1) } // nach links ziehen = später
+                }
+        )
+    }
+
+    /// Kleines Kalender-Symbol: Tag direkt auswählen
+    @ViewBuilder private var datePickerButton: some View {
+        if mode == "tage", let first = days.first?.date, let last = days.last?.date {
+            ZStack {
+                Image(systemName: "calendar").font(.subheadline).foregroundStyle(Color.accentColor)
+                DatePicker("Tag wählen", selection: Binding(get: { selected }, set: { v in
+                    forward = v > selected
+                    withAnimation(.snappy) { selected = v }
+                }), in: first...last, displayedComponents: .date)
+                .labelsHidden()
+                .colorMultiply(.clear)       // unsichtbar über dem Symbol, tippen öffnet den Kalender
+                .frame(width: 32, height: 32)
+                .clipped()
+            }
+            .frame(width: 32, height: 32)
+            .accessibilityLabel("Tag wählen")
+        }
+    }
+
+    private func isNear(_ date: Date) -> Bool {
+        let cal = Calendar.current
+        return cal.isDateInToday(date) || cal.isDateInYesterday(date)
+    }
+
+    private func detailTitle(_ date: Date) -> String {
+        let cal = Calendar.current
+        if mode != "tage" { return date.formatted(.dateTime.month(.wide).year()) }
+        if cal.isDateInYesterday(date) { return "Gestern" }
+        if cal.isDateInToday(date) { return "Heute (bisher)" }
+        return date.formatted(.dateTime.weekday(.wide))
+    }
+
+    // MARK: Diagramm
+
+    private var chartTitle: String {
+        guard let f = entries.first?.date, let l = entries.last?.date else { return "" }
+        if mode == "tage" {
+            if entries.last?.id == all.last?.id { return "Letzte 30 Tage" }
+            return f.formatted(.dateTime.day().month(.abbreviated)) + " – " + l.formatted(.dateTime.day().month(.abbreviated).year())
+        }
+        if entries.last?.id == all.last?.id { return "Letzte 12 Monate" }
+        return f.formatted(.dateTime.month(.abbreviated).year()) + " – " + l.formatted(.dateTime.month(.abbreviated).year())
+    }
+
     private var chartCard: some View {
-        Card(title: mode == "tage" ? "Letzte 30 Tage" : "Letzte 12 Monate", symbol: "chart.bar.fill") {
+        Card(title: chartTitle, symbol: "chart.bar.fill") {
             VStack(alignment: .leading, spacing: 8) {
                 Chart {
                     ForEach(entries) { d in
@@ -188,7 +312,7 @@ struct EnergyHistoryView: View {
                     }
                 }
                 .chartForegroundStyleScale(["Eigener Solarstrom": Color.green, "Aus dem Netz": Color.red.opacity(0.75)])
-                .chartXSelection(value: $selected)
+                .chartXSelection(value: $chartTouch)
                 .chartXAxis {
                     if mode == "tage" {
                         AxisMarks(values: .stride(by: .day, count: 7)) { _ in
@@ -206,26 +330,9 @@ struct EnergyHistoryView: View {
         }
     }
 
-    @ViewBuilder private var detailCard: some View {
-        if let d = selectedEntry {
-            let title: String = detailTitle(d.date)
-            Card(title: title, symbol: "calendar") {
-                EnergySummaryBlock(e: d, price: price, feed: feed)
-            }
-        }
-    }
-
-    private func detailTitle(_ date: Date) -> String {
-        let cal = Calendar.current
-        if mode != "tage" { return date.formatted(.dateTime.month(.wide).year()) }
-        if cal.isDateInYesterday(date) { return "Gestern" }
-        if cal.isDateInToday(date) { return "Heute (bisher)" }
-        return date.formatted(.dateTime.weekday(.wide).day().month(.wide))
-    }
-
     private var sumCard: some View {
         let total = Self.sum(entries, date: Date())
-        return Card(title: mode == "tage" ? "Summe 30 Tage" : "Summe 12 Monate", symbol: "sum") {
+        return Card(title: mode == "tage" ? "Summe dieser 30 Tage" : "Summe dieser 12 Monate", symbol: "sum") {
             EnergySummaryBlock(e: total, price: price, feed: feed)
         }
     }

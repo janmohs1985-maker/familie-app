@@ -304,7 +304,12 @@ struct ControlTile: View {
             }
             Spacer(minLength: 0)
             Text(control.name).font(.footnote.weight(.semibold)).lineLimit(2).minimumScaleFactor(0.85)
-            Text(stateText).font(.caption2).foregroundStyle(.secondary).lineLimit(1)
+            HStack(spacing: 4) {
+                Text(stateText).font(.caption2).foregroundStyle(.secondary).lineLimit(1)
+                if control.domain == "cover", let b = store.blind(for: control.entity) {
+                    ShadingBadge(blind: b, compact: true)
+                }
+            }
             if let level = levelFraction {
                 GeometryReader { g in
                     ZStack(alignment: .leading) {
@@ -414,7 +419,11 @@ struct CoverSheet: View {
     var body: some View {
         ScrollView {
             VStack(spacing: 20) {
-                Text(control.name).font(.title3.bold()).padding(.top, 24)
+                VStack(spacing: 6) {
+                    Text(control.name).font(.title3.bold())
+                    if let blind { ShadingBadge(blind: blind) }
+                }
+                .padding(.top, 24)
                 Text(Int(position) == 0 ? "Geschlossen" : Int(position) == 100 ? "Ganz offen" : "\(Int(position)) % offen")
                     .font(.system(size: 34, weight: .semibold, design: .rounded))
                     .contentTransition(.numericText())
