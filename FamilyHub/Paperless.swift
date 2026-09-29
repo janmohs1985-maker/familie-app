@@ -861,6 +861,12 @@ struct PaperlessEditForm: View {
             }
         }
         .disabled(applying)
+        Button {
+            Task { await loadAI(restart: true) }
+        } label: {
+            Label("Neu vorschlagen", systemImage: "arrow.clockwise")
+        }
+        .font(.subheadline)
     }
 
     private func aiChips(_ label: String, _ items: [PaperlessAIItem], kind: String, selected: @escaping (Int) -> Bool) -> some View {
