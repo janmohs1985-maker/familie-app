@@ -48,6 +48,24 @@ struct BrowseResult {
 extension AppStore {
 
     func speakerState(_ id: String) -> HAState? { states[id] }
+
+    /// Lautsprecher, die mit diesem zusammen spielen (Sonos-Gruppe, ohne ihn selbst)
+    func speakerGroup(_ id: String) -> [String] {
+        (states[id]?.attr("group_members")?.array ?? []).compactMap(\.string).filter { $0 != id }
+    }
+
+    /// Anderen Lautsprecher dazunehmen oder wieder trennen
+    func setSpeaker(_ other: String, joined: Bool, to leader: String) async {
+        do {
+            if joined {
+                try await client.call("media_player", "join", ["entity_id": leader, "group_members": [other]])
+            } else {
+                try await client.call("media_player", "unjoin", ["entity_id": other])
+            }
+            try? await Task.sleep(for: .seconds(1))
+            await refreshStates()
+        } catch { report(error) }
+    }
     func speakerOnline(_ id: String) -> Bool {
         guard let s = states[id] else { return false }
         return !s.isUnavailable
@@ -262,6 +280,9 @@ struct MusicView: View {
             Section {
                 SpeakerPicker(selection: $speaker)
                     .listRowInsets(EdgeInsets(top: 8, leading: 12, bottom: 8, trailing: 12))
+                if FamilyConfig.speakers.count > 1 {
+                    SpeakerGroupRow(leader: speaker)
+                }
             }
             Section {
                 NowPlayingView(speaker: speaker)
@@ -363,7 +384,8 @@ struct SpeakerPicker: View {
                                 .symbolEffect(.variableColor.iterative, isActive: playing)
                             VStack(alignment: .leading, spacing: 0) {
                                 Text(sp.name).font(.subheadline.weight(.semibold))
-                                Text(online ? (playing ? "spielt" : "bereit") : "offline").font(.caption2)
+                                Text(online ? (store.speakerGroup(sp.id).isEmpty ? (playing ? "spielt" : "bereit")
+                                                                                  : "verbunden") : "offline").font(.caption2)
                             }
                         }
                         .padding(.horizontal, 12).padding(.vertical, 8)
@@ -376,6 +398,37 @@ struct SpeakerPicker: View {
                 }
             }
         }
+    }
+}
+
+/// „Auch auf … abspielen“ – Sonos-Lautsprecher zusammenschalten
+struct SpeakerGroupRow: View {
+    @Environment(AppStore.self) private var store
+    let leader: String
+    @State private var busy: String?
+
+    private var others: [FamilyConfig.Speaker] { FamilyConfig.speakers.filter { $0.id != leader } }
+
+    var body: some View {
+        VStack(alignment: .leading, spacing: 8) {
+            Label("Zusammen abspielen", systemImage: "link").font(.subheadline.weight(.semibold))
+            ForEach(others) { sp in
+                let joined = store.speakerGroup(leader).contains(sp.id)
+                Toggle(isOn: Binding(get: { joined }, set: { on in
+                    busy = sp.id
+                    Task { await store.setSpeaker(sp.id, joined: on, to: leader); busy = nil }
+                })) {
+                    HStack(spacing: 6) {
+                        Text("Auch auf \(sp.name)")
+                        if busy == sp.id { ProgressView().controlSize(.small) }
+                    }
+                }
+                .disabled(!store.speakerOnline(sp.id) || busy != nil)
+            }
+            Text("Die Musik vom gewählten Lautsprecher läuft dann gleichzeitig auf den anderen. Lautstärke bleibt je Lautsprecher einstellbar.")
+                .font(.caption).foregroundStyle(.secondary)
+        }
+        .padding(.vertical, 4)
     }
 }
 

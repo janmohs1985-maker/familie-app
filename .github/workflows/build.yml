@@ -27,7 +27,9 @@ jobs:
           ASC_ISSUER_ID: ${{ secrets.ASC_ISSUER_ID }}
           ASC_KEY_P8: ${{ secrets.ASC_KEY_P8 }}
         run: |
-          VER="1.0.${{ github.run_number }}"
+          # Versionsnummer = Nummer des Update-Pakets (Datei VERSION), Build-Nummer zählt weiter hoch
+          UPD=$(cat VERSION 2>/dev/null | tr -dc '0-9' || true)
+          VER="1.0.${UPD:-${{ github.run_number }}}"
           BUILD="${{ github.run_number }}"
           if [ -n "$TEAM_ID" ] && [ -n "$ASC_KEY_ID" ] && [ -n "$ASC_ISSUER_ID" ] && [ -n "$ASC_KEY_P8" ]; then
             echo "== Signierter Build (Team $TEAM_ID)"
