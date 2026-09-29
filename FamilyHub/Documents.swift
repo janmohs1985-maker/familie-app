@@ -1,6 +1,7 @@
 import SwiftUI
 import PDFKit
 import UniformTypeIdentifiers
+import VisionKit
 
 // MARK: - Modell
 
@@ -150,6 +151,26 @@ extension AppStore {
         return scans.first { $0.file == new } ?? ScanFile(file: new, size: scan.size, time: scan.time)
     }
 
+    /// PDF vom iPhone (Kamera oder Dateien) als Scan ablegen – stückweise, Home Assistant begrenzt Anfragen auf 256 KB
+    func uploadPhoneScan(_ pdf: Data, name: String) async throws -> ScanFile {
+        let id = "ph" + String(UUID().uuidString.replacingOccurrences(of: "-", with: "").prefix(20))
+        let chunkSize = 140_000
+        let total = max(1, (pdf.count + chunkSize - 1) / chunkSize)
+        var file: String?
+        for idx in 0..<total {
+            let start = idx * chunkSize
+            let end = min(pdf.count, start + chunkSize)
+            let chunk = pdf.subdata(in: start..<end).base64EncodedString()
+            let r = try await paperless(["aktion": "scan_hochladen", "id": id, "idx": idx, "total": total,
+                                         "data": chunk, "name": name], timeout: 60)
+            if let f = r["file"]?.string { file = f }
+        }
+        guard let file else { throw ScannerError(message: "Hochladen unvollständig.") }
+        scanCache[file] = pdf
+        await refreshScans()
+        return scans.first { $0.file == file } ?? ScanFile(file: file, size: pdf.count, time: Date())
+    }
+
     func pdfData(_ scan: ScanFile) async throws -> Data {
         if let d = scanCache[scan.file] { return d }
         // Home Assistant liefert PDFs nicht über /media aus – das Add-on schickt sie base64-kodiert
@@ -159,6 +180,37 @@ extension AppStore {
         }
         scanCache[scan.file] = d
         return d
+    }
+}
+
+// MARK: - Fotos → PDF
+
+enum PDFBuilder {
+    /// Seiten als PDF in DIN A4, Bilder verkleinert und als JPEG, damit es schnell hochgeladen ist
+    static func pdf(from images: [UIImage]) -> Data {
+        let page = CGRect(x: 0, y: 0, width: 595, height: 842)
+        let renderer = UIGraphicsPDFRenderer(bounds: page)
+        return renderer.pdfData { ctx in
+            for img in images {
+                ctx.beginPage()
+                let small = shrink(img, maxSide: 2000)
+                let jpeg = small.jpegData(compressionQuality: 0.6).flatMap { UIImage(data: $0) } ?? small
+                let scale = min(page.width / jpeg.size.width, page.height / jpeg.size.height)
+                let w = jpeg.size.width * scale
+                let h = jpeg.size.height * scale
+                jpeg.draw(in: CGRect(x: (page.width - w) / 2, y: (page.height - h) / 2, width: w, height: h))
+            }
+        }
+    }
+
+    static func shrink(_ img: UIImage, maxSide: CGFloat) -> UIImage {
+        let side = max(img.size.width, img.size.height)
+        guard side > maxSide else { return img }
+        let f = maxSide / side
+        let size = CGSize(width: img.size.width * f, height: img.size.height * f)
+        let format = UIGraphicsImageRendererFormat()
+        format.scale = 1
+        return UIGraphicsImageRenderer(size: size, format: format).image { _ in img.draw(in: CGRect(origin: .zero, size: size)) }
     }
 }
 
@@ -196,6 +248,10 @@ struct ScannerView: View {
     @State private var name = ""
     @State private var error: String?
     @State private var opened: ScanFile?
+    @State private var showCamera = false
+    @State private var importing = false
+    @State private var uploading = false
+    @State private var phoneError: String?
 
     private var mode: Binding<ScanMode> {
         Binding(get: { ScanMode(rawValue: modeRaw) ?? .color }, set: { modeRaw = $0.rawValue })
@@ -203,6 +259,7 @@ struct ScannerView: View {
 
     var body: some View {
         List {
+            phoneSection
             Section {
                 TextField("Name (z. B. Rechnung Strom)", text: $name)
                     .textInputAutocapitalization(.sentences)
@@ -262,6 +319,17 @@ struct ScannerView: View {
             }
         }
         .navigationDestination(item: $opened) { ScanDetailView(scan: $0) }
+        .sheet(isPresented: $showCamera) {
+            DocumentCamera { images in
+                guard !images.isEmpty else { return }
+                upload(PDFBuilder.pdf(from: images))
+            }
+            .ignoresSafeArea()
+        }
+        .fileImporter(isPresented: $importing, allowedContentTypes: [.pdf, .image], allowsMultipleSelection: true) { result in
+            guard case .success(let urls) = result, !urls.isEmpty else { return }
+            importFiles(urls)
+        }
         .refreshable { await store.refreshScans() }
         .task {
             await store.refreshScans()
@@ -271,6 +339,74 @@ struct ScannerView: View {
                 try? await Task.sleep(for: .seconds(3))
                 await store.refreshScannerState()
             }
+        }
+    }
+
+    // MARK: Mit dem iPhone – auch unterwegs
+
+    private var phoneSection: some View {
+        Section {
+            HStack(spacing: 10) {
+                if VNDocumentCameraViewController.isSupported {
+                    Button { showCamera = true } label: {
+                        Label("Kamera", systemImage: "doc.viewfinder").frame(maxWidth: .infinity)
+                    }
+                    .buttonStyle(.borderedProminent)
+                }
+                Button { importing = true } label: {
+                    Label("Aus Dateien", systemImage: "folder").frame(maxWidth: .infinity)
+                }
+                .buttonStyle(.bordered)
+            }
+            .disabled(uploading)
+            .listRowInsets(EdgeInsets(top: 10, leading: 12, bottom: 10, trailing: 12))
+            if uploading {
+                HStack(spacing: 8) {
+                    ProgressView()
+                    Text("Wird hochgeladen …").foregroundStyle(.secondary)
+                }
+            }
+            if let phoneError {
+                Label(phoneError, systemImage: "exclamationmark.triangle.fill").font(.footnote).foregroundStyle(.red)
+            }
+        } header: {
+            Text("Mit dem iPhone")
+        } footer: {
+            Text("Beleg oder Brief abfotografieren – das iPhone erkennt die Ränder und macht mehrere Seiten zu einer PDF. Geht auch unterwegs.")
+        }
+    }
+
+    private func importFiles(_ urls: [URL]) {
+        var images: [UIImage] = []
+        var pdfs: [Data] = []
+        for url in urls {
+            let access = url.startAccessingSecurityScopedResource()
+            defer { if access { url.stopAccessingSecurityScopedResource() } }
+            guard let data = try? Data(contentsOf: url) else { continue }
+            if url.pathExtension.lowercased() == "pdf" {
+                pdfs.append(data)
+            } else if let img = UIImage(data: data) {
+                images.append(img)
+            }
+        }
+        if !images.isEmpty { pdfs.append(PDFBuilder.pdf(from: images)) }
+        guard !pdfs.isEmpty else { phoneError = "Die Datei konnte nicht gelesen werden."; return }
+        for pdf in pdfs { upload(pdf) }
+    }
+
+    private func upload(_ pdf: Data) {
+        phoneError = nil
+        uploading = true
+        let n = name.trimmingCharacters(in: .whitespacesAndNewlines)
+        Task {
+            do {
+                let s = try await store.uploadPhoneScan(pdf, name: n.isEmpty ? "Beleg" : n)
+                name = ""
+                opened = s
+            } catch {
+                phoneError = error.localizedDescription
+            }
+            uploading = false
         }
     }
 
