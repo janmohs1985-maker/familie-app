@@ -120,7 +120,9 @@ extension AppStore {
 // MARK: - Aufbau der Schränke (gerade von vorne, Maße aus dem Plan)
 
 struct VitrineDoor: Identifiable, Hashable {
-    enum Kind { case glass, decor, noLight }
+    enum Kind { case glass, decor, noLight, open }
+    /// Fächer ohne Licht (Deko-Tür, offenes Fach) – nicht antippbar
+    var inactive: Bool { kind == .decor || kind == .open }
     let id: String
     let kind: Kind
     let x: CGFloat, y: CGFloat, w: CGFloat, h: CGFloat
@@ -149,15 +151,27 @@ enum VitrineLayout {
         CGRect(x: 264, y: 220, width: 140, height: 260), CGRect(x: 406, y: 220, width: 140, height: 260),
         CGRect(x: 548, y: 120, width: 140, height: 360),
     ]
-    /// Regal links: vier Fächer
-    static let leftSize = CGSize(width: 300, height: 300)
+    /// Regal links: Treppe aus gleich großen Würfeln (Spalte 1–4 hat 1–4 Fächer).
+    /// Glastüren mit Licht: Spalte 3 unten + oben, Spalte 4 zweites + oberstes Fach.
+    static let leftSize = CGSize(width: 406, height: 406)
+    private static func cube(_ id: String, _ kind: VitrineDoor.Kind, col: Int, row: Int) -> VitrineDoor {
+        VitrineDoor(id: id, kind: kind, x: CGFloat(col - 1) * 102, y: CGFloat(4 - row) * 102, w: 100, h: 100)
+    }
     static let left: [VitrineDoor] = [
-        VitrineDoor(id: "L1", kind: .glass, x: 0, y: 0, w: 148, h: 148),
-        VitrineDoor(id: "L2", kind: .glass, x: 152, y: 0, w: 148, h: 148),
-        VitrineDoor(id: "L3", kind: .glass, x: 0, y: 152, w: 148, h: 148),
-        VitrineDoor(id: "L4", kind: .glass, x: 152, y: 152, w: 148, h: 148),
+        cube("O1", .open, col: 1, row: 1),
+        cube("O2", .open, col: 2, row: 1),
+        cube("O3", .open, col: 2, row: 2),
+        cube("L4", .glass, col: 3, row: 1),
+        cube("O4", .open, col: 3, row: 2),
+        cube("L2", .glass, col: 3, row: 3),
+        cube("O5", .open, col: 4, row: 1),
+        cube("L3", .glass, col: 4, row: 2),
+        cube("O6", .open, col: 4, row: 3),
+        cube("L1", .glass, col: 4, row: 4),
     ]
-    static let leftColumns: [CGRect] = [CGRect(x: 0, y: 0, width: 300, height: 300)]
+    static let leftColumns: [CGRect] = (1...4).map { c in
+        CGRect(x: CGFloat(c - 1) * 102, y: CGFloat(4 - c) * 102, width: 100, height: CGFloat(c) * 102 - 2)
+    }
 
     static let mappingEntity = "input_text.vitrine_zuordnung"
 
@@ -167,7 +181,7 @@ enum VitrineLayout {
         let right: [String: Int] = ["C2": 1, "C1": 2, "D1": 3, "B1": 4, "E2": 5, "E1": 6, "A2": 7, "A3": 8]
         var m: [String: String] = [:]
         for (door, zone) in right { m[door] = "light.esp_home03_dmx_dmx_zone_\(zone)" }
-        for (i, d) in VitrineLayout.left.enumerated() where i < VitrineConfig.left.count { m[d.id] = VitrineConfig.left[i].entity }
+        for (i, id) in ["L1", "L2", "L3", "L4"].enumerated() { m[id] = VitrineConfig.left[i].entity }
         return m
     }()
 }
@@ -255,7 +269,7 @@ struct CabinetDrawing: View {
                     DoorView(door: d, selected: selected == d.id)
                         .frame(width: d.w * k - 2, height: d.h * k - 2)
                         .offset(x: d.x * k, y: d.y * k)
-                        .onTapGesture { if d.kind != .decor { withAnimation(.snappy) { selected = d.id } } }
+                        .onTapGesture { if !d.inactive { withAnimation(.snappy) { selected = d.id } } }
                         .contextMenu { if d.kind == .glass { quickMenu(d) } }
                 }
             }
@@ -356,8 +370,8 @@ struct DoorView: View {
             glass
         }
         .padding(4)
-        .background(door.kind == .decor ? Color(.systemGray) : Color(.systemBackground))
-        .overlay(RoundedRectangle(cornerRadius: 2).stroke(Color(.label).opacity(0.8), lineWidth: 1.5))
+        .background(door.inactive ? Color(.systemGray5) : Color(.systemBackground))
+        .overlay(RoundedRectangle(cornerRadius: 2).stroke(Color(.label).opacity(door.inactive ? 0.25 : 0.8), lineWidth: door.inactive ? 1 : 1.5))
         .clipShape(RoundedRectangle(cornerRadius: 2))
         .overlay(
             RoundedRectangle(cornerRadius: 4)
@@ -366,15 +380,16 @@ struct DoorView: View {
         )
         .animation(.easeInOut(duration: 0.4), value: color)
         .accessibilityElement()
-        .accessibilityLabel(door.kind == .decor ? "Dekortür" : "Fach \(door.id), \(color == nil ? "aus" : "an")")
-        .accessibilityAddTraits(door.kind == .decor ? [] : .isButton)
+        .accessibilityLabel(door.kind == .decor ? "Dekortür" : door.kind == .open ? "offenes Fach" : "Fach \(door.id), \(color == nil ? "aus" : "an")")
+        .accessibilityAddTraits(door.inactive ? [] : .isButton)
     }
 
     @ViewBuilder
     private var glass: some View {
         switch door.kind {
-        case .decor:
-            Color(.systemGray2)
+        case .decor, .open:
+            Color(.systemGray6)
+                .overlay(RoundedRectangle(cornerRadius: 1).stroke(Color(.systemGray4), lineWidth: 1))
         case .noLight:
             RoundedRectangle(cornerRadius: 1)
                 .strokeBorder(style: StrokeStyle(lineWidth: 1, dash: [3, 3]))
@@ -414,7 +429,7 @@ struct VitrinesView: View {
                 header
                 cabinetCard("Schrank", VitrineLayout.right, VitrineLayout.rightColumns, VitrineLayout.rightSize)
                 if selectedDoor != nil { doorPanel }
-                cabinetCard("Regal", VitrineLayout.left, VitrineLayout.leftColumns, VitrineLayout.leftSize, maxWidth: 170)
+                cabinetCard("Regal", VitrineLayout.left, VitrineLayout.leftColumns, VitrineLayout.leftSize, maxWidth: 240)
                 effectsSection
                 settingsSection
             }
@@ -562,6 +577,33 @@ struct VitrinesView: View {
                 }
                 .padding(.vertical, 2)
             }
+            VStack(alignment: .leading, spacing: 14) {
+                VStack(alignment: .leading, spacing: 4) {
+                    HStack {
+                        Label("Helligkeit", systemImage: "sun.max")
+                        Spacer()
+                        Text("\(Int(brightness)) %").monospacedDigit().foregroundStyle(.secondary)
+                    }
+                    Slider(value: $brightness, in: 1...100, step: 1, onEditingChanged: { editing in
+                        if !editing { Task { await store.vitrineSetNumber(VitrineConfig.brightness, brightness) } }
+                    })
+                }
+                VStack(alignment: .leading, spacing: 4) {
+                    HStack {
+                        Label("Tempo", systemImage: "hare")
+                        Spacer()
+                        Text(speed < 20 ? "langsam" : speed < 40 ? "mittel" : "schnell").foregroundStyle(.secondary)
+                    }
+                    Slider(value: $speed, in: 5...60, step: 1, onEditingChanged: { editing in
+                        if !editing { Task { await store.vitrineSetNumber(VitrineConfig.speed, speed) } }
+                    })
+                }
+                Text(running == nil ? "Gilt für den nächsten Effekt und den Bewegungsmelder."
+                                    : "Wird sofort übernommen – der laufende Effekt passt sich an.")
+                    .font(.caption).foregroundStyle(.secondary)
+            }
+            .padding(14)
+            .background(Color(.secondarySystemGroupedBackground), in: RoundedRectangle(cornerRadius: 18))
             if running != nil && running != "normal" && running != "eigene" {
                 Button { Task { await store.vitrineStop(off: false) } } label: {
                     Label("Effekt anhalten", systemImage: "pause.fill")
@@ -582,26 +624,8 @@ struct VitrinesView: View {
                 Label("Bei Bewegung", systemImage: "figure.walk.motion")
             }
             .pickerStyle(.menu)
-            VStack(alignment: .leading, spacing: 4) {
-                HStack {
-                    Label("Helligkeit der Effekte", systemImage: "sun.max")
-                    Spacer()
-                    Text("\(Int(brightness)) %").monospacedDigit().foregroundStyle(.secondary)
-                }
-                Slider(value: $brightness, in: 1...100, step: 1, onEditingChanged: { editing in
-                    if !editing { Task { await store.vitrineSetNumber(VitrineConfig.brightness, brightness) } }
-                })
-            }
-            VStack(alignment: .leading, spacing: 4) {
-                HStack {
-                    Label("Tempo", systemImage: "hare")
-                    Spacer()
-                    Text(speed < 20 ? "langsam" : speed < 40 ? "mittel" : "schnell").foregroundStyle(.secondary)
-                }
-                Slider(value: $speed, in: 5...60, step: 1, onEditingChanged: { editing in
-                    if !editing { Task { await store.vitrineSetNumber(VitrineConfig.speed, speed) } }
-                })
-            }
+            Text("Dieser Effekt startet, wenn der Bewegungsmelder im Keller-Flur auslöst.")
+                .font(.caption).foregroundStyle(.secondary)
         }
         .padding(14)
         .background(Color(.secondarySystemGroupedBackground), in: RoundedRectangle(cornerRadius: 18))
