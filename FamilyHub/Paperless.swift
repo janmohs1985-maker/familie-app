@@ -252,11 +252,10 @@ struct PaperlessView: View {
         .onChange(of: text) { _, t in if t.isEmpty { Task { await reload() } } }
         .refreshable { await start() }
         .task { if status == nil { await start() } }
-        .navigationDestination(for: PaperlessDoc.self) { d in
-            PaperlessDocView(doc: d, meta: meta) { changed in
-                if let i = docs.firstIndex(where: { $0.id == changed.id }) { docs[i] = changed }
-            }
-        }
+    }
+
+    private func updated(_ changed: PaperlessDoc) {
+        if let i = docs.firstIndex(where: { $0.id == changed.id }) { docs[i] = changed }
     }
 
     private func start() async {
@@ -352,7 +351,11 @@ struct PaperlessView: View {
                 Text("Keine Dokumente gefunden").foregroundStyle(.secondary)
             }
             ForEach(docs) { d in
-                NavigationLink(value: d) { PaperlessDocRow(doc: d) }
+                NavigationLink {
+                    PaperlessDocView(doc: d, meta: meta) { changed in updated(changed) }
+                } label: {
+                    PaperlessDocRow(doc: d)
+                }
             }
             if loading {
                 ProgressView().frame(maxWidth: .infinity)
