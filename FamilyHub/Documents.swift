@@ -251,7 +251,9 @@ struct ScannerView: View {
                     Text("Noch keine Scans").foregroundStyle(.secondary)
                 }
                 ForEach(store.scans) { s in
-                    NavigationLink(value: s) { ScanRow(scan: s, sent: store.sentScans.contains(s.file)) }
+                    NavigationLink { ScanDetailView(scan: s) } label: {
+                        ScanRow(scan: s, sent: store.sentScans.contains(s.file))
+                    }
                 }
                 .onDelete { idx in
                     let list = idx.map { store.scans[$0] }
@@ -259,7 +261,6 @@ struct ScannerView: View {
                 }
             }
         }
-        .navigationDestination(for: ScanFile.self) { ScanDetailView(scan: $0) }
         .navigationDestination(item: $opened) { ScanDetailView(scan: $0) }
         .refreshable { await store.refreshScans() }
         .task {

@@ -66,6 +66,19 @@ struct PaperlessTask {
     let message: String
 }
 
+/// KI-Vorschlag von Paperless (über Ollama) – vorhandene Einträge mit id, neue nur mit Namen
+struct PaperlessAIItem: Hashable {
+    let id: Int?
+    let name: String
+}
+
+struct PaperlessAISuggestion {
+    var title: String
+    var correspondents: [PaperlessAIItem]
+    var types: [PaperlessAIItem]
+    var tags: [PaperlessAIItem]
+}
+
 struct PaperlessError: LocalizedError {
     let message: String
     var errorDescription: String? { message }
@@ -191,6 +204,29 @@ extension AppStore {
         let r = try await paperless(["aktion": "aufgabe", "aufgabe": id], timeout: 20)
         return PaperlessTask(status: r["status"]?.string ?? "PENDING", documentID: r["dokument"]?.int,
                              message: r["meldung"]?.string ?? "")
+    }
+
+    /// KI-Vorschläge – laufen in Family Hub im Hintergrund; status: laeuft | fertig | fehler
+    func paperlessAI(_ id: Int, restart: Bool = false) async throws -> (status: String, seconds: Int, suggestion: PaperlessAISuggestion?, error: String?) {
+        var q: [String: Any] = ["aktion": "vorschlaege", "id": id]
+        if restart { q["neu"] = true }
+        let r = try await paperless(q, timeout: 30)
+        let status: String = r["status"]?.string ?? "fehler"
+        var sug: PaperlessAISuggestion?
+        if let v = r["vorschlaege"], v.object != nil {
+            sug = PaperlessAISuggestion(title: v["titel"]?.string ?? "",
+                                        correspondents: Self.aiItems(v["absender"]),
+                                        types: Self.aiItems(v["typen"]),
+                                        tags: Self.aiItems(v["tags"]))
+        }
+        return (status, r["sekunden"]?.int ?? 0, sug, r["fehler"]?.string)
+    }
+
+    private static func aiItems(_ v: JSONValue?) -> [PaperlessAIItem] {
+        (v?.array ?? []).compactMap { x in
+            guard let n = x["name"]?.string, !n.isEmpty else { return nil }
+            return PaperlessAIItem(id: x["id"]?.int, name: n)
+        }
     }
 
     func paperlessFile(_ id: Int) async throws -> Data {
@@ -599,6 +635,11 @@ struct PaperlessEditForm: View {
     @State private var error: String?
     @State private var creating: String?          // "neu_tag" | "neu_korrespondent" | "neu_typ"
     @State private var newName = ""
+    @State private var aiStatus = "aus"             // aus | laeuft | fertig | fehler
+    @State private var aiSeconds = 0
+    @State private var ai: PaperlessAISuggestion?
+    @State private var aiError: String?
+    @State private var applying = false
 
     init(doc: PaperlessDoc, meta: PaperlessMeta, header: String?, saved: @escaping (PaperlessDoc) -> Void) {
         original = doc
@@ -619,6 +660,7 @@ struct PaperlessEditForm: View {
             if let header {
                 Section { Text(header).font(.subheadline).foregroundStyle(.secondary) }
             }
+            aiSection
             Section("Titel") {
                 TextField("Titel", text: $title)
                 DatePicker("Datum", selection: $date, displayedComponents: .date)
@@ -667,6 +709,7 @@ struct PaperlessEditForm: View {
                 .disabled(saving || title.trimmingCharacters(in: .whitespaces).isEmpty)
             }
         }
+        .task { await loadAI(restart: false) }
         .alert(createTitle, isPresented: Binding(get: { creating != nil }, set: { if !$0 { creating = nil } })) {
             TextField("Name", text: $newName)
             Button("Abbrechen", role: .cancel) { creating = nil }
@@ -703,6 +746,12 @@ struct PaperlessEditForm: View {
         let name = newName.trimmingCharacters(in: .whitespaces)
         creating = nil
         guard !name.isEmpty else { return }
+        _ = await createItem(kind, name: name)
+    }
+
+    /// Absender / Art / Tag anlegen, in die Listen aufnehmen und gleich auswählen
+    @discardableResult
+    private func createItem(_ kind: String, name: String) async -> Int? {
         do {
             let id = try await store.paperlessCreate(kind, name: name)
             let item = PaperlessItem(id: id, name: name, count: 0)
@@ -720,8 +769,140 @@ struct PaperlessEditForm: View {
                 meta.tags.sort { $0.name.lowercased() < $1.name.lowercased() }
                 tags.insert(id)
             }
+            return id
         } catch {
             self.error = error.localizedDescription
+            return nil
+        }
+    }
+
+    // MARK: KI-Vorschläge
+
+    @ViewBuilder private var aiSection: some View {
+        if aiStatus != "aus" {
+        Section {
+            switch aiStatus {
+            case "laeuft":
+                HStack(spacing: 10) {
+                    ProgressView()
+                    Text("KI liest das Dokument … \(aiSeconds) s").foregroundStyle(.secondary)
+                }
+            case "fertig":
+                if let ai { aiContent(ai) }
+            case "fehler":
+                VStack(alignment: .leading, spacing: 6) {
+                    Label(aiError ?? "KI nicht erreichbar", systemImage: "exclamationmark.triangle")
+                        .font(.subheadline).foregroundStyle(.orange)
+                    Button("Nochmal versuchen") { Task { await loadAI(restart: true) } }
+                }
+            default:
+                EmptyView()
+            }
+        } header: {
+            Label("KI-Vorschläge", systemImage: "sparkles")
+        }
+        }
+    }
+
+    @ViewBuilder private func aiContent(_ ai: PaperlessAISuggestion) -> some View {
+        if !ai.title.isEmpty && ai.title != title {
+            Button { title = ai.title } label: {
+                VStack(alignment: .leading, spacing: 2) {
+                    Text("Titel").font(.caption).foregroundStyle(.secondary)
+                    Text(ai.title).foregroundStyle(.primary)
+                }
+            }
+        }
+        aiChips("Absender", ai.correspondents, kind: "neu_korrespondent") { $0 == correspondent }
+        aiChips("Art", ai.types, kind: "neu_typ") { $0 == type }
+        aiChips("Tags", ai.tags, kind: "neu_tag") { tags.contains($0) }
+        Button {
+            Task { await applyAll(ai) }
+        } label: {
+            HStack {
+                if applying { ProgressView().padding(.trailing, 4) }
+                Label("Alle Vorschläge übernehmen", systemImage: "wand.and.stars")
+            }
+        }
+        .disabled(applying)
+    }
+
+    private func aiChips(_ label: String, _ items: [PaperlessAIItem], kind: String, selected: @escaping (Int) -> Bool) -> some View {
+        VStack(alignment: .leading, spacing: 6) {
+            Text(label).font(.caption).foregroundStyle(.secondary)
+            if items.isEmpty {
+                Text("kein Vorschlag").font(.caption).foregroundStyle(.tertiary)
+            } else {
+                ScrollView(.horizontal, showsIndicators: false) {
+                    HStack(spacing: 6) {
+                        ForEach(items, id: \.self) { it in
+                            aiChip(it, kind: kind, isOn: it.id.map(selected) ?? false)
+                        }
+                    }
+                }
+            }
+        }
+    }
+
+    private func aiChip(_ it: PaperlessAIItem, kind: String, isOn: Bool) -> some View {
+        Button {
+            Task { await apply(it, kind: kind) }
+        } label: {
+            HStack(spacing: 4) {
+                Image(systemName: isOn ? "checkmark" : (it.id == nil ? "plus" : "arrow.down.circle"))
+                    .font(.caption2.weight(.bold))
+                Text(it.name).font(.caption.weight(.semibold)).lineLimit(1)
+            }
+            .padding(.horizontal, 10).padding(.vertical, 6)
+            .foregroundStyle(isOn ? Color.white : Color.primary)
+            .background(isOn ? AnyShapeStyle(Color.accentColor) : AnyShapeStyle(Color(.tertiarySystemFill)), in: Capsule())
+        }
+        .buttonStyle(.plain)
+        .accessibilityLabel(it.id == nil ? "\(it.name) neu anlegen und übernehmen" : "\(it.name) übernehmen")
+    }
+
+    /// Einen Vorschlag übernehmen (neue Einträge werden in Paperless angelegt)
+    private func apply(_ it: PaperlessAIItem, kind: String) async {
+        guard let id = it.id else {
+            await createItem(kind, name: it.name)
+            return
+        }
+        switch kind {
+        case "neu_korrespondent": correspondent = id
+        case "neu_typ": type = id
+        default: if tags.contains(id) { tags.remove(id) } else { tags.insert(id) }
+        }
+    }
+
+    private func applyAll(_ ai: PaperlessAISuggestion) async {
+        applying = true
+        if !ai.title.isEmpty { title = ai.title }
+        if let c = ai.correspondents.first { await apply(c, kind: "neu_korrespondent") }
+        if let t = ai.types.first { await apply(t, kind: "neu_typ") }
+        for t in ai.tags {
+            if let id = t.id { tags.insert(id) } else { await createItem("neu_tag", name: t.name) }
+        }
+        applying = false
+    }
+
+    private func loadAI(restart: Bool) async {
+        aiError = nil
+        var first = true
+        for _ in 0..<120 {
+            guard let r = try? await store.paperlessAI(original.id, restart: restart && first) else {
+                if first { aiStatus = "aus" }          // KI nicht eingerichtet – Abschnitt ausblenden
+                return
+            }
+            first = false
+            aiStatus = r.status
+            aiSeconds = r.seconds
+            if r.status == "fertig" { ai = r.suggestion; return }
+            if r.status == "fehler" {
+                aiError = (r.error ?? "").contains("503") ? "Die KI hat nicht rechtzeitig geantwortet." : r.error
+                return
+            }
+            try? await Task.sleep(for: .seconds(2))
+            if Task.isCancelled { return }
         }
     }
 
@@ -775,7 +956,7 @@ struct PaperlessUploadSheet: View {
                 .navigationBarTitleDisplayMode(.inline)
                 .toolbar {
                     ToolbarItem(placement: .cancellationAction) {
-                        Button(phase == .review || phase == .processing ? "Schließen" : "Abbrechen") { dismiss() }
+                        Button(closeTitle) { dismiss() }
                     }
                 }
         }
@@ -799,7 +980,7 @@ struct PaperlessUploadSheet: View {
             .frame(maxWidth: .infinity, maxHeight: .infinity)
         case .review:
             if let d = newDoc {
-                PaperlessEditForm(doc: d, meta: meta, header: "So hat Paperless das Dokument eingeordnet. Passt etwas nicht, hier ändern und sichern.") { _ in
+                PaperlessEditForm(doc: d, meta: meta, header: "So hat Paperless das Dokument eingeordnet. Die KI-Vorschläge kommen gleich darunter – antippen übernimmt sie. Danach „Sichern“, oder „Passt so“.") { _ in
                     done("In Paperless eingeordnet.")
                     dismiss()
                 }
@@ -863,6 +1044,14 @@ struct PaperlessUploadSheet: View {
         }
     }
 
+    private var closeTitle: String {
+        switch phase {
+        case .review: return "Passt so"
+        case .processing, .failed: return "Schließen"
+        default: return "Abbrechen"
+        }
+    }
+
     private func toggle(_ id: Int) {
         if tags.contains(id) { tags.remove(id) } else { tags.insert(id) }
     }
@@ -872,7 +1061,14 @@ struct PaperlessUploadSheet: View {
         title = scan.title
         status = await store.paperlessStatus()
         if apiReady, let m = try? await store.paperlessMeta() { meta = m }
-        phase = .form
+        if apiReady {
+            // gleich hochladen – Paperless ordnet selbst ein, danach nur noch prüfen und ggf. korrigieren
+            phase = .processing
+            await send()
+            if phase == .processing && error != nil { phase = .failed }
+        } else {
+            phase = .form
+        }
     }
 
     private func send() async {
