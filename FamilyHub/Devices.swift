@@ -127,25 +127,8 @@ struct FamilyDevicesView: View {
     var body: some View {
         List {
             if let info {
-                Section {
-                    summary(info)
-                }
-                Section {
-                    if info.devices.isEmpty {
-                        Text("Noch hat sich kein Gerät gemeldet. Jede App meldet sich beim nächsten Öffnen.")
-                            .font(.subheadline).foregroundStyle(.secondary)
-                    }
-                    ForEach(info.devices) { d in
-                        DeviceRow(device: d, info: info, isThis: d.id == DeviceReport.deviceID)
-                            .swipeActions {
-                                Button(role: .destructive) {
-                                    Task { await store.forgetFamilyDevice(d.id); await load() }
-                                } label: { Label("Vergessen", systemImage: "trash") }
-                            }
-                    }
-                } header: { Text("iPhones mit der App") } footer: {
-                    Text("Jede App meldet sich beim Öffnen – höchstens alle 5 Minuten. Alte Geräte nach links wischen zum Entfernen.")
-                }
+                Section { summary(info) }
+                devicesSection(info)
             } else if loading {
                 ProgressView().frame(maxWidth: .infinity)
             } else {
@@ -161,6 +144,32 @@ struct FamilyDevicesView: View {
         }
     }
 
+    private func devicesSection(_ info: FamilyDevicesInfo) -> some View {
+        let thisID: String = DeviceReport.deviceID
+        return Section {
+            if info.devices.isEmpty {
+                Text("Noch hat sich kein Gerät gemeldet. Jede App meldet sich beim nächsten Öffnen.")
+                    .font(.subheadline).foregroundStyle(.secondary)
+            }
+            ForEach(info.devices) { (d: FamilyDevice) in
+                FamilyDeviceRow(device: d, info: info, isThis: d.id == thisID)
+                    .swipeActions { forgetButton(d) }
+            }
+        } header: {
+            Text("iPhones mit der App")
+        } footer: {
+            Text("Jede App meldet sich beim Öffnen – höchstens alle 5 Minuten. Alte Geräte nach links wischen zum Entfernen.")
+        }
+    }
+
+    private func forgetButton(_ d: FamilyDevice) -> some View {
+        Button(role: .destructive) {
+            Task { await store.forgetFamilyDevice(d.id); await load() }
+        } label: {
+            Label("Vergessen", systemImage: "trash")
+        }
+    }
+
     private func load() async {
         loading = true
         info = await store.loadFamilyDevices()
@@ -168,21 +177,24 @@ struct FamilyDevicesView: View {
     }
 
     private func summary(_ info: FamilyDevicesInfo) -> some View {
-        let current = info.devices.filter { d in info.currentBuild.map { d.build >= $0 } ?? true }.count
-        let active = info.devices.filter { info.serverNow.timeIntervalSince($0.lastSeen) < 600 }.count
+        let newest: Int = info.currentBuild ?? 0
+        let now: Date = info.serverNow
+        let current: Int = info.devices.filter { (d: FamilyDevice) -> Bool in d.build >= newest }.count
+        let active: Int = info.devices.filter { (d: FamilyDevice) -> Bool in now.timeIntervalSince(d.lastSeen) < 600 }.count
+        let allCurrent: Bool = current == info.devices.count
         return VStack(alignment: .leading, spacing: 10) {
             HStack(spacing: 10) {
-                stat("\(info.devices.count)", "Geräte", .indigo)
-                stat("\(active)", "gerade aktiv", .green)
-                stat("\(current)", "aktuell", current == info.devices.count ? .green : .orange)
+                stat("\(info.devices.count)", "Geräte", Color.indigo)
+                stat("\(active)", "gerade aktiv", Color.green)
+                stat("\(current)", "aktuell", allCurrent ? Color.green : Color.orange)
             }
             if let v = info.currentVersion, let b = info.currentBuild {
                 Label("Neueste Version: \(v) (\(b))", systemImage: "arrow.down.app")
                     .font(.caption).foregroundStyle(.secondary)
             }
             if let n = info.profileDevices {
-                Label("\(n) \(n == 1 ? "iPhone darf" : "iPhones dürfen") die App installieren (bei Apple eingetragen)",
-                      systemImage: "checkmark.shield")
+                let who: String = n == 1 ? "1 iPhone darf" : "\(n) iPhones dürfen"
+                Label(who + " die App installieren (bei Apple eingetragen)", systemImage: "checkmark.shield")
                     .font(.caption).foregroundStyle(.secondary)
             }
         }
@@ -198,7 +210,7 @@ struct FamilyDevicesView: View {
     }
 }
 
-private struct DeviceRow: View {
+private struct FamilyDeviceRow: View {
     @Environment(AppStore.self) private var store
     let device: FamilyDevice
     let info: FamilyDevicesInfo
