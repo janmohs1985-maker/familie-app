@@ -1,4 +1,5 @@
 import SwiftUI
+import UIKit
 
 // MARK: - Vitrinen-Licht im Keller-Flur (DMX über ESPHome)
 //
@@ -126,26 +127,27 @@ struct VitrineDoor: Identifiable, Hashable {
 }
 
 enum VitrineLayout {
-    /// Schrank rechts: 300 × 192,8 cm, fünf Spalten (Einheiten wie im Plan, 685 × 532)
-    static let rightSize = CGSize(width: 685, height: 532)
+    /// Schrank rechts, schematisch von vorne: gleiche Fächer sind gleich groß
+    /// (Spalten B–E gleich breit, alle unteren Türen gleich hoch, Böden auf einer Linie).
+    static let rightSize = CGSize(width: 688, height: 480)
     static let right: [VitrineDoor] = [
-        VitrineDoor(id: "A1", kind: .noLight, x: 0, y: 0, w: 112, h: 167),
-        VitrineDoor(id: "A2", kind: .glass, x: 0, y: 167, w: 112, h: 165),
-        VitrineDoor(id: "A3", kind: .glass, x: 0, y: 332, w: 112, h: 170),
-        VitrineDoor(id: "B1", kind: .glass, x: 114, y: 227, w: 122, h: 105),
-        VitrineDoor(id: "B2", kind: .decor, x: 114, y: 332, w: 122, h: 180),
-        VitrineDoor(id: "C1", kind: .glass, x: 238, y: 227, w: 134, h: 105),
-        VitrineDoor(id: "C2", kind: .glass, x: 238, y: 332, w: 134, h: 190),
-        VitrineDoor(id: "D1", kind: .glass, x: 374, y: 227, w: 144, h: 105),
-        VitrineDoor(id: "D2", kind: .decor, x: 374, y: 332, w: 144, h: 190),
-        VitrineDoor(id: "E1", kind: .glass, x: 520, y: 134, w: 165, h: 198),
-        VitrineDoor(id: "E2", kind: .glass, x: 520, y: 332, w: 165, h: 200),
+        VitrineDoor(id: "A1", kind: .noLight, x: 0, y: 0, w: 120, h: 160),
+        VitrineDoor(id: "A2", kind: .glass, x: 0, y: 160, w: 120, h: 160),
+        VitrineDoor(id: "A3", kind: .glass, x: 0, y: 320, w: 120, h: 160),
+        VitrineDoor(id: "B1", kind: .glass, x: 122, y: 220, w: 140, h: 100),
+        VitrineDoor(id: "B2", kind: .decor, x: 122, y: 320, w: 140, h: 160),
+        VitrineDoor(id: "C1", kind: .glass, x: 264, y: 220, w: 140, h: 100),
+        VitrineDoor(id: "C2", kind: .glass, x: 264, y: 320, w: 140, h: 160),
+        VitrineDoor(id: "D1", kind: .glass, x: 406, y: 220, w: 140, h: 100),
+        VitrineDoor(id: "D2", kind: .decor, x: 406, y: 320, w: 140, h: 160),
+        VitrineDoor(id: "E1", kind: .glass, x: 548, y: 120, w: 140, h: 200),
+        VitrineDoor(id: "E2", kind: .glass, x: 548, y: 320, w: 140, h: 160),
     ]
     /// Korpus-Spalten (für die schmale Kante oben/rechts)
     static let rightColumns: [CGRect] = [
-        CGRect(x: 0, y: 0, width: 112, height: 502), CGRect(x: 114, y: 227, width: 122, height: 285),
-        CGRect(x: 238, y: 227, width: 134, height: 295), CGRect(x: 374, y: 227, width: 144, height: 295),
-        CGRect(x: 520, y: 134, width: 165, height: 398),
+        CGRect(x: 0, y: 0, width: 120, height: 480), CGRect(x: 122, y: 220, width: 140, height: 260),
+        CGRect(x: 264, y: 220, width: 140, height: 260), CGRect(x: 406, y: 220, width: 140, height: 260),
+        CGRect(x: 548, y: 120, width: 140, height: 360),
     ]
     /// Regal links: vier Fächer
     static let leftSize = CGSize(width: 300, height: 300)
@@ -254,12 +256,83 @@ struct CabinetDrawing: View {
                         .frame(width: d.w * k - 2, height: d.h * k - 2)
                         .offset(x: d.x * k, y: d.y * k)
                         .onTapGesture { if d.kind != .decor { withAnimation(.snappy) { selected = d.id } } }
+                        .contextMenu { if d.kind == .glass { quickMenu(d) } }
                 }
             }
             .frame(width: size.width * k, height: size.height * k, alignment: .topLeading)
             .frame(maxWidth: .infinity)
         }
         .aspectRatio(size.width / size.height, contentMode: .fit)
+    }
+
+    /// Lang drücken auf ein Fach: schnell schalten, Farbe und Helligkeit wählen
+    @ViewBuilder
+    private func quickMenu(_ d: VitrineDoor) -> some View {
+        if let e = store.vitrineMapping[d.id] {
+            let on = store.states[e]?.state == "on"
+            Section("Fach \(d.id) · \(on ? "an" : "aus")") {
+                Button {
+                    selected = d.id
+                    Task { if on { await store.vitrineOff(e) } else { await store.vitrineSet(e, [:]) } }
+                } label: {
+                    Label(on ? "Ausschalten" : "Einschalten", systemImage: on ? "lightbulb.slash" : "lightbulb.fill")
+                }
+            }
+            Menu {
+                ForEach(VitrineSwatches.all.indices, id: \.self) { i in
+                    let sw = VitrineSwatches.all[i]
+                    Button {
+                        selected = d.id
+                        Task { await store.vitrineSet(e, sw.2) }
+                    } label: {
+                        Label { Text(sw.0) } icon: { Image(uiImage: VitrineSwatches.dot(sw.1)) }
+                    }
+                }
+            } label: {
+                Label("Farbe", systemImage: "paintpalette")
+            }
+            Menu {
+                ForEach([100, 75, 50, 25, 10], id: \.self) { pct in
+                    Button("\(pct) %") {
+                        selected = d.id
+                        Task { await store.vitrineSet(e, ["brightness_pct": pct]) }
+                    }
+                }
+            } label: {
+                Label("Helligkeit", systemImage: "sun.max")
+            }
+            Button {
+                Task { await store.vitrineFind(VitrineConfig.Zone(entity: e, name: d.id)) }
+            } label: {
+                Label("Finden (blinken)", systemImage: "light.beacon.max")
+            }
+        } else {
+            Text("Fach \(d.id): noch kein Licht zugeordnet")
+        }
+    }
+}
+
+/// Farben für die Fächer (Kurzmenü und Fach-Karte)
+enum VitrineSwatches {
+    static let all: [(String, Color, [String: Any])] = [
+        ("Warmweiß", Color(red: 0.96, green: 0.78, blue: 0.48), ["color_temp_kelvin": 2700]),
+        ("Rot", Color(red: 0.9, green: 0.28, blue: 0.3), ["rgb_color": [255, 40, 50]]),
+        ("Orange", Color(red: 0.94, green: 0.54, blue: 0.14), ["rgb_color": [255, 120, 20]]),
+        ("Grün", Color(red: 0.17, green: 0.71, blue: 0.35), ["rgb_color": [30, 220, 70]]),
+        ("Türkis", Color(red: 0.13, green: 0.72, blue: 0.78), ["rgb_color": [20, 210, 230]]),
+        ("Blau", Color(red: 0.29, green: 0.39, blue: 1.0), ["rgb_color": [40, 60, 255]]),
+        ("Lila", Color(red: 0.56, green: 0.36, blue: 0.94), ["rgb_color": [150, 60, 255]]),
+        ("Pink", Color(red: 0.88, green: 0.27, blue: 0.48), ["rgb_color": [255, 40, 140]]),
+    ]
+
+    /// farbiger Punkt fürs Menü (Menüs zeigen SF-Symbole sonst nur einfarbig)
+    static func dot(_ color: Color) -> UIImage {
+        let size = CGSize(width: 22, height: 22)
+        let img = UIGraphicsImageRenderer(size: size).image { _ in
+            UIColor(color).setFill()
+            UIBezierPath(ovalIn: CGRect(origin: .zero, size: size).insetBy(dx: 2, dy: 2)).fill()
+        }
+        return img.withRenderingMode(.alwaysOriginal)
     }
 }
 
@@ -396,7 +469,13 @@ struct VitrinesView: View {
 
     private func cabinetCard(_ title: String, _ doors: [VitrineDoor], _ cols: [CGRect], _ size: CGSize, maxWidth: CGFloat? = nil) -> some View {
         VStack(alignment: .leading, spacing: 10) {
-            Text(title.uppercased()).font(.caption.weight(.semibold)).foregroundStyle(.secondary)
+            HStack {
+                Text(title.uppercased()).font(.caption.weight(.semibold)).foregroundStyle(.secondary)
+                Spacer()
+                if title == "Schrank" {
+                    Text("Fach lange drücken für Schnellmenü").font(.caption2).foregroundStyle(.tertiary)
+                }
+            }
             CabinetDrawing(doors: doors, columns: cols, size: size, selected: $selected)
                 .frame(maxWidth: maxWidth ?? .infinity)
                 .frame(maxWidth: .infinity)
@@ -408,16 +487,7 @@ struct VitrinesView: View {
 
     // MARK: Ausgewählte Tür
 
-    private static let swatches: [(String, Color, [String: Any])] = [
-        ("Warmweiß", Color(red: 0.96, green: 0.78, blue: 0.48), ["color_temp_kelvin": 2700]),
-        ("Rot", Color(red: 0.9, green: 0.28, blue: 0.3), ["rgb_color": [255, 40, 50]]),
-        ("Orange", Color(red: 0.94, green: 0.54, blue: 0.14), ["rgb_color": [255, 120, 20]]),
-        ("Grün", Color(red: 0.17, green: 0.71, blue: 0.35), ["rgb_color": [30, 220, 70]]),
-        ("Türkis", Color(red: 0.13, green: 0.72, blue: 0.78), ["rgb_color": [20, 210, 230]]),
-        ("Blau", Color(red: 0.29, green: 0.39, blue: 1.0), ["rgb_color": [40, 60, 255]]),
-        ("Lila", Color(red: 0.56, green: 0.36, blue: 0.94), ["rgb_color": [150, 60, 255]]),
-        ("Pink", Color(red: 0.88, green: 0.27, blue: 0.48), ["rgb_color": [255, 40, 140]]),
-    ]
+    private static let swatches = VitrineSwatches.all
 
     @ViewBuilder
     private var doorPanel: some View {
