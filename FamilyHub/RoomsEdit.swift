@@ -19,6 +19,7 @@ struct RoomEditView: View {
     @State private var showPicker = false
     @State private var sorting = false
     @State private var confirmDelete = false
+    @State private var showContactPicker = false
 
     private var allRooms: [Room] { model.floors.flatMap(\.rooms).filter { $0.page == nil } }
 
@@ -58,6 +59,25 @@ struct RoomEditView: View {
                     Text("Wischen zum Entfernen. Antippen zum Umbenennen oder Verschieben in einen anderen Raum.")
                 }
                 Section {
+                    ForEach(draft.contactList, id: \.self) { e in
+                        HStack {
+                            Image(systemName: "window.casement").foregroundStyle(Color.accentColor).frame(width: 26)
+                            VStack(alignment: .leading, spacing: 2) {
+                                Text(store.contactName(e))
+                                Text(e).font(.caption).foregroundStyle(.secondary)
+                            }
+                        }
+                    }
+                    .onDelete { idx in
+                        var list = draft.contactList
+                        list.remove(atOffsets: idx)
+                        draft.contacts = list.isEmpty ? nil : list
+                    }
+                    Button { showContactPicker = true } label: {
+                        Label("Fenster- oder Türkontakt hinzufügen", systemImage: "plus.circle.fill")
+                    }
+                } header: { Text("Fenster & Türen") }
+                Section {
                     Button("Raum löschen", role: .destructive) { confirmDelete = true }
                 } footer: {
                     Text("Vor jedem Speichern wird in Home Assistant eine Sicherung angelegt.")
@@ -79,6 +99,13 @@ struct RoomEditView: View {
                 RoomEntityPicker(roomName: draft.name, taken: Set(draft.list.map(\.e))) { item in
                     if draft.items == nil { draft.items = [] }
                     draft.items?.append(item)
+                }
+            }
+            .sheet(isPresented: $showContactPicker) {
+                ContactPicker(taken: Set(draft.contactList)) { e in
+                    var list = draft.contactList
+                    list.append(e)
+                    draft.contacts = list
                 }
             }
             .confirmationDialog("„\(draft.name)“ mit allen Geräten aus der App entfernen?", isPresented: $confirmDelete,
@@ -369,5 +396,45 @@ extension Optional where Wrapped == [RoomItem] {
     var orEmpty: [RoomItem] {
         get { self ?? [] }
         set { self = newValue }
+    }
+}
+
+
+/// Fenster- und Türkontakte aus Home Assistant
+struct ContactPicker: View {
+    @Environment(AppStore.self) private var store
+    @Environment(\.dismiss) private var dismiss
+    let taken: Set<String>
+    let onPick: (String) -> Void
+    @State private var search = ""
+
+    private var candidates: [HAState] {
+        store.states.values
+            .filter { s in
+                s.entity_id.hasPrefix("binary_sensor.") && !taken.contains(s.entity_id)
+                    && ["window", "door", "opening", "garage_door"].contains(s.attr("device_class")?.string ?? "")
+            }
+            .filter { search.isEmpty || $0.name.localizedCaseInsensitiveContains(search) }
+            .sorted { $0.name.localizedCompare($1.name) == .orderedAscending }
+    }
+
+    var body: some View {
+        NavigationStack {
+            List(candidates) { s in
+                Button {
+                    onPick(s.entity_id)
+                    dismiss()
+                } label: {
+                    VStack(alignment: .leading, spacing: 2) {
+                        Text(s.name).foregroundStyle(.primary)
+                        Text(s.entity_id).font(.caption).foregroundStyle(.secondary)
+                    }
+                }
+            }
+            .searchable(text: $search, prompt: "Kontakt suchen")
+            .navigationTitle("Fenster & Türen")
+            .navigationBarTitleDisplayMode(.inline)
+            .toolbar { ToolbarItem(placement: .cancellationAction) { Button("Abbrechen") { dismiss() } } }
+        }
     }
 }

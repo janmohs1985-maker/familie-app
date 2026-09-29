@@ -2,7 +2,8 @@ import SwiftUI
 
 // MARK: - Freizeitaktivitäten
 //
-// todo.freizeit: Aktivität = Name, Beschreibung JSON {"kind":"emma","tag":0,"von":"16:00","bis":"17:30","ort":"…"}
+// todo.freizeit: Aktivität = Name, Beschreibung JSON {"kind":"emma","tag":0,"von":"16:00","bis":"17:30","ort":"…","kw":"gerade"}
+// "kw" fehlt = jede Woche; "gerade"/"ungerade" = alle 14 Tage in geraden bzw. ungeraden Kalenderwochen.
 // Tag 0 = Montag … 6 = Sonntag. Bearbeiten dürfen nur Eltern, Kinder sehen ihre eigenen Termine.
 
 struct Activity: Identifiable, Hashable {
@@ -13,7 +14,16 @@ struct Activity: Identifiable, Hashable {
     var start: String
     var end: String
     var place: String
+    var parity: String = ""        // "" = jede Woche, "gerade" / "ungerade" = 14-tägig
     var id: String { uid }
+    var biweekly: Bool { !parity.isEmpty }
+
+    /// Findet die Aktivität in der Woche dieses Datums statt?
+    func happens(inWeekOf date: Date) -> Bool {
+        guard biweekly else { return true }
+        let even = FreizeitWeek.number(date) % 2 == 0
+        return (parity == "gerade") == even
+    }
     var timeText: String { end.isEmpty ? start : "\(start)–\(end)" }
     var kidName: String { FamilyConfig.kid(kid)?.name ?? kid }
     var kidColor: Color { FamilyConfig.kid(kid)?.color ?? .gray }
@@ -34,19 +44,22 @@ extension AppStore {
                       let cfg = ChoreText.json(i["description"]?.string) else { return nil }
                 return Activity(uid: uid, title: title, kid: cfg["kind"]?.string ?? "", day: cfg["tag"]?.int ?? 0,
                                 start: cfg["von"]?.string ?? "", end: cfg["bis"]?.string ?? "",
-                                place: cfg["ort"]?.string ?? "")
+                                place: cfg["ort"]?.string ?? "", parity: cfg["kw"]?.string ?? "")
             }
             .sorted { ($0.day, $0.start, $0.kid) < ($1.day, $1.start, $1.kid) }
         } catch { report(error) }
     }
 
-    /// Termine eines Kindes an einem Wochentag, nach Uhrzeit
-    func activities(kid: String, day: Int) -> [Activity] {
-        activities.filter { $0.kid == kid && $0.day == day }.sorted { $0.start < $1.start }
+    /// Termine eines Kindes an einem Wochentag (in der aktuellen Woche), nach Uhrzeit.
+    /// 14-tägige Termine erscheinen nur in ihrer Woche.
+    func activities(kid: String, day: Int, week: Date = Date()) -> [Activity] {
+        activities.filter { $0.kid == kid && $0.day == day && $0.happens(inWeekOf: week) }.sorted { $0.start < $1.start }
     }
 
     private func activityJSON(_ a: Activity) -> String {
-        ChoreText.jsonString(["kind": a.kid, "tag": a.day, "von": a.start, "bis": a.end, "ort": a.place])
+        var d: [String: Any] = ["kind": a.kid, "tag": a.day, "von": a.start, "bis": a.end, "ort": a.place]
+        if a.biweekly { d["kw"] = a.parity }
+        return ChoreText.jsonString(d)
     }
 
     /// Liefert nil bei Erfolg, sonst eine Fehlermeldung für die Anzeige
@@ -143,8 +156,14 @@ struct ActivityRow: View {
             RoundedRectangle(cornerRadius: 3).fill(activity.kidColor).frame(width: 6)
             VStack(alignment: .leading, spacing: 2) {
                 Text(showKid ? "\(activity.kidName): \(activity.title)" : activity.title).font(.body.weight(.medium))
-                if !activity.place.isEmpty {
-                    Label(activity.place, systemImage: "mappin").font(.caption).foregroundStyle(.secondary)
+                HStack(spacing: 8) {
+                    if activity.biweekly {
+                        Label(FreizeitWeek.label(activity), systemImage: "calendar.badge.clock")
+                            .font(.caption.weight(.medium)).foregroundStyle(.purple)
+                    }
+                    if !activity.place.isEmpty {
+                        Label(activity.place, systemImage: "mappin").font(.caption).foregroundStyle(.secondary)
+                    }
                 }
             }
             Spacer()
@@ -190,6 +209,18 @@ struct ActivityEditView: View {
                 Section("Wann") {
                     Picker("Tag", selection: $activity.day) {
                         ForEach(0..<7, id: \.self) { d in Text(Timetables.dayNamesLong[d]).tag(d) }
+                    }
+                    Picker("Wie oft", selection: Binding(get: { activity.biweekly ? "zwei" : "eine" },
+                                                         set: { v in activity.parity = v == "zwei" ? FreizeitWeek.parity(thisWeek: true) : "" })) {
+                        Text("Jede Woche").tag("eine")
+                        Text("Alle 14 Tage").tag("zwei")
+                    }
+                    if activity.biweekly {
+                        Picker("Das nächste Mal", selection: Binding(get: { activity.parity == FreizeitWeek.parity(thisWeek: true) ? "diese" : "naechste" },
+                                                                    set: { v in activity.parity = FreizeitWeek.parity(thisWeek: v == "diese") })) {
+                            Text("Diese Woche (KW \(FreizeitWeek.number(Date())))").tag("diese")
+                            Text("Nächste Woche (KW \(FreizeitWeek.number(Date().addingTimeInterval(7 * 86400))))").tag("naechste")
+                        }
                     }
                     DatePicker("Beginn", selection: $from, displayedComponents: .hourAndMinute)
                     Toggle("Ende angeben", isOn: $hasEnd)
@@ -287,5 +318,27 @@ struct FreizeitTodayCard: View {
             }
             .buttonStyle(.plain)
         }
+    }
+}
+
+
+/// Kalenderwochen für 14-tägige Termine
+enum FreizeitWeek {
+    static let cal: Calendar = {
+        var c = Calendar(identifier: .iso8601)
+        c.timeZone = .current
+        return c
+    }()
+
+    static func number(_ d: Date) -> Int { cal.component(.weekOfYear, from: d) }
+
+    /// Parität dieser oder der nächsten Woche
+    static func parity(thisWeek: Bool) -> String {
+        let d = thisWeek ? Date() : Date().addingTimeInterval(7 * 86400)
+        return number(d) % 2 == 0 ? "gerade" : "ungerade"
+    }
+
+    static func label(_ a: Activity) -> String {
+        a.happens(inWeekOf: Date()) ? "alle 14 Tage · diese Woche" : "alle 14 Tage · nächste Woche"
     }
 }

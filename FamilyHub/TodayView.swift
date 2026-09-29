@@ -355,18 +355,20 @@ struct Avatar: View {
     let image: UIImage?
     let name: String
     let color: Color
+    var initialFont: Font = .title2.bold()
+    var ring: CGFloat = 2
     var body: some View {
         Group {
             if let image {
                 Image(uiImage: image).resizable().scaledToFill()
             } else {
-                Text(String(name.prefix(1))).font(.title2.bold()).foregroundStyle(.white)
+                Text(String(name.prefix(1))).font(initialFont).foregroundStyle(.white)
                     .frame(maxWidth: .infinity, maxHeight: .infinity)
                     .background(color.gradient)
             }
         }
         .clipShape(Circle())
-        .overlay(Circle().stroke(color, lineWidth: 2))
+        .overlay(Circle().stroke(color, lineWidth: ring))
     }
 }
 
@@ -388,6 +390,7 @@ struct EventRow: View {
                 }
             }
             Spacer()
+            CalendarOwnerBadge(calendarID: event.calendarID, size: 24)
         }
         .fixedSize(horizontal: false, vertical: true)
     }

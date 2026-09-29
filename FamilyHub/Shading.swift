@@ -84,6 +84,100 @@ extension AppStore {
     func setBlindAuto(_ b: ShadingConfig.Blind, _ on: Bool) async {
         await setSwitch(b.auto, on)
     }
+
+    /// Welche Beschattungs-Automatik steuert diesen Rollladen? (steht in den Attributen der Zielposition)
+    func blind(for cover: String) -> ShadingConfig.Blind? {
+        ShadingConfig.blinds.first { b in
+            guard let attrs = states[b.target]?.attributes else { return false }
+            return attrs.values.contains { v in Self.jsonMentions(v, cover) }
+        }
+    }
+
+    private static func jsonMentions(_ v: JSONValue, _ text: String) -> Bool {
+        switch v {
+        case .string(let s): return s == text || s.contains(text)
+        case .array(let a): return a.contains { jsonMentions($0, text) }
+        case .object(let o): return o.values.contains { jsonMentions($0, text) }
+        default: return false
+        }
+    }
+
+    // Lamellen
+    func coverHasTilt(_ c: AppControl) -> Bool {
+        guard c.domain == "cover", let sf = states[c.entity]?.attr("supported_features")?.int else { return false }
+        return sf & 128 != 0
+    }
+    func coverTilt(_ c: AppControl) -> Int? { states[c.entity]?.attr("current_tilt_position")?.int }
+    func coverTiltSet(_ c: AppControl, _ value: Int) async {
+        do {
+            _ = try await client.call("cover", "set_cover_tilt_position", ["entity_id": c.entity, "tilt_position": value])
+            try? await Task.sleep(for: .milliseconds(700))
+            await refreshStates()
+        } catch { report(error) }
+    }
+}
+
+/// Automatik (Adaptive Cover Pro) direkt beim Rollladen: Status, an/aus, pausieren
+struct ShadingControlSection: View {
+    @Environment(AppStore.self) private var store
+    let blind: ShadingConfig.Blind
+
+    private var paused: Date? { store.blindPausedUntil(blind) }
+    private var canEdit: Bool { store.isParent && store.activeKid == nil }
+
+    var body: some View {
+        VStack(alignment: .leading, spacing: 10) {
+            HStack {
+                Label("Beschattungs-Automatik", systemImage: "sun.max.trianglebadge.exclamationmark").font(.headline)
+                Spacer()
+            }
+            Text(statusText).font(.subheadline).foregroundStyle(.secondary)
+            if canEdit {
+                Toggle("Automatik", isOn: Binding(get: { store.blindAutoOn(blind) },
+                                                  set: { on in Task { await store.setBlindAuto(blind, on) } }))
+                if store.blindAutoOn(blind) {
+                    if paused != nil {
+                        Button { Task { await store.resumeBlinds([blind]) } } label: {
+                            Label("Automatik jetzt fortsetzen", systemImage: "play.fill").frame(maxWidth: .infinity)
+                        }
+                        .buttonStyle(.borderedProminent)
+                    } else {
+                        HStack(spacing: 8) {
+                            pauseButton("1 Std.", hours: 1)
+                            pauseButton("3 Std.", hours: 3)
+                            pauseButton("Bis morgen", hours: nil)
+                        }
+                    }
+                }
+            }
+        }
+        .padding(14)
+        .background(Color(.secondarySystemGroupedBackground), in: RoundedRectangle(cornerRadius: 16))
+    }
+
+    private var statusText: String {
+        if !store.blindAutoOn(blind) { return "Automatik aus – der Rollladen bleibt, wie du ihn stellst." }
+        if let p = paused {
+            return p == .distantFuture ? "Pausiert" : "Pausiert bis \(p.formatted(date: .omitted, time: .shortened))"
+        }
+        let s = ShadingConfig.statusText(store.states[blind.status]?.state ?? "")
+        return store.blindShading(blind) ? "Beschattet gerade · \(s)" : s
+    }
+
+    private func pauseButton(_ title: String, hours: Int?) -> some View {
+        Button {
+            let end: Date
+            if let hours { end = Date().addingTimeInterval(Double(hours) * 3600) }
+            else {
+                let tomorrow = Calendar.current.date(byAdding: .day, value: 1, to: Date()) ?? Date()
+                end = Calendar.current.date(bySettingHour: 6, minute: 0, second: 0, of: tomorrow) ?? tomorrow
+            }
+            Task { await store.pauseBlinds([blind], until: end) }
+        } label: {
+            Text(title).font(.subheadline).frame(maxWidth: .infinity)
+        }
+        .buttonStyle(.bordered)
+    }
 }
 
 // MARK: - Seite

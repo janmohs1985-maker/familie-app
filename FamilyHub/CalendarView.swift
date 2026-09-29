@@ -280,6 +280,7 @@ struct WeekEventPill: View {
                 .frame(width: 42, alignment: .leading)
             Text(event.summary).font(.subheadline.weight(.medium)).lineLimit(1)
             Spacer(minLength: 0)
+            CalendarOwnerBadge(calendarID: event.calendarID, size: 18)
         }
         .padding(.vertical, 5).padding(.horizontal, 6)
         .background(color.opacity(0.12), in: RoundedRectangle(cornerRadius: 8))
@@ -306,7 +307,10 @@ struct MonthEventRow: View {
             .background(color.opacity(0.12), in: RoundedRectangle(cornerRadius: 10))
 
             VStack(alignment: .leading, spacing: 2) {
-                Text(event.summary).font(.subheadline.weight(.semibold)).lineLimit(2)
+                HStack(spacing: 6) {
+                    CalendarOwnerBadge(calendarID: event.calendarID, size: 18)
+                    Text(event.summary).font(.subheadline.weight(.semibold)).lineLimit(2)
+                }
                 HStack(spacing: 4) {
                     Text(CalMath.time(event))
                     if let name = store.calendars.first(where: { $0.entity_id == event.calendarID })?.name {
@@ -395,6 +399,41 @@ struct AddEventView: View {
             dismiss()
         } catch {
             self.error = error.localizedDescription
+        }
+    }
+}
+
+// MARK: - Wem gehört der Termin? Kleines Gesicht neben dem Termin
+
+enum CalendarOwner {
+    /// Kalender → Person (Foto aus Home Assistant); Familienkalender bekommt ein Haus-Symbol
+    static let persons: [String: String] = [
+        "calendar.jan": "person.mohs",
+        "calendar.vanessa": "person.vanessa",
+        "calendar.emma": "person.emma",
+        "calendar.leoni": "person.leoni",
+    ]
+    static let family: Set<String> = ["calendar.personlicher_kalender"]
+}
+
+struct CalendarOwnerBadge: View {
+    @Environment(AppStore.self) private var store
+    let calendarID: String
+    var size: CGFloat = 20
+
+    var body: some View {
+        if let pid = CalendarOwner.persons[calendarID], let p = FamilyConfig.people.first(where: { $0.id == pid }) {
+            Avatar(image: store.pictures[pid], name: p.name, color: p.color,
+                   initialFont: .system(size: size * 0.5, weight: .bold), ring: 1.5)
+                .frame(width: size, height: size)
+                .accessibilityLabel(p.name)
+        } else if CalendarOwner.family.contains(calendarID) {
+            Image(systemName: "house.fill")
+                .font(.system(size: size * 0.5, weight: .bold))
+                .foregroundStyle(.white)
+                .frame(width: size, height: size)
+                .background(store.color(for: calendarID).gradient, in: Circle())
+                .accessibilityLabel("Familie")
         }
     }
 }

@@ -41,8 +41,10 @@ struct Room: Codable, Identifiable, Hashable {
     var climate: String?
     var items: [RoomItem]?
     var page: String?          // statt Geräten: bestehende Seite öffnen (pool, strom, …)
+    var contacts: [String]?    // Fenster- und Türkontakte (binary_sensor)
 
     var list: [RoomItem] { items ?? [] }
+    var contactList: [String] { contacts ?? [] }
 }
 
 struct Floor: Codable, Identifiable, Hashable {
@@ -129,6 +131,16 @@ extension AppStore {
     }
 
     func isItemOn(_ i: RoomItem) -> Bool { isOn(i.control) }
+
+    func contactOpen(_ e: String) -> Bool { states[e]?.state == "on" }
+    func openContacts(_ rooms: [Room]) -> [String] { rooms.flatMap(\.contactList).filter { contactOpen($0) } }
+
+    /// „Fenster Emma Süd“ → „Emma Süd“
+    func contactName(_ e: String) -> String {
+        var n = states[e]?.name ?? e
+        for prefix in ["Fenster ", "Fenster-"] where n.hasPrefix(prefix) { n = String(n.dropFirst(prefix.count)) }
+        return n
+    }
 
     func roomLightsOn(_ r: Room) -> Int { r.list.filter { $0.isLight && isItemOn($0) }.count }
 
@@ -295,6 +307,8 @@ struct FloorHeader: View {
     private var items: [RoomItem] { floor.rooms.flatMap(\.list) }
     private var lightsOn: Int { items.filter { $0.isLight && store.isItemOn($0) }.count }
 
+    private var openWindows: [String] { store.openContacts(floor.rooms) }
+
     private var info: String {
         var parts: [String] = []
         parts.append(lightsOn == 0 ? "Alle Lichter aus" : "\(lightsOn) \(lightsOn == 1 ? "Licht" : "Lichter") an")
@@ -309,9 +323,12 @@ struct FloorHeader: View {
 
     var body: some View {
         HStack(spacing: 10) {
-            VStack(alignment: .leading, spacing: 2) {
+            VStack(alignment: .leading, spacing: 3) {
                 Text(floor.title ?? floor.name).font(.headline)
                 Text(info).font(.caption).foregroundStyle(.secondary)
+                if floor.rooms.contains(where: { !$0.contactList.isEmpty }) {
+                    windowLine
+                }
             }
             Spacer(minLength: 0)
             if lightsOn > 0 {
@@ -336,6 +353,22 @@ struct FloorHeader: View {
         }
         .padding(12)
         .background(Color(.secondarySystemGroupedBackground), in: RoundedRectangle(cornerRadius: 16))
+    }
+
+    @ViewBuilder
+    private var windowLine: some View {
+        let open = openWindows
+        if open.isEmpty {
+            Label("Alle Fenster zu", systemImage: "window.casement.closed")
+                .font(.caption.weight(.medium)).foregroundStyle(.green)
+        } else {
+            Menu {
+                ForEach(open, id: \.self) { e in Text(store.contactName(e)) }
+            } label: {
+                Label("\(open.count) Fenster offen", systemImage: "window.casement")
+                    .font(.caption.weight(.semibold)).foregroundStyle(.orange)
+            }
+        }
     }
 }
 
@@ -379,6 +412,10 @@ struct RoomCard: View {
                     .frame(width: 32, height: 32)
                     .background(lit > 0 ? AnyShapeStyle(Color.yellow.gradient) : AnyShapeStyle(Color(.tertiarySystemFill)), in: Circle())
                 Spacer(minLength: 0)
+                if room.contactList.contains(where: { store.contactOpen($0) }) {
+                    Image(systemName: "window.casement").font(.caption.weight(.bold)).foregroundStyle(.orange)
+                        .accessibilityLabel("Fenster offen")
+                }
                 if room.page != nil {
                     Image(systemName: "chevron.right").font(.caption.weight(.bold)).foregroundStyle(.tertiary)
                 } else {
@@ -432,8 +469,20 @@ struct RoomView: View {
                 }
                 section("Licht", lights)
                 section("Steckdosen", plugs)
-                section("Rollläden", covers)
+                if !covers.isEmpty {
+                    Text("ROLLLÄDEN & RAFFSTORES")
+                        .font(.caption.weight(.semibold)).foregroundStyle(.secondary)
+                        .padding(.top, 12).padding(.leading, 4)
+                    VStack(spacing: 0) {
+                        ForEach(covers, id: \.e) { i in
+                            CoverRow(item: i) { coverSheet = i.control }
+                            if i.e != covers.last?.e { Divider().padding(.leading, 14) }
+                        }
+                    }
+                    .background(Color(.secondarySystemGroupedBackground), in: RoundedRectangle(cornerRadius: 16))
+                }
                 section("Weitere", others)
+                if !room.contactList.isEmpty { contactsSection }
             }
             .padding(.horizontal)
             .padding(.bottom, 24)
@@ -464,7 +513,7 @@ struct RoomView: View {
                 Button("Abbrechen", role: .cancel) { }
             }
         }
-        .sheet(item: $coverSheet) { c in CoverSheet(control: c).presentationDetents([.medium]) }
+        .sheet(item: $coverSheet) { c in CoverSheet(control: c).presentationDetents([.medium, .large]) }
         .sheet(item: $lightSheet) { c in LightSheet(control: c).presentationDetents([.medium, .large]) }
         .overlay(alignment: .bottom) {
             if let toast {
@@ -503,17 +552,43 @@ struct RoomView: View {
             }
             if store.isAdmin {
                 if store.isFavorite(i) {
-                    Label("Schon in den Favoriten", systemImage: "star.fill")
+                    Label("Schon ein Kinder-Schalter", systemImage: "figure.and.child.holdinghands")
                 } else {
                     Button {
                         Task {
                             await store.addControl(entity: c.entity, name: room.name + " " + i.n,
                                                    script: c.script, icon: i.icon, confirm: c.confirm)
-                            show("Zu Favoriten hinzugefügt")
+                            show("Für die Kinder hinzugefügt – Freigabe unter „Für die Kinder“")
                         }
-                    } label: { Label("Zu Favoriten", systemImage: "star") }
+                    } label: { Label("Für die Kinder freigeben", systemImage: "figure.and.child.holdinghands") }
                 }
             }
+        }
+    }
+
+    private var contactsSection: some View {
+        VStack(alignment: .leading, spacing: 8) {
+            Text("FENSTER & TÜREN")
+                .font(.caption.weight(.semibold)).foregroundStyle(.secondary)
+                .padding(.top, 12).padding(.leading, 4)
+            VStack(spacing: 0) {
+                ForEach(room.contactList, id: \.self) { e in
+                    let open = store.contactOpen(e)
+                    HStack(spacing: 12) {
+                        Image(systemName: open ? "window.casement" : "window.casement.closed")
+                            .foregroundStyle(open ? Color.orange : Color.green)
+                            .frame(width: 26)
+                        Text(store.contactName(e))
+                        Spacer()
+                        Text(store.states[e] == nil ? "–" : (open ? "Offen" : "Zu"))
+                            .font(.subheadline.weight(.semibold))
+                            .foregroundStyle(open ? Color.orange : Color.secondary)
+                    }
+                    .padding(.vertical, 10).padding(.horizontal, 12)
+                    if e != room.contactList.last { Divider().padding(.leading, 50) }
+                }
+            }
+            .background(Color(.secondarySystemGroupedBackground), in: RoundedRectangle(cornerRadius: 14))
         }
     }
 
@@ -551,5 +626,77 @@ struct RoomView: View {
     private func show(_ text: String) {
         withAnimation { toast = text }
         DispatchQueue.main.asyncAfter(deadline: .now() + 2) { withAnimation { toast = nil } }
+    }
+}
+
+
+// MARK: - Rollladen-Zeile mit direkten Knöpfen
+
+struct CoverRow: View {
+    @Environment(AppStore.self) private var store
+    let item: RoomItem
+    let details: () -> Void
+
+    private var c: AppControl { item.control }
+    private var pos: Int? { store.coverPosition(c) }
+    private var moving: Bool {
+        let s = store.states[item.e]?.state
+        return s == "opening" || s == "closing"
+    }
+
+    private var stateText: String {
+        guard let s = store.states[item.e], s.state != "unavailable" else { return "Nicht erreichbar" }
+        if s.state == "opening" { return "Fährt hoch …" }
+        if s.state == "closing" { return "Fährt runter …" }
+        guard let p = pos else { return s.state == "open" ? "Offen" : "Zu" }
+        var t = p == 0 ? "Zu" : p == 100 ? "Offen" : "\(p) % offen"
+        if store.coverHasTilt(c), let tilt = store.coverTilt(c) { t += " · Lamellen \(tilt) %" }
+        return t
+    }
+
+    var body: some View {
+        HStack(spacing: 12) {
+            Button(action: details) {
+                VStack(alignment: .leading, spacing: 6) {
+                    HStack(spacing: 6) {
+                        Text(item.n).font(.subheadline.weight(.semibold)).foregroundStyle(.primary)
+                        if store.blind(for: item.e).map({ store.blindShading($0) }) == true {
+                            Image(systemName: "sun.max.fill").font(.caption2).foregroundStyle(.orange)
+                                .accessibilityLabel("Automatik beschattet")
+                        }
+                    }
+                    Text(stateText).font(.caption).foregroundStyle(moving ? Color.orange : .secondary).lineLimit(1)
+                    GeometryReader { g in
+                        ZStack(alignment: .leading) {
+                            Capsule().fill(Color(.tertiarySystemFill))
+                            Capsule().fill(Color.indigo.gradient)
+                                .frame(width: max(4, g.size.width * CGFloat(pos ?? 0) / 100))
+                        }
+                    }
+                    .frame(height: 5)
+                }
+                .frame(maxWidth: .infinity, alignment: .leading)
+                .contentShape(Rectangle())
+            }
+            .buttonStyle(.plain)
+
+            HStack(spacing: 6) {
+                round("chevron.up", "Hoch") { await store.cover(c, "open_cover") }
+                round("stop.fill", "Stopp") { await store.cover(c, "stop_cover") }
+                round("chevron.down", "Runter") { await store.cover(c, "close_cover") }
+            }
+        }
+        .padding(.horizontal, 14).padding(.vertical, 12)
+    }
+
+    private func round(_ symbol: String, _ label: String, _ action: @escaping () async -> Void) -> some View {
+        Button { Task { await action() } } label: {
+            Image(systemName: symbol)
+                .font(.subheadline.weight(.bold))
+                .frame(width: 40, height: 40)
+                .background(Color(.tertiarySystemFill), in: Circle())
+        }
+        .buttonStyle(.plain)
+        .accessibilityLabel(label)
     }
 }

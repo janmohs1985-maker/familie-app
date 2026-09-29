@@ -80,11 +80,7 @@ struct ControlsView: View {
                 ToolbarItem(placement: .topBarLeading) {
                     Button { showSettings = true } label: { Image(systemName: "gearshape") }
                 }
-                if store.isAdmin {
-                    ToolbarItem(placement: .primaryAction) {
-                        NavigationLink("Schalter") { ControlsManageView() }
-                    }
-                }
+
             }
             .sheet(isPresented: $showSettings) { SettingsView() }
             .fullScreenCover(isPresented: $showMap) { FamilyMapView() }
@@ -100,7 +96,7 @@ struct ControlsView: View {
                     Button("Abbrechen", role: .cancel) { }
                 }
             }
-            .sheet(item: $coverSheet) { c in CoverSheet(control: c).presentationDetents([.medium]) }
+            .sheet(item: $coverSheet) { c in CoverSheet(control: c).presentationDetents([.medium, .large]) }
             .sheet(item: $lightSheet) { c in LightSheet(control: c).presentationDetents([.medium, .large]) }
             .sheet(isPresented: $showReorder) { ControlsReorderView() }
         }
@@ -108,32 +104,24 @@ struct ControlsView: View {
 
     @ViewBuilder
     private var overview: some View {
-                if store.visibleControls.isEmpty {
-                    ContentUnavailableView("Keine Schalter", systemImage: "switch.2",
-                        description: Text(store.isAdmin
-                                          ? "Über „Schalter“ oben rechts kannst du Geräte hinzufügen."
-                                          : "Mama oder Papa haben noch nichts für dich freigegeben."))
-                        .padding(.top, 12)
-                }
-                if !store.visibleControls.isEmpty {
-                    HStack(alignment: .lastTextBaseline) {
+                // „Schalten“ sehen nur die Kinder – Eltern schalten über „Räume“
+                if store.activeKid != nil {
+                    if store.visibleControls.isEmpty {
+                        ContentUnavailableView("Keine Schalter", systemImage: "switch.2",
+                            description: Text("Mama oder Papa haben noch nichts für dich freigegeben."))
+                            .padding(.top, 12)
+                    } else {
                         SectionTitle("Schalten")
-                        if store.isAdmin && store.appControls.count > 1 {
-                            Button { showReorder = true } label: {
-                                Label("Anordnen", systemImage: "arrow.up.arrow.down").font(.subheadline)
+                        LazyVGrid(columns: controlColumns, spacing: 10) {
+                            ForEach(store.visibleControls) { c in
+                                ControlTile(control: c) { tap(c) } more: {
+                                    if c.domain == "cover" { coverSheet = c } else if store.isDimmable(c) { lightSheet = c }
+                                }
                             }
-                            .padding(.trailing)
                         }
+                        .padding(.horizontal)
                     }
                 }
-                LazyVGrid(columns: controlColumns, spacing: 10) {
-                    ForEach(store.visibleControls) { c in
-                        ControlTile(control: c) { tap(c) } more: {
-                            if c.domain == "cover" { coverSheet = c } else if store.isDimmable(c) { lightSheet = c }
-                        }
-                    }
-                }
-                .padding(.horizontal)
 
                 if [KidFeature.strom, .heizung, .beschattung, .rauchmelder, .internet, .waesche, .pool, .bewaesserung, .saugroboter].contains(where: { store.allows($0) }) {
                     SectionTitle("Haus")
@@ -196,14 +184,9 @@ struct ControlsView: View {
 
                 SectionTitle("Familie")
                 LazyVGrid(columns: columns, spacing: 12) {
-                    if store.allows(.stundenplan) {
-                        NavigationLink { TimetableView(kid: store.activeKid) } label: {
-                            HubTile(title: "Stundenplan & Freizeit", symbol: "graduationcap.fill", color: .teal)
-                        }
-                    }
-                    if store.allows(.schulmappe) {
-                        NavigationLink { SchoolDocsView(kid: store.activeKid) } label: {
-                            HubTile(title: "Schulmappe", symbol: "folder.fill", color: .cyan)
+                    if store.allows(.stundenplan) || store.allows(.schulmappe) {
+                        NavigationLink { KidsHubView() } label: {
+                            HubTile(title: store.activeKid == nil ? "Schule & Kinder" : "Schule", symbol: "graduationcap.fill", color: .teal)
                         }
                     }
                     if store.allows(.essensplan) {
@@ -233,6 +216,11 @@ struct ControlsView: View {
                         }
                         Button { showMap = true } label: {
                             HubTile(title: "Wo sind alle?", symbol: "map.fill", color: .green)
+                        }
+                        if store.isAdmin {
+                            NavigationLink { KidsAdminView() } label: {
+                                HubTile(title: "Für die Kinder", symbol: "figure.2.and.child.holdinghands", color: .pink)
+                            }
                         }
                         Button { showSettings = true } label: {
                             HubTile(title: "Einstellungen", symbol: "gearshape.fill", color: .gray)
@@ -360,7 +348,9 @@ struct ControlTile: View {
         if !allowed, let from = control.from, let to = control.to { return "Nur \(from)–\(to) Uhr" }
         guard let s = state?.state else { return "Nicht gefunden" }
         if control.domain == "cover", let p = store.coverPosition(control) {
-            return p == 0 ? "Zu" : p == 100 ? "Offen" : "\(p) % offen"
+            let base = p == 0 ? "Zu" : p == 100 ? "Offen" : "\(p) % offen"
+            if store.coverHasTilt(control), let t = store.coverTilt(control) { return base + " · ∠\(t) %" }
+            return base
         }
         if s == "on", let b = store.brightnessPercent(control), store.isDimmable(control) { return "An · \(b) %" }
         switch s {
@@ -415,29 +405,76 @@ struct CoverSheet: View {
     @Environment(AppStore.self) private var store
     let control: AppControl
     @State private var position: Double = 0
+    @State private var tilt: Double = 0
     @State private var editing = false
+    @State private var editingTilt = false
+
+    private var blind: ShadingConfig.Blind? { store.blind(for: control.entity) }
 
     var body: some View {
-        VStack(spacing: 22) {
-            Text(control.name).font(.title3.bold()).padding(.top, 24)
-            Text(Int(position) == 0 ? "Geschlossen" : Int(position) == 100 ? "Ganz offen" : "\(Int(position)) % offen")
-                .font(.system(size: 34, weight: .semibold, design: .rounded))
-                .contentTransition(.numericText())
-            Slider(value: $position, in: 0...100, step: 5, onEditingChanged: { e in
-                editing = e
-                if !e { Task { await store.cover(control, "", position: Int(position)) } }
-            })
-            .padding(.horizontal)
-            HStack(spacing: 12) {
-                big("Auf", "chevron.up") { await store.cover(control, "open_cover") }
-                big("Stopp", "stop.fill") { await store.cover(control, "stop_cover") }
-                big("Zu", "chevron.down") { await store.cover(control, "close_cover") }
+        ScrollView {
+            VStack(spacing: 20) {
+                Text(control.name).font(.title3.bold()).padding(.top, 24)
+                Text(Int(position) == 0 ? "Geschlossen" : Int(position) == 100 ? "Ganz offen" : "\(Int(position)) % offen")
+                    .font(.system(size: 34, weight: .semibold, design: .rounded))
+                    .contentTransition(.numericText())
+                Slider(value: $position, in: 0...100, step: 5, onEditingChanged: { e in
+                    editing = e
+                    if !e { Task { await store.cover(control, "", position: Int(position)) } }
+                })
+                .padding(.horizontal)
+                HStack(spacing: 12) {
+                    big("Auf", "chevron.up") { await store.cover(control, "open_cover") }
+                    big("Stopp", "stop.fill") { await store.cover(control, "stop_cover") }
+                    big("Zu", "chevron.down") { await store.cover(control, "close_cover") }
+                }
+                .padding(.horizontal)
+
+                if store.coverHasTilt(control) { tiltSection }
+                if let blind { ShadingControlSection(blind: blind).padding(.horizontal) }
             }
-            .padding(.horizontal)
-            Spacer()
+            .padding(.bottom, 24)
         }
-        .onAppear { position = Double(store.coverPosition(control) ?? 0) }
+        .onAppear {
+            position = Double(store.coverPosition(control) ?? 0)
+            tilt = Double(store.coverTilt(control) ?? 0)
+        }
         .onChange(of: store.coverPosition(control)) { _, new in if !editing, let new { position = Double(new) } }
+        .onChange(of: store.coverTilt(control)) { _, new in if !editingTilt, let new { tilt = Double(new) } }
+    }
+
+    private var tiltSection: some View {
+        VStack(spacing: 10) {
+            HStack {
+                Label("Lamellen", systemImage: "blinds.horizontal.open").font(.headline)
+                Spacer()
+                Text("\(Int(tilt)) %").font(.headline.monospacedDigit()).foregroundStyle(.secondary)
+            }
+            HStack(spacing: 10) {
+                Image(systemName: "line.3.horizontal").foregroundStyle(.secondary)
+                Slider(value: $tilt, in: 0...100, step: 5, onEditingChanged: { e in
+                    editingTilt = e
+                    if !e { Task { await store.coverTiltSet(control, Int(tilt)) } }
+                })
+                Image(systemName: "line.3.horizontal").rotationEffect(.degrees(35)).foregroundStyle(.secondary)
+            }
+            HStack(spacing: 10) {
+                Button { Task { await store.coverTiltSet(control, 0) } } label: {
+                    Label("Zu", systemImage: "blinds.horizontal.closed").frame(maxWidth: .infinity)
+                }
+                Button { Task { await store.coverTiltSet(control, 50) } } label: {
+                    Label("Halb", systemImage: "blinds.horizontal.open").frame(maxWidth: .infinity)
+                }
+                Button { Task { await store.coverTiltSet(control, 100) } } label: {
+                    Label("Offen", systemImage: "sun.max").frame(maxWidth: .infinity)
+                }
+            }
+            .buttonStyle(.bordered)
+            .font(.subheadline)
+        }
+        .padding(14)
+        .background(Color(.secondarySystemGroupedBackground), in: RoundedRectangle(cornerRadius: 16))
+        .padding(.horizontal)
     }
 
     private func big(_ title: String, _ symbol: String, _ action: @escaping () async -> Void) -> some View {

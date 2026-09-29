@@ -204,6 +204,7 @@ struct ListsView: View {
     @State private var announced = false
     @AppStorage("shopSortAisles") private var byAisle = true
     @AppStorage("shopHistory") private var historyRaw = ""
+    @AppStorage("shopSwipeHintSeen") private var hintSeen = false
     @FocusState private var inputFocused: Bool
 
     private var listID: String { selected.isEmpty ? (store.todoLists.first { $0.entity_id == FamilyConfig.shoppingList }?.entity_id ?? store.todoLists.first?.entity_id ?? "") : selected }
@@ -264,6 +265,9 @@ struct ListsView: View {
                                 Task { await store.announceShopping(openCount: open.count); announced = true }
                             } label: { Label("Ich gehe einkaufen", systemImage: "figure.walk") }
                             Toggle(isOn: $byAisle) { Label("Nach Gängen sortieren", systemImage: "square.grid.3x1.below.line.grid.1x2") }
+                            Button { withAnimation { hintSeen = false } } label: {
+                                Label("Wischen erklären", systemImage: "hand.draw")
+                            }
                             ShareLink(item: shareText) { Label("Liste teilen", systemImage: "square.and.arrow.up") }
                             if !done.isEmpty {
                                 Button(role: .destructive) { Task { await store.clearCompleted(in: listID) } } label: {
@@ -328,10 +332,13 @@ struct ListsView: View {
                     }
                     .listRowInsets(EdgeInsets(top: 6, leading: 16, bottom: 6, trailing: 16))
                 }
-            } footer: {
-                if isShopping && open.isEmpty == false {
-                    Text("Kreis antippen = gekauft · nach rechts wischen = „haben wir noch“")
+            }
+
+            if !hintSeen && !open.isEmpty {
+                Section {
+                    SwipeHintCard(shopping: isShopping) { withAnimation { hintSeen = true } }
                 }
+                .listRowInsets(EdgeInsets(top: 8, leading: 12, bottom: 8, trailing: 12))
             }
 
             // Offene Einträge
@@ -393,13 +400,12 @@ struct ListsView: View {
         }
         .contentShape(Rectangle())
         .swipeActions(edge: .leading, allowsFullSwipe: true) {
+            Button { buy(item) } label: { Label(isShopping ? "Gekauft" : "Erledigt", systemImage: "checkmark") }.tint(.green)
             if isShopping {
                 Button { Task { await store.shopMark(item, in: listID, status: "vorhanden") } } label: {
                     Label("Haben wir", systemImage: "house.fill")
                 }
                 .tint(.teal)
-            } else {
-                Button { buy(item) } label: { Label("Erledigt", systemImage: "checkmark") }.tint(.green)
             }
         }
         .swipeActions(edge: .trailing) {
@@ -497,5 +503,99 @@ struct ListsView: View {
             for i in g.items { lines.append("• " + i.summary) }
         }
         return lines.joined(separator: "\n")
+    }
+}
+
+
+// MARK: - Wisch-Erklärung mit kleiner Animation
+
+struct SwipeHintCard: View {
+    let shopping: Bool
+    let done: () -> Void
+
+    @State private var offset: CGFloat = 0
+    @State private var phase = 0     // 0 = Ruhe, 1 = nach rechts, 2 = nach links
+
+    var body: some View {
+        VStack(alignment: .leading, spacing: 12) {
+            HStack {
+                Label("So funktioniert die Liste", systemImage: "hand.draw.fill").font(.subheadline.weight(.semibold))
+                Spacer()
+                Button("Verstanden", action: done).font(.caption.weight(.semibold))
+            }
+            demoRow
+            VStack(alignment: .leading, spacing: 6) {
+                hintLine("circle", .secondary, "Kreis antippen", shopping ? "gekauft" : "erledigt")
+                hintLine("arrow.right", .green, "Nach rechts wischen", shopping ? "gekauft – weiter wischen = sofort" : "erledigt")
+                if shopping {
+                    hintLine("house.fill", .teal, "Rechts, zweiter Knopf", "haben wir noch")
+                }
+                hintLine("arrow.left", .red, "Nach links wischen", "ändern oder löschen")
+                hintLine("hand.tap", .secondary, "Lange drücken", "alle Möglichkeiten")
+            }
+            .font(.caption)
+        }
+        .padding(.vertical, 4)
+        .task { await loop() }
+    }
+
+    private var demoRow: some View {
+        ZStack {
+            HStack(spacing: 0) {
+                HStack(spacing: 6) {
+                    Image(systemName: "checkmark")
+                    Text(shopping ? "Gekauft" : "Erledigt")
+                }
+                .font(.caption.weight(.bold)).foregroundStyle(.white)
+                .padding(.leading, 14)
+                .frame(maxWidth: .infinity, maxHeight: .infinity, alignment: .leading)
+                .background(Color.green)
+                .opacity(offset > 0 ? 1 : 0)
+                HStack(spacing: 6) {
+                    Text("Löschen")
+                    Image(systemName: "trash")
+                }
+                .font(.caption.weight(.bold)).foregroundStyle(.white)
+                .padding(.trailing, 14)
+                .frame(maxWidth: .infinity, maxHeight: .infinity, alignment: .trailing)
+                .background(Color.red)
+                .opacity(offset < 0 ? 1 : 0)
+            }
+            HStack(spacing: 10) {
+                Image(systemName: "circle").foregroundStyle(.secondary)
+                Text("2× Milch")
+                Spacer()
+            }
+            .padding(.horizontal, 12)
+            .frame(maxWidth: .infinity, maxHeight: .infinity)
+            .background(Color(.secondarySystemGroupedBackground))
+            .offset(x: offset)
+        }
+        .frame(height: 44)
+        .clipShape(RoundedRectangle(cornerRadius: 10))
+        .overlay(RoundedRectangle(cornerRadius: 10).stroke(Color(.separator), lineWidth: 0.5))
+        .accessibilityHidden(true)
+    }
+
+    private func hintLine(_ symbol: String, _ color: Color, _ gesture: String, _ result: String) -> some View {
+        HStack(spacing: 8) {
+            Image(systemName: symbol).foregroundStyle(color).frame(width: 18)
+            Text(gesture).fontWeight(.semibold)
+            Text("→ \(result)").foregroundStyle(.secondary)
+        }
+    }
+
+    private func loop() async {
+        while !Task.isCancelled {
+            try? await Task.sleep(for: .seconds(0.8))
+            withAnimation(.easeInOut(duration: 0.6)) { offset = 110 }
+            try? await Task.sleep(for: .seconds(1.3))
+            withAnimation(.easeInOut(duration: 0.5)) { offset = 0 }
+            try? await Task.sleep(for: .seconds(0.8))
+            withAnimation(.easeInOut(duration: 0.6)) { offset = -110 }
+            try? await Task.sleep(for: .seconds(1.3))
+            withAnimation(.easeInOut(duration: 0.5)) { offset = 0 }
+            try? await Task.sleep(for: .seconds(1.0))
+        }
     }
 }

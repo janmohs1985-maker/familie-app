@@ -283,17 +283,28 @@ struct ParentTodosView: View {
 }
 
 struct AssigneeChip: View {
+    @Environment(AppStore.self) private var store
     let assignee: String
     let me: String
 
+    private var faces: [FamilyConfig.Parent] {
+        assignee == "beide" ? FamilyConfig.parents : FamilyConfig.parent(assignee).map { [$0] } ?? []
+    }
+
     var body: some View {
         let p = FamilyConfig.parent(assignee)
-        HStack(spacing: 4) {
-            Image(systemName: assignee == "beide" ? "person.2.fill" : "person.fill").font(.caption2)
+        HStack(spacing: 5) {
+            HStack(spacing: -6) {
+                ForEach(faces) { f in
+                    Avatar(image: store.pictures[f.person], name: f.name, color: f.color,
+                           initialFont: .system(size: 9, weight: .bold), ring: 1.5)
+                        .frame(width: 18, height: 18)
+                }
+            }
             Text(assignee == "beide" ? "Beide" : (assignee == me ? "Ich" : (p?.name ?? "–")))
                 .font(.caption.weight(.semibold))
         }
-        .padding(.horizontal, 8).padding(.vertical, 4)
+        .padding(.leading, 3).padding(.trailing, 8).padding(.vertical, 3)
         .foregroundStyle(p?.color ?? .indigo)
         .background((p?.color ?? .indigo).opacity(0.15), in: Capsule())
     }
