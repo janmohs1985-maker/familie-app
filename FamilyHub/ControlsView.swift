@@ -826,6 +826,13 @@ struct SettingsView: View {
                         }
                     }
                 }
+                if store.isAdmin {
+                    Section("Familie") {
+                        NavigationLink { FamilyDevicesView() } label: {
+                            Label("Geräte der Familie", systemImage: "iphone.gen3.radiowaves.left.and.right")
+                        }
+                    }
+                }
                 AppVersionSection()
                 Section {
                     Picker("Erscheinungsbild", selection: $appearance) {

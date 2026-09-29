@@ -16,7 +16,7 @@ struct FamilyHubApp: App {
         .onChange(of: scenePhase) { _, phase in
             if phase == .active, store.isLoggedIn {
                 store.startPolling()
-                Task { await store.refreshAll() }
+                Task { await store.refreshAll(); await store.reportDevice() }
             } else if phase == .background {
                 store.stopPolling()
             }
@@ -56,7 +56,7 @@ struct RootView: View {
                         .tabItem { Label("Zuhause", systemImage: "house.fill") }
                         .tag("zuhause")
                 }
-                .task { store.startPolling(); await store.refreshAll() }
+                .task { store.startPolling(); await store.refreshAll(); await store.reportDevice() }
                 .onChange(of: hiddenTabs) { _, hidden in
                     if hidden.contains(store.selectedTab) { store.selectedTab = "heute" }
                 }
