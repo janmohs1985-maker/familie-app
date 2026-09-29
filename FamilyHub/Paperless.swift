@@ -677,8 +677,12 @@ struct PaperlessEditForm: View {
     @State private var aiError: String?
     @State private var applying = false
 
-    init(doc: PaperlessDoc, meta: PaperlessMeta, header: String?, saved: @escaping (PaperlessDoc) -> Void) {
+    /// KI-Vorschläge beim Eintreffen gleich eintragen (nach dem Scannen)
+    let autoApply: Bool
+
+    init(doc: PaperlessDoc, meta: PaperlessMeta, header: String?, autoApply: Bool = false, saved: @escaping (PaperlessDoc) -> Void) {
         original = doc
+        self.autoApply = autoApply
         _meta = State(initialValue: meta)
         self.header = header
         self.saved = saved
@@ -927,6 +931,17 @@ struct PaperlessEditForm: View {
         applying = false
     }
 
+    /// Nur Sicheres automatisch: Titel (wenn noch nichtssagend), vorhandene Absender/Art, vorhandene Tags
+    private func applyAuto(_ ai: PaperlessAISuggestion) {
+        let generic = ["scan", "dokument", ""]
+        if !ai.title.isEmpty && (generic.contains(title.lowercased()) || title == original.title) {
+            title = ai.title
+        }
+        if correspondent == nil, let id = ai.correspondents.first?.id { correspondent = id }
+        if type == nil, let id = ai.types.first?.id { type = id }
+        for t in ai.tags { if let id = t.id { tags.insert(id) } }
+    }
+
     private func loadAI(restart: Bool) async {
         aiError = nil
         var first = true
@@ -938,7 +953,11 @@ struct PaperlessEditForm: View {
             first = false
             aiStatus = r.status
             aiSeconds = r.seconds
-            if r.status == "fertig" { ai = r.suggestion; return }
+            if r.status == "fertig" {
+                ai = r.suggestion
+                if autoApply, let sug = r.suggestion { applyAuto(sug) }
+                return
+            }
             if r.status == "fehler" {
                 aiError = (r.error ?? "").contains("503") ? "Die KI hat nicht rechtzeitig geantwortet." : r.error
                 return
@@ -1036,9 +1055,15 @@ struct PaperlessUploadSheet: View {
             .frame(maxWidth: .infinity, maxHeight: .infinity)
         case .review:
             if let d = newDoc {
-                PaperlessEditForm(doc: d, meta: meta, header: "So hat Paperless das Dokument eingeordnet. Die KI-Vorschläge kommen gleich darunter – antippen übernimmt sie. Danach „Sichern“, oder „Passt so“.") { _ in
-                    done("In Paperless eingeordnet.")
-                    dismiss()
+                PaperlessEditForm(doc: d, meta: meta,
+                                  header: "Die KI trägt Titel, Absender, Art und Tags gleich selbst ein (dauert ca. 15 Sekunden). Kurz prüfen, dann „Sichern“ – der Scan in der App bekommt denselben Namen.",
+                                  autoApply: true) { saved in
+                    Task {
+                        // Scan in der App wie in Paperless benennen
+                        _ = try? await store.renameScan(scan, to: saved.title)
+                        done("In Paperless eingeordnet: \(saved.title)")
+                        dismiss()
+                    }
                 }
             }
         case .failed:
@@ -1115,7 +1140,7 @@ struct PaperlessUploadSheet: View {
 
     private var closeTitle: String {
         switch phase {
-        case .review: return "Passt so"
+        case .review: return "Später"
         case .processing, .failed: return "Schließen"
         default: return "Abbrechen"
         }
