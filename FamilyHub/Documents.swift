@@ -162,9 +162,34 @@ extension AppStore {
     }
 }
 
-// MARK: - Liste & neuer Scan
+// MARK: - Dokumente: Scanner und Paperless in einem
 
 struct DocumentsView: View {
+    @Environment(AppStore.self) private var store
+    @AppStorage("documentsTab") private var tab = "scanner"
+
+    var body: some View {
+        Group {
+            if tab == "paperless" { PaperlessView() } else { ScannerView() }
+        }
+        .navigationTitle("Dokumente")
+        .navigationBarTitleDisplayMode(.inline)
+        .toolbar {
+            ToolbarItem(placement: .principal) {
+                Picker("Bereich", selection: $tab) {
+                    Text("Scanner").tag("scanner")
+                    Text("Paperless").tag("paperless")
+                }
+                .pickerStyle(.segmented)
+                .frame(width: 230)
+            }
+        }
+    }
+}
+
+// MARK: - Liste & neuer Scan
+
+struct ScannerView: View {
     @Environment(AppStore.self) private var store
     @AppStorage("scanMode") private var modeRaw = ScanMode.color.rawValue
     @AppStorage("scanResolution") private var resolution = 300
@@ -234,7 +259,6 @@ struct DocumentsView: View {
                 }
             }
         }
-        .navigationTitle("Dokumente")
         .navigationDestination(for: ScanFile.self) { ScanDetailView(scan: $0) }
         .navigationDestination(item: $opened) { ScanDetailView(scan: $0) }
         .refreshable { await store.refreshScans() }
@@ -335,6 +359,7 @@ struct ScanDetailView: View {
     @State private var renaming = false
     @State private var newName = ""
     @State private var confirmDelete = false
+    @State private var uploading = false
 
     @AppStorage("scanMode") private var modeRaw = ScanMode.color.rawValue
     @AppStorage("scanResolution") private var resolution = 300
@@ -390,6 +415,9 @@ struct ScanDetailView: View {
             Button("Löschen", role: .destructive) {
                 Task { await store.deleteScan(scan); dismiss() }
             }
+        }
+        .sheet(isPresented: $uploading) {
+            PaperlessUploadSheet(scan: scan) { text in message = text }
         }
     }
 
@@ -479,18 +507,10 @@ struct ScanDetailView: View {
         }
     }
 
+    /// Titel, Tags und Absender wählen – dann über die Paperless-API (oder wie bisher über die Freigabe)
     private func send() {
-        sending = true
         message = nil
-        Task {
-            do {
-                try await store.sendToPaperless(scan)
-                message = "Liegt jetzt in der Paperless-Freigabe auf dem NAS."
-            } catch {
-                message = error.localizedDescription
-            }
-            sending = false
-        }
+        uploading = true
     }
 }
 
@@ -535,7 +555,7 @@ struct ScanCard: View {
                         .background(Color.indigo.gradient, in: RoundedRectangle(cornerRadius: 12))
                     VStack(alignment: .leading, spacing: 2) {
                         Text("Dokument scannen").font(.headline).foregroundStyle(.primary)
-                        Text(store.scanning ? "Scan läuft …" : "Vorschau, speichern, an Paperless senden")
+                        Text(store.scanning ? "Scan läuft …" : "Scannen und in Paperless suchen")
                             .font(.caption).foregroundStyle(.secondary)
                     }
                     Spacer()

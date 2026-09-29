@@ -212,7 +212,7 @@ struct ControlsView: View {
                     SectionTitle("Verwaltung")
                     LazyVGrid(columns: columns, spacing: 12) {
                         NavigationLink { DocumentsView() } label: {
-                            HubTile(title: "Dokumente scannen", symbol: "scanner.fill", color: .indigo)
+                            HubTile(title: "Dokumente & Paperless", symbol: "doc.text.magnifyingglass", color: .indigo)
                         }
                         Button { showMap = true } label: {
                             HubTile(title: "Wo sind alle?", symbol: "map.fill", color: .green)
