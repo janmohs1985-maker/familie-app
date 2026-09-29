@@ -16,7 +16,7 @@ struct RoomItem: Codable, Hashable {
 
     var domain: String { String(e.split(separator: ".").first ?? "") }
     var isLight: Bool { domain == "light" || kind == "light" || kind == "esstisch" }
-    var isSpecial: Bool { kind == "esstisch" }
+    var isSpecial: Bool { kind == "esstisch" || kind == "markise" }
     var isCover: Bool { domain == "cover" }
     var isPlug: Bool { !isLight && kind == nil && (domain == "switch" || domain == "input_boolean") }
 
@@ -212,6 +212,7 @@ enum RoomText {
         case "strom": return "ev.charger.fill"
         case "waesche": return "washer.fill"
         case "haushalt": return "oven.fill"
+        case "vitrinen": return "sparkles"
         case "bewaesserung": return "sprinkler.and.droplets.fill"
         default: break
         }
@@ -385,6 +386,7 @@ struct RoomCard: View {
             case "strom": return "Laden & Strom"
             case "waesche": return "Waschmaschine & Trockner"
             case "haushalt": return "Backofen, Spüler, Dampfgarer"
+            case "vitrinen": return "Fächer & Effekte"
             case "bewaesserung": return "OpenSprinkler"
             default: return "Öffnen"
             }
@@ -455,17 +457,21 @@ struct RoomView: View {
     private var hasDiningLamp: Bool { room.list.contains { $0.kind == "esstisch" } }
     private var plugs: [RoomItem] { room.list.filter(\.isPlug) }
     private var covers: [RoomItem] { room.list.filter(\.isCover) }
-    private var others: [RoomItem] { room.list.filter { !$0.isLight && !$0.isPlug && !$0.isCover } }
+    private var others: [RoomItem] { room.list.filter { !$0.isLight && !$0.isPlug && !$0.isCover && !$0.isSpecial } }
 
     var body: some View {
         ScrollView {
             VStack(alignment: .leading, spacing: 8) {
                 ErrorBanner()
+                if !room.contactList.isEmpty { contactChips }
                 if let c = room.climate, let s = store.states[c] {
                     climateCard(s)
                 }
                 if hasDiningLamp {
                     DiningLampCard().padding(.top, 4)
+                }
+                if room.list.contains(where: { $0.kind == "markise" }) {
+                    AwningCard().padding(.top, 4)
                 }
                 section("Licht", lights)
                 section("Steckdosen", plugs)
@@ -482,7 +488,7 @@ struct RoomView: View {
                     .background(Color(.secondarySystemGroupedBackground), in: RoundedRectangle(cornerRadius: 16))
                 }
                 section("Weitere", others)
-                if !room.contactList.isEmpty { contactsSection }
+
             }
             .padding(.horizontal)
             .padding(.bottom, 24)
@@ -564,6 +570,38 @@ struct RoomView: View {
                 }
             }
         }
+    }
+
+    /// Fenster & Türen als kleine Anzeigen oben – nur zum Ansehen
+    private var contactChips: some View {
+        ScrollView(.horizontal, showsIndicators: false) {
+            HStack(spacing: 6) {
+                ForEach(room.contactList, id: \.self) { e in
+                    let open = store.contactOpen(e)
+                    let known = store.states[e] != nil && store.states[e]?.state != "unavailable"
+                    HStack(spacing: 4) {
+                        Image(systemName: open ? "window.casement" : "window.casement.closed")
+                        Text(chipName(e))
+                        Text(known ? (open ? "offen" : "zu") : "?").fontWeight(.bold)
+                    }
+                    .font(.caption.weight(.medium))
+                    .padding(.horizontal, 9).padding(.vertical, 5)
+                    .foregroundStyle(open ? Color.orange : Color.secondary)
+                    .background((open ? Color.orange : Color.gray).opacity(open ? 0.16 : 0.1), in: Capsule())
+                    .accessibilityElement(children: .combine)
+                }
+            }
+            .padding(.vertical, 2)
+        }
+    }
+
+    /// „Emma Süd“ im Raum Emma → „Süd“; „Wohnzimmer Schiebetüre Süd“ → „Schiebetüre Süd“
+    private func chipName(_ e: String) -> String {
+        var n = store.contactName(e)
+        if n.lowercased().hasPrefix(room.name.lowercased()) {
+            n = String(n.dropFirst(room.name.count)).trimmingCharacters(in: .whitespaces)
+        }
+        return n.isEmpty ? "Fenster" : n
     }
 
     private var contactsSection: some View {

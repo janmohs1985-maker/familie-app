@@ -280,9 +280,6 @@ struct MusicView: View {
             Section {
                 SpeakerPicker(selection: $speaker)
                     .listRowInsets(EdgeInsets(top: 8, leading: 12, bottom: 8, trailing: 12))
-                if FamilyConfig.speakers.count > 1 {
-                    SpeakerGroupRow(leader: speaker)
-                }
             }
             Section {
                 NowPlayingView(speaker: speaker)
@@ -368,67 +365,71 @@ struct MusicView: View {
     }
 }
 
+/// Lautsprecher wählen: einer = nur dort. Einen zweiten dazu antippen = beide spielen dasselbe (Sonos-Gruppe).
+/// Nochmal antippen nimmt ihn wieder raus.
 struct SpeakerPicker: View {
     @Environment(AppStore.self) private var store
     @Binding var selection: String
+    @State private var busy: String?
+
+    private var active: Set<String> { Set([selection] + store.speakerGroup(selection)) }
 
     var body: some View {
-        ScrollView(.horizontal, showsIndicators: false) {
-            HStack(spacing: 10) {
-                ForEach(FamilyConfig.speakers) { sp in
-                    let online = store.speakerOnline(sp.id)
-                    let playing = store.speakerState(sp.id)?.state == "playing"
-                    Button { selection = sp.id } label: {
-                        HStack(spacing: 8) {
-                            Image(systemName: playing ? "speaker.wave.2.fill" : "hifispeaker.fill")
-                                .symbolEffect(.variableColor.iterative, isActive: playing)
-                            VStack(alignment: .leading, spacing: 0) {
-                                Text(sp.name).font(.subheadline.weight(.semibold))
-                                Text(online ? (store.speakerGroup(sp.id).isEmpty ? (playing ? "spielt" : "bereit")
-                                                                                  : "verbunden") : "offline").font(.caption2)
-                            }
-                        }
-                        .padding(.horizontal, 12).padding(.vertical, 8)
-                        .foregroundStyle(selection == sp.id ? .white : (online ? .primary : .secondary))
-                        .background(selection == sp.id ? Color.accentColor : Color(.tertiarySystemFill),
-                                    in: RoundedRectangle(cornerRadius: 12))
-                    }
-                    .buttonStyle(.plain)
-                    .opacity(online ? 1 : 0.6)
+        VStack(alignment: .leading, spacing: 6) {
+            ScrollView(.horizontal, showsIndicators: false) {
+                HStack(spacing: 10) {
+                    ForEach(FamilyConfig.speakers) { sp in chip(sp) }
                 }
+            }
+            if FamilyConfig.speakers.count > 1 {
+                Text(active.count > 1 ? "Spielt auf \(active.count) Lautsprechern – antippen nimmt einen raus."
+                                      : "Weiteren Lautsprecher antippen, um überall dasselbe zu hören.")
+                    .font(.caption2).foregroundStyle(.secondary)
             }
         }
     }
-}
 
-/// „Auch auf … abspielen“ – Sonos-Lautsprecher zusammenschalten
-struct SpeakerGroupRow: View {
-    @Environment(AppStore.self) private var store
-    let leader: String
-    @State private var busy: String?
-
-    private var others: [FamilyConfig.Speaker] { FamilyConfig.speakers.filter { $0.id != leader } }
-
-    var body: some View {
-        VStack(alignment: .leading, spacing: 8) {
-            Label("Zusammen abspielen", systemImage: "link").font(.subheadline.weight(.semibold))
-            ForEach(others) { sp in
-                let joined = store.speakerGroup(leader).contains(sp.id)
-                Toggle(isOn: Binding(get: { joined }, set: { on in
-                    busy = sp.id
-                    Task { await store.setSpeaker(sp.id, joined: on, to: leader); busy = nil }
-                })) {
-                    HStack(spacing: 6) {
-                        Text("Auch auf \(sp.name)")
-                        if busy == sp.id { ProgressView().controlSize(.small) }
-                    }
+    private func chip(_ sp: FamilyConfig.Speaker) -> some View {
+        let online = store.speakerOnline(sp.id)
+        let playing = store.speakerState(sp.id)?.state == "playing"
+        let on = active.contains(sp.id)
+        return Button { tap(sp.id) } label: {
+            HStack(spacing: 8) {
+                if busy == sp.id {
+                    ProgressView().controlSize(.small).tint(on ? .white : nil)
+                } else {
+                    Image(systemName: on ? "checkmark.circle.fill" : "circle")
                 }
-                .disabled(!store.speakerOnline(sp.id) || busy != nil)
+                VStack(alignment: .leading, spacing: 0) {
+                    Text(sp.name).font(.subheadline.weight(.semibold))
+                    Text(online ? (playing ? "spielt" : "bereit") : "offline").font(.caption2)
+                }
+                if playing {
+                    Image(systemName: "speaker.wave.2.fill").font(.caption)
+                        .symbolEffect(.variableColor.iterative, isActive: true)
+                }
             }
-            Text("Die Musik vom gewählten Lautsprecher läuft dann gleichzeitig auf den anderen. Lautstärke bleibt je Lautsprecher einstellbar.")
-                .font(.caption).foregroundStyle(.secondary)
+            .padding(.horizontal, 12).padding(.vertical, 8)
+            .foregroundStyle(on ? .white : (online ? .primary : .secondary))
+            .background(on ? Color.accentColor : Color(.tertiarySystemFill), in: RoundedRectangle(cornerRadius: 12))
         }
-        .padding(.vertical, 4)
+        .buttonStyle(.plain)
+        .disabled(!online || busy != nil)
+        .opacity(online ? 1 : 0.6)
+    }
+
+    private func tap(_ id: String) {
+        let members = active
+        if !members.contains(id) {
+            // dazunehmen
+            busy = id
+            Task { await store.setSpeaker(id, joined: true, to: selection); busy = nil }
+        } else if members.count > 1 {
+            // rausnehmen – ist es der „führende“, übernimmt ein anderer
+            busy = id
+            if id == selection, let next = members.subtracting([id]).sorted().first { selection = next }
+            Task { await store.setSpeaker(id, joined: false, to: selection); busy = nil }
+        }
     }
 }
 
