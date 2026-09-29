@@ -20,6 +20,7 @@ struct KidsHubView: View {
             }
             .background(Color(.systemGroupedBackground))
             .navigationTitle("Schule & Kinder")
+            .task { await ExamsModel.shared.load(store) }
         }
     }
 }
@@ -28,8 +29,13 @@ struct KidsHubView: View {
 struct KidSummaryCard: View {
     @Environment(AppStore.self) private var store
     let kid: FamilyConfig.Kid
+    @State private var exams = ExamsModel.shared
 
     private var today: Int { ChoreText.todayIndex }
+    private var nextExam: Exam? {
+        guard let e = exams.upcoming(kid: kid.id).first, e.daysLeft <= 14 else { return nil }
+        return e
+    }
     private var openChores: Int { (store.chores[kid.id] ?? []).filter { !$0.done }.count }
 
     private var schoolLine: String {
@@ -48,6 +54,10 @@ struct KidSummaryCard: View {
                 if !free.isEmpty {
                     Label(free.map { "\($0.title) \($0.start)" }.joined(separator: ", "), systemImage: "figure.run")
                         .font(.caption).foregroundStyle(.secondary).lineLimit(1)
+                }
+                if let e = nextExam {
+                    Label("\(e.title) \(ExamConfig.countdown(e.daysLeft))", systemImage: "pencil.and.list.clipboard")
+                        .font(.caption.weight(.semibold)).foregroundStyle(ExamConfig.urgency(e.daysLeft)).lineLimit(1)
                 }
             }
             Spacer(minLength: 0)
@@ -74,6 +84,7 @@ struct KidHubDetail: View {
             VStack(alignment: .leading, spacing: 14) {
                 KidSummaryCard(kid: kid)
                 todayCard
+                ExamsCard(kid: kid)
                 LazyVGrid(columns: columns, spacing: 12) {
                     if store.allows(.stundenplan) {
                         NavigationLink { TimetableView(kid: kid.id) } label: {
