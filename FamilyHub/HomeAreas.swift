@@ -62,8 +62,10 @@ extension AppStore {
         states.values.filter { s in
             let id = s.entity_id
             guard id.hasPrefix("binary_sensor."), classes.contains(s.attr("device_class")?.string ?? ""), !s.isUnavailable else { return false }
-            if s.attr("entity_id") != nil || id.hasPrefix("binary_sensor.alle_") { return false }
+            if s.attr("entity_id") != nil || id.hasPrefix("binary_sensor.alle_") || id.hasSuffix("_state") { return false }
             if id.contains("geschlossen") || id.contains("fahren") { return false }
+            // Gerätetüren (Spülmaschine, Backofen, Dampfgarer, Wärmeschublade, 3D-Drucker …) sind keine Haustüren
+            if Self.applianceDoorIDs.contains(id) || ["geschirrspuler", "backofen", "dampfgarer", "warmeschublade", "x1c_", "kuhlschrank", "gefrier", "waschmaschine", "trockner"].contains(where: { id.contains($0) }) { return false }
             return true
         }
     }
@@ -80,7 +82,18 @@ extension AppStore {
             .sorted { $0.name.localizedStandardCompare($1.name) == .orderedAscending }
     }
 
+    static var applianceDoorIDs: Set<String> { Set(MieleConfig.appliances.map(\.door)) }
+
+    /// Laufende Wäsche (Waschmaschine/Trockner)
     var runningAppliances: Int { LaundryConfig.devices.filter { laundryIsRunning($0) }.count }
+
+    /// Alles, was im Haushalt gerade läuft: Wäsche, Miele-Geräte, Saugroboter
+    var runningHousehold: [String] {
+        var out: [String] = LaundryConfig.devices.filter { laundryIsRunning($0) }.map(\.name)
+        out += MieleConfig.appliances.filter { mieleRunning($0) }.map(\.name)
+        out += FamilyConfig.vacuums.filter { vacIsCleaning($0) }.map(\.name)
+        return out
+    }
 
     func allowsArea(_ a: HomeArea) -> Bool {
         let parent = isParent && activeKid == nil
@@ -122,8 +135,9 @@ struct HomeStatusChips: View {
                 let lights = store.lightsOn
                 chip(lights > 0 ? "lightbulb.fill" : "lightbulb", lights == 1 ? "1 Licht an" : "\(lights) Lichter an",
                      lights > 0 ? .yellow : .secondary, open: .lights)
-                if store.runningAppliances > 0 {
-                    chip("washer.fill", "Wäsche läuft", .teal)
+                let running = store.runningHousehold
+                if !running.isEmpty {
+                    chip("washer.fill", running.count == 1 ? "\(running[0]) läuft" : "\(running.count) Geräte laufen", .teal)
                 }
             }
         }
@@ -401,9 +415,10 @@ struct HomeAreasOverview: View {
             }
             return Facts(big: "Technik", small: "Heizung · Pool · Internet")
         case .haushalt:
-            let n = store.runningAppliances
+            let running = store.runningHousehold
+            let n = running.count
             return Facts(big: n == 0 ? "alles aus" : (n == 1 ? "1 läuft" : "\(n) laufen"),
-                         small: "Geräte · Essen · Musik")
+                         small: n == 0 ? "Geräte · Essen · Musik" : running.joined(separator: " · "))
         case .sicherheit:
             if !store.smokeAlarm.isEmpty { return Facts(big: "RAUCH!", small: "Rauchmelder", alert: true) }
             let windows = store.openContacts(["window"]) ?? 0
