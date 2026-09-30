@@ -3,10 +3,11 @@ import AVFoundation
 
 // MARK: - Gespräch mit der Haustür (Doorbird)
 //
-// Live-Bild über Home Assistant (geht überall), Ton direkt mit der Doorbird (zu Hause im WLAN):
-//  • Hören: GET  /bha-api/audio-receive.cgi   (G.711 µ-law, 8 kHz, mono)
-//  • Sprechen: POST /bha-api/audio-transmit.cgi (gleiches Format, als Dauer-Upload)
-// Die Sitzungs-ID holt Family Hub mit dem Doorbird-Zugang (rest_command.familie_doorbird).
+// Bild und Ton laufen über Home Assistant – zu Hause und unterwegs gleich:
+//  • Hören:    GET  /api/familie_tuer/hoeren   (G.711 µ-law, 8 kHz, mono)
+//  • Sprechen: POST /api/familie_tuer/sprechen (gleiches Format, als Dauer-Upload)
+// Die Erweiterung custom_components/familie_tuer reicht das an die Doorbird durch
+// (Sitzung über Family Hub, das Doorbird-Passwort bleibt dort).
 // Echounterdrückung wie bei FaceTime (Voice Processing), deshalb freihändig ohne Knopfdrücken.
 
 @MainActor @Observable
@@ -36,14 +37,10 @@ final class DoorCall {
         let allowed = await AVAudioApplication.requestRecordPermission()
         if !allowed { micOn = false }
 
-        // 2) Sitzung von Family Hub
-        guard let r = try? await store.client.callWithResponse("rest_command", "familie_doorbird", ["daten": [String: Any]()], timeout: 20) else {
-            status = .onlyVideo("Family Hub nicht erreichbar – nur Bild")
-            return
-        }
-        let c = r["content"] ?? r
-        guard c["ok"]?.string == "true", let ip = c["ip"]?.string, let sid = c["sitzung"]?.string else {
-            status = .onlyVideo(c["error"]?.string ?? "Doorbird-Zugang fehlt – nur Bild")
+        // 2) Anfragen an Home Assistant (mit Anmeldung)
+        guard var rxReq = try? await store.client.authorizedRequest(path: "/api/familie_tuer/hoeren"),
+              var txReq = try? await store.client.authorizedRequest(path: "/api/familie_tuer/sprechen") else {
+            status = .onlyVideo("Home Assistant nicht erreichbar – nur Bild")
             return
         }
 
@@ -65,7 +62,7 @@ final class DoorCall {
         }
 
         // 4) Hören
-        guard let rxURL = URL(string: "http://\(ip)/bha-api/audio-receive.cgi?sessionid=\(sid)") else { return }
+        rxReq.cachePolicy = .reloadIgnoringLocalCacheData
         let fmt = fmt8k
         let player = self.player
         let rx = RxDelegate(onAudio: { bytes in
@@ -77,18 +74,19 @@ final class DoorCall {
         }, onEnd: { [weak self] ok in
             Task { @MainActor in
                 guard let self, self.running else { return }
-                self.status = ok ? .live : .onlyVideo("Ton geht nur zu Hause im WLAN – Bild läuft weiter")
+                self.status = ok ? .onlyVideo("Ton unterbrochen – Bild läuft weiter") : .onlyVideo("Kein Ton von der Tür – Bild läuft weiter")
             }
         }, onFirstData: { [weak self] in
             Task { @MainActor in if self?.running == true { self?.status = .live } }
         })
         let cfg = URLSessionConfiguration.ephemeral
-        cfg.timeoutIntervalForRequest = 6
+        cfg.timeoutIntervalForRequest = 20
         rxSession = URLSession(configuration: cfg, delegate: rx, delegateQueue: nil)
-        rxSession?.dataTask(with: rxURL).resume()
+        rxSession?.dataTask(with: rxReq).resume()
 
-        // 5) Sprechen (Dauer-Upload an die Doorbird)
-        startTransmit(ip: ip, sid: sid)
+        // 5) Sprechen (Dauer-Upload über Home Assistant an die Doorbird)
+        txReq.httpMethod = "POST"
+        startTransmit(txReq)
     }
 
     func stop() {
@@ -117,16 +115,12 @@ final class DoorCall {
 
     // MARK: Sprechen
 
-    private func startTransmit(ip: String, sid: String) {
-        guard let url = URL(string: "http://\(ip)/bha-api/audio-transmit.cgi?sessionid=\(sid)") else { return }
+    private func startTransmit(_ request: URLRequest) {
         let stream = TxStream()
         stream.muted = !micOn
         tx = stream
-        var req = URLRequest(url: url)
-        req.httpMethod = "POST"
+        var req = request
         req.setValue("audio/basic", forHTTPHeaderField: "Content-Type")
-        req.setValue("9999999", forHTTPHeaderField: "Content-Length")
-        req.setValue("Keep-Alive", forHTTPHeaderField: "Connection")
         req.setValue("no-cache", forHTTPHeaderField: "Cache-Control")
         let cfg = URLSessionConfiguration.ephemeral
         cfg.timeoutIntervalForRequest = 3600

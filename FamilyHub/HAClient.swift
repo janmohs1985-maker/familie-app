@@ -100,6 +100,15 @@ actor HAClient {
         onCredentialsChange(c)
     }
 
+    /// Anfrage mit gültigem Token – für Dauer-Verbindungen (z. B. Ton der Haustür)
+    func authorizedRequest(path: String) async throws -> URLRequest {
+        guard let base = credentials?.baseURL, let url = URL(string: path, relativeTo: base) else { throw HAError.badServer }
+        let token = try await validAccessToken()
+        var req = URLRequest(url: url)
+        req.setValue("Bearer \(token)", forHTTPHeaderField: "Authorization")
+        return req
+    }
+
     private func validAccessToken() async throws -> String {
         guard var c = credentials, let base = c.baseURL else { throw HAError.notConfigured }
         if let llt = c.longLivedToken, !llt.isEmpty { return llt }
