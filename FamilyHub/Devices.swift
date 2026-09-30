@@ -266,10 +266,10 @@ private struct FamilyDeviceRow: View {
     }
 
     private var lastSeenText: String {
-        if age < 600 { return "gerade aktiv" }
         let f = RelativeDateTimeFormatter()
         f.locale = Locale(identifier: "de_DE")
         f.unitsStyle = .full
+        if age < 600 { return "gerade aktiv" }
         return "zuletzt " + f.localizedString(for: device.lastSeen, relativeTo: info.serverNow)
     }
 }

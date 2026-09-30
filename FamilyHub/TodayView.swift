@@ -14,9 +14,11 @@ struct TodayView: View {
         NavigationStack {
             ScrollView {
                 VStack(alignment: .leading, spacing: 16) {
+                    heroCard
                     ErrorBanner()
                     AppUpdateBanner()
-                    ForEach(TodayCardKind.ordered(orderRaw).filter { !hiddenCards.contains($0.rawValue) && store.todayCardAvailable($0) }) { k in
+                    // Wetter und Familie stecken jetzt im Kopfbereich
+                    ForEach(TodayCardKind.ordered(orderRaw).filter { $0 != .weather && $0 != .people && !hiddenCards.contains($0.rawValue) && store.todayCardAvailable($0) }) { k in
                         card(k)
                     }
                     if let t = store.lastUpdate {
@@ -34,9 +36,10 @@ struct TodayView: View {
                 }
                 .padding()
             }
-            .background(Color(.systemGroupedBackground))
+            .background(AppBackground())
             .refreshable { await store.refreshAll() }
-            .navigationTitle(greeting)
+            .navigationTitle("")
+            .navigationBarTitleDisplayMode(.inline)
             .toolbar {
                 if store.isAdmin {
                     Button { showArrange = true } label: { Image(systemName: "arrow.up.arrow.down") }
@@ -49,6 +52,7 @@ struct TodayView: View {
             .sheet(isPresented: $showSettings) { SettingsView() }
             .sheet(isPresented: $showWeather) { WeatherSheet().presentationDetents([.large]) }
             .sheet(item: $mapPerson) { p in PersonMapView(person: p) }
+            .sheet(isPresented: $showFamilyMap) { FamilyMapView() }
         }
     }
 
@@ -89,6 +93,109 @@ struct TodayView: View {
         case 17..<22: return "Guten Abend"
         default: return "Gute Nacht"
         }
+    }
+
+    // MARK: Kopfbereich (Glas): Begrüßung, Wetter, Familie
+
+    private var myFirstName: String? {
+        if let p = store.myParentID { return FamilyConfig.parent(p)?.name }
+        if let k = store.detectedKid { return FamilyConfig.kid(k)?.name }
+        return nil
+    }
+
+    private var heroCard: some View {
+        VStack(alignment: .leading, spacing: 16) {
+            HStack(alignment: .top, spacing: 12) {
+                VStack(alignment: .leading, spacing: 4) {
+                    Text(Date().formatted(.dateTime.weekday(.wide).day().month(.wide)))
+                        .font(.subheadline.weight(.semibold))
+                        .foregroundStyle(.secondary)
+                    Text(myFirstName.map { "\(greeting),\n\($0)" } ?? greeting)
+                        .font(.system(size: 32, weight: .heavy))
+                        .tracking(-0.8)
+                        .fixedSize(horizontal: false, vertical: true)
+                }
+                Spacer(minLength: 8)
+                heroWeather
+            }
+            if let l = store.lightning {
+                Label("Blitz \(Int(l.km.rounded())) km entfernt\(l.direction.map { " im \($0)" } ?? "")",
+                      systemImage: "cloud.bolt.fill")
+                    .font(.caption.weight(.semibold))
+                    .foregroundStyle(l.km < 10 ? Color.red : Color.orange)
+            }
+            LazyVGrid(columns: [GridItem(.flexible(), spacing: 6), GridItem(.flexible(), spacing: 6)], spacing: 6) {
+                ForEach(FamilyConfig.people) { p in personChip(p) }
+            }
+            if canSeeMap {
+                Button { showFamilyMap = true } label: {
+                    Label("Alle auf der Karte", systemImage: "map.fill")
+                        .font(.caption.weight(.semibold))
+                }
+                .frame(maxWidth: .infinity, alignment: .trailing)
+            }
+        }
+        .padding(20)
+        .frame(maxWidth: .infinity, alignment: .leading)
+        .glassSurface()
+    }
+
+    @ViewBuilder private var heroWeather: some View {
+        if let w = store.states[FamilyConfig.weather] {
+            let info = WeatherText.info(w.state)
+            Button { showWeather = true } label: {
+                VStack(alignment: .trailing, spacing: 0) {
+                    Image(systemName: info.symbol)
+                        .symbolRenderingMode(.multicolor)
+                        .font(.system(size: 28))
+                    if let t = store.outsideTemp {
+                        Text("\(t.formatted(.number.precision(.fractionLength(0))))°")
+                            .font(.system(size: 30, weight: .light).monospacedDigit())
+                    }
+                    Text(info.text)
+                        .font(.caption2).foregroundStyle(.secondary)
+                        .lineLimit(1)
+                }
+            }
+            .buttonStyle(.plain)
+            .accessibilityLabel("Wetter: \(info.text)")
+        }
+    }
+
+    private func personChip(_ p: FamilyConfig.Person) -> some View {
+        let st = store.states[p.id]?.state ?? "unknown"
+        let home = st == "home"
+        let keyTime: Date? = store.kidID(forPerson: p.id)
+            .flatMap { store.doorOpenings(kid: $0).first?.time }
+            .flatMap { Calendar.current.isDateInToday($0) ? $0 : nil }
+        return Button {
+            if canSeeMap { mapPerson = p }
+        } label: {
+            HStack(spacing: 7) {
+                ZStack(alignment: .bottomTrailing) {
+                    Avatar(image: store.pictures[p.id], name: p.name, color: p.color, initialFont: .caption.bold(), ring: 0)
+                        .frame(width: 30, height: 30)
+                    Circle()
+                        .fill(home ? Color.green : Color(.systemGray3))
+                        .frame(width: 10, height: 10)
+                        .overlay(Circle().stroke(Color(.systemBackground), lineWidth: 2))
+                        .offset(x: 1, y: 1)
+                }
+                VStack(alignment: .leading, spacing: 0) {
+                    Text(p.name).font(.caption.weight(.semibold)).lineLimit(1)
+                    Text(keyTime.map { "\(PersonText.status(st)) · \($0.formatted(date: .omitted, time: .shortened))" } ?? PersonText.status(st))
+                        .font(.caption2).foregroundStyle(.secondary)
+                        .lineLimit(1).minimumScaleFactor(0.75)
+                }
+                Spacer(minLength: 0)
+            }
+            .padding(5)
+            .padding(.trailing, 4)
+            .background(Color(.systemBackground).opacity(0.55), in: Capsule())
+            .contentShape(Capsule())
+        }
+        .buttonStyle(.plain)
+        .allowsHitTesting(canSeeMap)
     }
 
     // MARK: Wetter
@@ -188,7 +295,6 @@ struct TodayView: View {
                 .buttonStyle(.bordered)
             }
         }
-        .sheet(isPresented: $showFamilyMap) { FamilyMapView() }
     }
 
     // MARK: Schule
@@ -347,7 +453,7 @@ struct Card<Content: View>: View {
         }
         .padding()
         .frame(maxWidth: .infinity, alignment: .leading)
-        .background(Color(.secondarySystemGroupedBackground), in: RoundedRectangle(cornerRadius: 18))
+        .cardSurface()
     }
 }
 

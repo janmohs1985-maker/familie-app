@@ -284,37 +284,79 @@ struct LaundryView: View {
 
 // MARK: - Karte auf „Heute“ (nur solange etwas läuft)
 
+/// „Jetzt wichtig“ auf Heute: laufende Wäsche und Hausakku als Ring-Kacheln
 struct LaundryTodayCard: View {
     @Environment(AppStore.self) private var store
     @State private var runs: [LaundryRun] = []
 
+    private var parent: Bool { store.isParent && store.activeKid == nil }
+
     var body: some View {
         let active = LaundryConfig.devices.filter { store.laundryIsRunning($0) }
-        if !active.isEmpty {
-            NavigationLink { LaundryView() } label: {
-                Card(title: "Wäsche", symbol: "washer.fill") {
-                    VStack(alignment: .leading, spacing: 8) {
-                        ForEach(active) { d in
-                            HStack(spacing: 10) {
-                                Image(systemName: d.symbol).foregroundStyle(d.color).symbolEffect(.pulse)
-                                Text("\(d.name) läuft").font(.body.weight(.medium))
-                                Spacer()
-                                if let start = store.laundryStart(d) {
-                                    if let t = store.typicalMinutes(runs, device: d.key) {
-                                        let end = start.addingTimeInterval(Double(t) * 60)
-                                        Text(end > Date() ? "fertig ca. \(end.formatted(date: .omitted, time: .shortened))" : "gleich fertig")
-                                            .font(.subheadline).foregroundStyle(.secondary)
-                                    } else {
-                                        Text(start, style: .timer).font(.subheadline.monospacedDigit()).foregroundStyle(.secondary)
-                                    }
-                                }
-                            }
-                        }
+        let soc: Double? = parent ? store.num(EnergyConfig.soc) : nil
+        if !active.isEmpty || soc != nil {
+            TimelineView(.periodic(from: .now, by: 30)) { ctx in
+                LazyVGrid(columns: [GridItem(.flexible(), spacing: 12), GridItem(.flexible(), spacing: 12)], spacing: 12) {
+                    ForEach(active) { d in
+                        NavigationLink { LaundryView() } label: { laundryTile(d, now: ctx.date) }
+                            .buttonStyle(.plain)
+                    }
+                    if let soc {
+                        NavigationLink { EnergyView() } label: { batteryTile(soc) }
+                            .buttonStyle(.plain)
                     }
                 }
             }
-            .buttonStyle(.plain)
             .task { runs = await store.loadLaundryRuns() }
         }
+    }
+
+    private func laundryTile(_ d: LaundryConfig.Device, now: Date) -> some View {
+        let start = store.laundryStart(d)
+        let typical = store.typicalMinutes(runs, device: d.key)
+        let elapsed = start.map { max(0, now.timeIntervalSince($0) / 60) }
+        var progress: Double? = nil
+        var label = "läuft"
+        var sub = "läuft"
+        if let elapsed {
+            if let typical, typical > 0 {
+                let left = Int((Double(typical) - elapsed).rounded())
+                progress = elapsed / Double(typical)
+                label = left > 0 ? "\(left)m" : "gleich"
+                let end = start!.addingTimeInterval(Double(typical) * 60)
+                sub = left > 0 ? "fertig ca. \(end.formatted(date: .omitted, time: .shortened))" : "gleich fertig"
+            } else {
+                label = "\(Int(elapsed))m"
+                sub = "seit \(start!.formatted(date: .omitted, time: .shortened))"
+            }
+        }
+        return tile(ring: ProgressRing(progress: progress, color: d.color, label: label),
+                    symbol: d.symbol, color: d.color, title: d.name, sub: sub)
+    }
+
+    private func batteryTile(_ soc: Double) -> some View {
+        let pv = store.num(EnergyConfig.pv) ?? 0
+        let bat = store.num(EnergyConfig.battery) ?? 0
+        let color: Color = soc < 20 ? .orange : .green
+        let state = bat < -30 ? "lädt" : (bat > 30 ? "entlädt" : "Pause")
+        let sub = pv >= 20 ? "Sonne \(Fmt.watts(pv)) · \(state)" : state
+        return tile(ring: ProgressRing(progress: soc / 100, color: color, label: "\(Int(soc.rounded()))%"),
+                    symbol: "bolt.fill", color: .yellow, title: "Hausakku", sub: sub)
+    }
+
+    private func tile(ring: ProgressRing, symbol: String, color: Color, title: String, sub: String) -> some View {
+        VStack(alignment: .leading, spacing: 0) {
+            HStack(alignment: .top) {
+                ring
+                Spacer(minLength: 4)
+                Image(systemName: symbol).font(.body.weight(.semibold)).foregroundStyle(color)
+            }
+            Text(title).font(.subheadline.weight(.bold)).lineLimit(1).padding(.top, 12)
+            Text(sub).font(.caption).foregroundStyle(.secondary).lineLimit(1).minimumScaleFactor(0.8)
+        }
+        .padding(16)
+        .frame(maxWidth: .infinity, alignment: .leading)
+        .cardSurface()
+        .contentShape(RoundedRectangle(cornerRadius: DS.cardRadius, style: .continuous))
     }
 }

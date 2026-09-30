@@ -12,15 +12,15 @@ enum TodayCardKind: String, CaseIterable, Identifiable {
     var title: String {
         switch self {
         case .safety: "Rauchmelder (nur bei Problemen)"
-        case .weather: "Wetter"
+        case .weather: "Wetter (steht im Kopf)"
         case .mailbox: "Briefkasten"
         case .doorbell: "Klingel (nur nach dem Klingeln)"
-        case .laundry: "Wäsche (nur wenn sie läuft)"
+        case .laundry: "Jetzt: Wäsche & Hausakku"
         case .kitchen: "Küchengeräte (nur wenn sie laufen)"
         case .parentTodos: "Unsere Aufgaben"
         case .music: "Musik"
         case .vacuum: "Saugroboter"
-        case .people: "Wer ist wo?"
+        case .people: "Wer ist wo? (steht im Kopf)"
         case .school: "Stundenplan heute"
         case .freizeit: "Freizeit heute"
         case .meal: "Essen heute"

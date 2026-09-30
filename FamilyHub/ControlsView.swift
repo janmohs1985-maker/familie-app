@@ -20,8 +20,8 @@ struct HubTile: View {
         }
         .padding(12)
         .frame(maxWidth: .infinity, minHeight: 62, alignment: .leading)
-        .background(Color(.secondarySystemGroupedBackground), in: RoundedRectangle(cornerRadius: 16))
-        .contentShape(RoundedRectangle(cornerRadius: 16))
+        .cardSurface(radius: DS.tileRadius)
+        .contentShape(RoundedRectangle(cornerRadius: DS.tileRadius, style: .continuous))
     }
 }
 
@@ -73,7 +73,7 @@ struct ControlsView: View {
                 }
                 Spacer(minLength: 24)
             }
-            .background(Color(.systemGroupedBackground))
+            .background(AppBackground())
             .refreshable { await store.refreshStates(); await store.refreshControls() }
             .navigationTitle("Zuhause")
             .toolbar {

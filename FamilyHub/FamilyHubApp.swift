@@ -35,29 +35,7 @@ struct RootView: View {
     var body: some View {
         Group {
             if store.isLoggedIn {
-                TabView(selection: Bindable(store).selectedTab) {
-                    TodayView()
-                        .tabItem { Label("Heute", systemImage: "sun.max.fill") }
-                        .tag("heute")
-                    if store.allows(.kalender) {
-                        CalendarView()
-                            .tabItem { Label("Kalender", systemImage: "calendar") }
-                            .tag("kalender")
-                    }
-                    ChoresView()
-                        .tabItem { Label("Aufgaben", systemImage: "checkmark.circle.fill") }
-                        .badge(store.choreBadge)
-                        .tag("aufgaben")
-                    if store.allows(.listen) {
-                        ListsView()
-                            .tabItem { Label("Listen", systemImage: "cart.fill") }
-                            .badge((store.todoItems[FamilyConfig.shoppingList] ?? []).filter { !$0.done }.count)
-                            .tag("listen")
-                    }
-                    ControlsView()
-                        .tabItem { Label("Zuhause", systemImage: "house.fill") }
-                        .tag("zuhause")
-                }
+                MainTabs()
                 .task { store.startPolling(); await store.refreshAll(); await store.reportDevice() }
                 .onChange(of: hiddenTabs) { _, hidden in
                     if hidden.contains(store.selectedTab) { store.selectedTab = "heute" }
@@ -92,6 +70,60 @@ struct RootView: View {
         if let p = store.myParentID { return FamilyConfig.parent(p)?.name }
         if let k = store.detectedKid { return FamilyConfig.kid(k)?.name }
         return nil
+    }
+}
+
+/// Die fünf Tabs mit schwebender Glas-Leiste. Tabs bleiben erhalten (Navigation, Scrollposition),
+/// werden aber erst beim ersten Öffnen gebaut.
+struct MainTabs: View {
+    @Environment(AppStore.self) private var store
+    @State private var visited: Set<String> = ["heute"]
+    @State private var keyboard = KeyboardWatch.shared
+
+    var body: some View {
+        let tabs = specs
+        ZStack {
+            ForEach(tabs) { t in
+                if visited.contains(t.id) || t.id == store.selectedTab {
+                    let on = t.id == store.selectedTab
+                    content(t.id)
+                        .opacity(on ? 1 : 0)
+                        .allowsHitTesting(on)
+                        .accessibilityHidden(!on)
+                        .zIndex(on ? 1 : 0)
+                }
+            }
+        }
+        .safeAreaInset(edge: .bottom, spacing: 0) {
+            if !keyboard.visible {
+                GlassTabBar(tabs: tabs, selection: Bindable(store).selectedTab)
+                    .transition(.move(edge: .bottom).combined(with: .opacity))
+            }
+        }
+        .animation(.easeOut(duration: 0.2), value: keyboard.visible)
+        .onChange(of: store.selectedTab, initial: true) { _, t in visited.insert(t) }
+    }
+
+    private var specs: [TabSpec] {
+        var out = [TabSpec(id: "heute", title: "Heute", symbol: "sun.max.fill")]
+        if store.allows(.kalender) { out.append(TabSpec(id: "kalender", title: "Kalender", symbol: "calendar")) }
+        out.append(TabSpec(id: "aufgaben", title: "Aufgaben", symbol: "checkmark.circle.fill", badge: store.choreBadge))
+        if store.allows(.listen) {
+            let open = (store.todoItems[FamilyConfig.shoppingList] ?? []).filter { !$0.done }.count
+            out.append(TabSpec(id: "listen", title: "Listen", symbol: "cart.fill", badge: open))
+        }
+        out.append(TabSpec(id: "zuhause", title: "Zuhause", symbol: "house.fill"))
+        return out
+    }
+
+    @ViewBuilder private func content(_ id: String) -> some View {
+        switch id {
+        case "kalender": CalendarView()
+        case "aufgaben": ChoresView()
+        case "listen": ListsView()
+        case "zuhause": ControlsView()
+        default: TodayView()
+        }
     }
 }
 
