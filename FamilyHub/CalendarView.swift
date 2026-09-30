@@ -62,6 +62,7 @@ enum CalMath {
 struct CalendarView: View {
     @Environment(AppStore.self) private var store
     @State private var showAdd = false
+    @State private var showFree = false
     @State private var weekOffset = 0
 
     private var weekStart: Date { CalMath.weekStart(offset: weekOffset) }
@@ -130,8 +131,13 @@ struct CalendarView: View {
                         Button { showAdd = true } label: { Image(systemName: "plus") }
                     }
                 }
+                ToolbarItem(placement: .primaryAction) {
+                    Button { showFree = true } label: { Image(systemName: "calendar.badge.checkmark") }
+                        .accessibilityLabel("Freie Tage finden")
+                }
             }
             .sheet(isPresented: $showAdd) { AddEventView() }
+            .sheet(isPresented: $showFree) { FreeDaysView() }
         }
     }
 
@@ -341,6 +347,16 @@ struct AddEventView: View {
     @State private var location = ""
     @State private var saving = false
     @State private var error: String?
+
+    init() {}
+
+    /// Vorbelegt mit einem Tag (aus „Freie Tage finden“): ganztägig
+    init(day: Date) {
+        let start = Calendar.current.startOfDay(for: day)
+        _start = State(initialValue: start)
+        _end = State(initialValue: Calendar.current.date(byAdding: .day, value: 1, to: start) ?? start)
+        _allDay = State(initialValue: true)
+    }
 
     static func nextFullHour() -> Date {
         let cal = Calendar.current
