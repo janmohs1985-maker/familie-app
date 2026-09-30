@@ -219,6 +219,13 @@ struct ListsView: View {
     private var history: [String: Int] {
         (try? JSONDecoder().decode([String: Int].self, from: Data(historyRaw.utf8))) ?? [:]
     }
+    /// Vorschlag vergessen (lange drücken auf den Vorschlag)
+    private func forgetSuggestion(_ s: String) {
+        var h = history
+        h[s] = nil
+        if let data = try? JSONEncoder().encode(h) { historyRaw = String(decoding: data, as: UTF8.self) }
+    }
+
     private var suggestions: [String] {
         let openKeys = Set(open.map { ShopText.key($0.summary) })
         return history.sorted { $0.value > $1.value }.map(\.key)
@@ -327,6 +334,11 @@ struct ListsView: View {
                                         .background(Color.accentColor.opacity(0.12), in: Capsule())
                                 }
                                 .buttonStyle(.plain)
+                                .contextMenu {
+                                    Button(role: .destructive) { forgetSuggestion(s) } label: {
+                                        Label("Nicht mehr vorschlagen", systemImage: "xmark.circle")
+                                    }
+                                }
                             }
                         }
                     }

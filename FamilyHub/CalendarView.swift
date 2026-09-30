@@ -137,6 +137,7 @@ struct CalendarView: View {
                 }
             }
             .sheet(isPresented: $showAdd) { AddEventView() }
+            .sheet(item: Bindable(store).eventToShow) { e in EventDetailView(event: e) }
             .sheet(isPresented: $showFree) { FreeDaysView() }
         }
     }
@@ -291,6 +292,8 @@ struct WeekEventPill: View {
         .padding(.vertical, 5).padding(.horizontal, 6)
         .background(color.opacity(0.12), in: RoundedRectangle(cornerRadius: 8))
         .fixedSize(horizontal: false, vertical: true)
+        .contentShape(Rectangle())
+        .onTapGesture { store.eventToShow = event }
     }
 }
 
@@ -332,6 +335,8 @@ struct MonthEventRow: View {
             Spacer(minLength: 0)
         }
         .padding(.vertical, 7)
+        .contentShape(Rectangle())
+        .onTapGesture { store.eventToShow = event }
     }
 }
 
@@ -345,6 +350,7 @@ struct AddEventView: View {
     @State private var start = AddEventView.nextFullHour()
     @State private var end = AddEventView.nextFullHour().addingTimeInterval(3600)
     @State private var location = ""
+    @State private var notes = ""
     @State private var saving = false
     @State private var error: String?
 
@@ -370,7 +376,8 @@ struct AddEventView: View {
             Form {
                 Section {
                     TextField("Titel", text: $title)
-                    TextField("Ort (optional)", text: $location)
+                    LocationField(text: $location)
+                    TextField("Notiz (optional)", text: $notes, axis: .vertical)
                 }
                 Section {
                     Picker("Kalender", selection: $calendarID) {
@@ -411,7 +418,9 @@ struct AddEventView: View {
         defer { saving = false }
         do {
             try await store.createEvent(calendar: calendarID, title: title.trimmingCharacters(in: .whitespaces),
-                                        start: start, end: max(end, start), allDay: allDay, location: location)
+                                        start: start, end: max(end, start), allDay: allDay,
+                                        location: location.trimmingCharacters(in: .whitespaces),
+                                        notes: notes.trimmingCharacters(in: .whitespacesAndNewlines))
             dismiss()
         } catch {
             self.error = error.localizedDescription
@@ -450,6 +459,189 @@ struct CalendarOwnerBadge: View {
                 .frame(width: size, height: size)
                 .background(store.color(for: calendarID).gradient, in: Circle())
                 .accessibilityLabel("Familie")
+        }
+    }
+}
+
+
+// MARK: - Ort mit Vorschlägen (zuletzt benutzte Orte)
+
+struct LocationField: View {
+    @Environment(AppStore.self) private var store
+    @Binding var text: String
+
+    /// Orte aus den geladenen Terminen, häufigste zuerst
+    private var suggestions: [String] {
+        var count: [String: Int] = [:]
+        for e in store.events { if let l = e.location?.trimmingCharacters(in: .whitespaces), !l.isEmpty { count[l, default: 0] += 1 } }
+        let q = text.trimmingCharacters(in: .whitespaces).lowercased()
+        return count.sorted { $0.value > $1.value }.map(\.key)
+            .filter { q.isEmpty || ($0.lowercased().contains(q) && $0.lowercased() != q) }
+            .prefix(6).map { $0 }
+    }
+
+    var body: some View {
+        VStack(alignment: .leading, spacing: 6) {
+            HStack {
+                Image(systemName: "mappin.and.ellipse").foregroundStyle(.secondary)
+                TextField("Ort", text: $text)
+            }
+            if !suggestions.isEmpty {
+                ScrollView(.horizontal, showsIndicators: false) {
+                    HStack(spacing: 6) {
+                        ForEach(suggestions, id: \.self) { s in
+                            Button(s) { text = s }
+                                .font(.caption)
+                                .padding(.horizontal, 9).padding(.vertical, 5)
+                                .background(Color.accentColor.opacity(0.12), in: Capsule())
+                                .buttonStyle(.plain)
+                        }
+                    }
+                }
+            }
+        }
+    }
+}
+
+// MARK: - Termin antippen: Details, für Jan & Vanessa bearbeiten/löschen
+
+struct EventDetailView: View {
+    @Environment(AppStore.self) private var store
+    @Environment(\.dismiss) private var dismiss
+    let event: HAEvent
+
+    @State private var title = ""
+    @State private var calendarID = ""
+    @State private var allDay = false
+    @State private var start = Date()
+    @State private var end = Date()
+    @State private var location = ""
+    @State private var notes = ""
+    @State private var saving = false
+    @State private var error: String?
+    @State private var confirmDelete = false
+    @State private var loaded = false
+
+    private var editable: Bool { store.canEditEvents && event.uid != nil }
+    private var calendarName: String {
+        store.calendars.first { $0.entity_id == event.calendarID }?.name ?? event.calendarID
+    }
+
+    var body: some View {
+        NavigationStack {
+            Form {
+                if editable { editForm } else { readOnly }
+                if let error {
+                    Section { Label(error, systemImage: "exclamationmark.triangle.fill").foregroundStyle(.red) }
+                }
+            }
+            .navigationTitle(editable ? "Termin bearbeiten" : "Termin")
+            .navigationBarTitleDisplayMode(.inline)
+            .toolbar {
+                ToolbarItem(placement: .cancellationAction) { Button(editable ? "Abbrechen" : "Fertig") { dismiss() } }
+                if editable {
+                    ToolbarItem(placement: .confirmationAction) {
+                        if saving { ProgressView() } else {
+                            Button("Sichern") { Task { await save() } }
+                                .disabled(title.trimmingCharacters(in: .whitespaces).isEmpty)
+                        }
+                    }
+                }
+            }
+            .confirmationDialog(event.isSeries ? "Ganze Serie löschen?" : "Termin löschen?", isPresented: $confirmDelete, titleVisibility: .visible) {
+                Button(event.isSeries ? "Alle Termine der Serie löschen" : "Löschen", role: .destructive) { Task { await delete() } }
+            } message: {
+                Text(event.isSeries ? "„\(event.summary)“ ist ein Serientermin – gelöscht werden alle Termine der Serie."
+                                    : "„\(event.summary)“ wird aus dem Kalender gelöscht.")
+            }
+            .onAppear(perform: load)
+            .onChange(of: start) { old, new in
+                if loaded { end = end.addingTimeInterval(new.timeIntervalSince(old)) }
+            }
+        }
+    }
+
+    @ViewBuilder private var editForm: some View {
+        Section {
+            TextField("Titel", text: $title)
+            LocationField(text: $location)
+            TextField("Notiz", text: $notes, axis: .vertical)
+        }
+        Section {
+            Picker("Kalender", selection: $calendarID) {
+                ForEach(store.writableCalendars) { c in
+                    Label { Text(c.name) } icon: { Image(systemName: "circle.fill").foregroundStyle(store.color(for: c.entity_id)) }
+                        .tag(c.entity_id)
+                }
+            }
+            Toggle("Ganztägig", isOn: $allDay).disabled(event.isSeries)
+            DatePicker("Beginn", selection: $start, displayedComponents: allDay ? [.date] : [.date, .hourAndMinute])
+                .disabled(event.isSeries)
+            DatePicker("Ende", selection: $end, in: start..., displayedComponents: allDay ? [.date] : [.date, .hourAndMinute])
+                .disabled(event.isSeries)
+        } footer: {
+            if event.isSeries {
+                Text("Serientermin: Titel, Ort und Notiz gelten für die ganze Serie. Die Uhrzeit bitte direkt im Kalender ändern.")
+            }
+        }
+        Section {
+            Button(role: .destructive) { confirmDelete = true } label: {
+                Label(event.isSeries ? "Serie löschen" : "Termin löschen", systemImage: "trash")
+            }
+        }
+    }
+
+    @ViewBuilder private var readOnly: some View {
+        Section {
+            Text(event.summary).font(.headline)
+            LabeledContent("Wann", value: CalMath.time(event))
+            LabeledContent("Tag", value: event.start.formatted(.dateTime.weekday(.wide).day().month(.wide)))
+            if let l = event.location, !l.isEmpty { LabeledContent("Ort", value: l) }
+            LabeledContent("Kalender", value: calendarName)
+        }
+        if let d = event.description, !d.isEmpty {
+            Section("Notiz") { Text(d) }
+        }
+        if store.isParent == false || store.activeKid != nil {
+            Section { Text("Termine ändern können Mama und Papa.").font(.footnote).foregroundStyle(.secondary) }
+        }
+    }
+
+    private func load() {
+        guard !loaded else { return }
+        title = event.summary
+        calendarID = event.calendarID
+        allDay = event.allDay
+        start = event.start
+        // ganztägig: Ende ist exklusiv → letzter Tag anzeigen
+        end = event.allDay ? (Calendar.current.date(byAdding: .day, value: -1, to: event.end) ?? event.end) : event.end
+        location = event.location ?? ""
+        notes = event.description ?? ""
+        DispatchQueue.main.async { loaded = true }
+    }
+
+    private func save() async {
+        saving = true; error = nil
+        defer { saving = false }
+        do {
+            try await store.updateEvent(event, calendar: calendarID, title: title.trimmingCharacters(in: .whitespaces),
+                                        start: start, end: max(end, start), allDay: allDay,
+                                        location: location.trimmingCharacters(in: .whitespaces),
+                                        notes: notes.trimmingCharacters(in: .whitespacesAndNewlines))
+            dismiss()
+        } catch {
+            self.error = error.localizedDescription
+        }
+    }
+
+    private func delete() async {
+        saving = true; error = nil
+        defer { saving = false }
+        do {
+            try await store.deleteEvent(event)
+            dismiss()
+        } catch {
+            self.error = error.localizedDescription
         }
     }
 }

@@ -202,7 +202,7 @@ actor HAClient {
             let id = "\(calendar)|\(r.uid ?? r.summary ?? "")|\(r.recurrence_id ?? "")|\(s.timeIntervalSince1970)"
             return HAEvent(id: id, calendarID: calendar, summary: r.summary ?? "(ohne Titel)",
                            location: r.location, description: r.description,
-                           start: s, end: e, allDay: allDay)
+                           start: s, end: e, allDay: allDay, uid: r.uid, recurrenceID: r.recurrence_id)
         }
     }
 

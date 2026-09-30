@@ -68,7 +68,7 @@ struct NetStatus {
     var gwMem: Double?
     var gwUptime: Double?
     var gwVersion: String?
-    var vpnSites: [(name: String, enabled: Bool)] = []
+    var vpnSites: [(name: String, enabled: Bool, client: Bool, connected: Bool?, since: Date?)] = []
     var siteActive = 0
     var siteInactive = 0
     var remoteUserEnabled = false
@@ -103,14 +103,23 @@ extension AppStore {
         s.gwMem = c["gateway"]?["mem"]?.double
         s.gwUptime = c["gateway"]?["uptime"]?.double
         s.gwVersion = c["gateway"]?["version"]?.string
+        var tunnelIDs = Set<String>()
         for v in c["vpn"]?.array ?? [] {
-            s.vpnSites.append((name: v["name"]?.string ?? "VPN", enabled: v["enabled"]?.string != "false"))
+            let purpose = v["purpose"]?.string ?? ""
+            if let id = v["id"]?.string { tunnelIDs.insert(id) }
+            // „verbunden“ prüft Family Hub selbst (Client: Verbindungsliste, Standort: Gegenstelle antwortet)
+            let connected: Bool? = v["verbunden"].map { $0.string == "true" }
+            s.vpnSites.append((name: v["name"]?.string ?? "VPN", enabled: v["enabled"]?.string != "false",
+                               client: purpose == "vpn-client", connected: connected,
+                               since: v["seit"]?.double.map { Date(timeIntervalSince1970: $0) }))
         }
         let vh = c["vpn_health"]
         s.siteActive = vh?["site_to_site_num_active"]?.int ?? 0
         s.siteInactive = vh?["site_to_site_num_inactive"]?.int ?? 0
         s.remoteUserEnabled = vh?["remote_user_enabled"]?.string == "true"
         for conn in c["vpn_connections"]?.array ?? [] {
+            // eigene Tunnel (z. B. Mullvad) stehen schon oben – hier nur Leute, die sich von unterwegs einwählen
+            if let nid = conn["network_id"]?.string, tunnelIDs.contains(nid) { continue }
             let name = conn["name"]?.string ?? conn["user_name"]?.string ?? conn["client_name"]?.string ?? conn["type"]?.string ?? "Verbindung"
             s.vpnConnections.append(name)
         }
@@ -552,13 +561,15 @@ struct NetworkView: View {
                     Text("Keine VPN-Verbindungen eingerichtet").foregroundStyle(.secondary)
                 }
                 ForEach(Array(n.vpnSites.enumerated()), id: \.offset) { _, site in
-                    let connected = n.siteActive > 0
+                    let connected = site.connected ?? (n.siteActive > 0)
                     HStack {
                         Image(systemName: connected ? "checkmark.shield.fill" : "xmark.shield.fill")
                             .foregroundStyle(connected ? Color.green : Color.red)
                         VStack(alignment: .leading, spacing: 1) {
                             Text(site.name).font(.subheadline.weight(.semibold))
-                            Text("Standort-Verbindung" + (site.enabled ? "" : " · ausgeschaltet"))
+                            Text((site.client ? "VPN-Client" : "Standort-Verbindung")
+                                 + (site.enabled ? "" : " · ausgeschaltet")
+                                 + (connected ? (site.since.map { " · seit " + $0.formatted(date: .abbreviated, time: .shortened) } ?? "") : ""))
                                 .font(.caption).foregroundStyle(.secondary)
                         }
                         Spacer()

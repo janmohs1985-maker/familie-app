@@ -80,6 +80,10 @@ struct HAEvent: Identifiable, Hashable {
     let start: Date
     let end: Date
     let allDay: Bool
+    var uid: String? = nil
+    var recurrenceID: String? = nil
+    /// Teil einer Serie (Zeiten nur im Kalender selbst änderbar)
+    var isSeries: Bool { !(recurrenceID ?? "").isEmpty }
 }
 
 /// Rohformat aus GET /api/calendars/<entity>

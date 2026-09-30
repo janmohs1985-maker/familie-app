@@ -12,6 +12,7 @@ final class AppStore {
     var states: [String: HAState] = [:]
     var calendars: [HACalendar] = []
     var events: [HAEvent] = []
+    var eventToShow: HAEvent?                     // Termin antippen → Details/Bearbeiten
     var todoLists: [HAState] = []
     var todoItems: [String: [TodoItem]] = [:]
     var shopMeta: [String: ShopMetaEntry] = [:]
@@ -217,7 +218,12 @@ final class AppStore {
         await refreshTodos()
     }
 
-    func createEvent(calendar: String, title: String, start: Date, end: Date, allDay: Bool, location: String) async throws {
+    func createEvent(calendar: String, title: String, start: Date, end: Date, allDay: Bool, location: String, notes: String = "") async throws {
+        if canEditEvents {
+            try await calendarWrite((["aktion": "neu", "kalender": calendar, "titel": title, "ort": location, "notiz": notes] as [String: Any])
+                .merging(Self.eventTimes(start: start, end: end, allDay: allDay)) { $1 })
+            return
+        }
         var data: [String: Any] = ["entity_id": calendar, "summary": title]
         if allDay {
             // Enddatum ist bei ganztägigen Terminen exklusiv
@@ -231,6 +237,45 @@ final class AppStore {
         if !location.isEmpty { data["location"] = location }
         try await client.call("calendar", "create_event", data)
         await refreshCalendar()
+    }
+
+    /// Termine ändern/löschen dürfen nur Jan und Vanessa (läuft über Family Hub direkt am Kalender-Server)
+    var canEditEvents: Bool { myParentID != nil && activeKid == nil }
+
+    static func eventTimes(start: Date, end: Date, allDay: Bool) -> [String: Any] {
+        if allDay {
+            // Enddatum ist bei ganztägigen Terminen exklusiv
+            let endDay = Calendar.current.date(byAdding: .day, value: 1, to: Calendar.current.startOfDay(for: max(end, start)))!
+            return ["ganztags": true, "start": HADate.day.string(from: start), "ende": HADate.day.string(from: endDay)]
+        }
+        return ["ganztags": false, "start": HADate.iso.string(from: start), "ende": HADate.iso.string(from: max(end, start))]
+    }
+
+    func calendarWrite(_ data: [String: Any]) async throws {
+        guard let token = PushState.shared.token ?? UserDefaults.standard.string(forKey: "pushToken") else {
+            throw HAError.unexpected("Bitte zuerst Mitteilungen für die Familie-App erlauben – daran erkennt Family Hub dein iPhone.")
+        }
+        var d = data
+        d["token"] = token
+        let r = try await client.callWithResponse("rest_command", "familie_kalender", ["daten": d], timeout: 45)
+        let c = r["content"] ?? r
+        if c["ok"]?.string != "true" {
+            throw HAError.unexpected(c["error"]?.string ?? "Kalender nicht erreichbar.")
+        }
+        await refreshCalendar()
+    }
+
+    func updateEvent(_ e: HAEvent, calendar: String, title: String, start: Date, end: Date, allDay: Bool,
+                     location: String, notes: String) async throws {
+        guard let uid = e.uid else { throw HAError.unexpected("Dieser Termin lässt sich nicht bearbeiten.") }
+        try await calendarWrite((["aktion": "aendern", "kalender": e.calendarID, "ziel": calendar, "uid": uid,
+                                  "titel": title, "ort": location, "notiz": notes] as [String: Any])
+            .merging(Self.eventTimes(start: start, end: end, allDay: allDay)) { $1 })
+    }
+
+    func deleteEvent(_ e: HAEvent) async throws {
+        guard let uid = e.uid else { throw HAError.unexpected("Dieser Termin lässt sich nicht löschen.") }
+        try await calendarWrite(["aktion": "loeschen", "kalender": e.calendarID, "uid": uid])
     }
 
     /// Kalender, in die neue Termine geschrieben werden können (Feature-Bit 1 = CREATE_EVENT)
