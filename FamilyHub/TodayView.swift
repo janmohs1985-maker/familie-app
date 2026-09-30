@@ -547,7 +547,7 @@ struct EventRow: View {
                 }
             }
             Spacer()
-            CalendarOwnerBadge(calendarID: event.calendarID, size: 24)
+            EventOwnerBadge(event: event, size: 24)
         }
         .fixedSize(horizontal: false, vertical: true)
     }

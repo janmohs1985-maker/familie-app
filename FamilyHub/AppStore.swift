@@ -235,6 +235,7 @@ final class AppStore {
             data["end_date_time"] = HADate.serviceDateTime.string(from: end)
         }
         if !location.isEmpty { data["location"] = location }
+        if !notes.isEmpty { data["description"] = notes }
         try await client.call("calendar", "create_event", data)
         await refreshCalendar()
     }

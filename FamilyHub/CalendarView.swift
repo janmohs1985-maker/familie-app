@@ -287,7 +287,7 @@ struct WeekEventPill: View {
                 .frame(width: 42, alignment: .leading)
             Text(event.summary).font(.subheadline.weight(.medium)).lineLimit(1)
             Spacer(minLength: 0)
-            CalendarOwnerBadge(calendarID: event.calendarID, size: 18)
+            EventOwnerBadge(event: event, size: 18)
         }
         .padding(.vertical, 5).padding(.horizontal, 6)
         .background(color.opacity(0.12), in: RoundedRectangle(cornerRadius: 8))
@@ -317,7 +317,7 @@ struct MonthEventRow: View {
 
             VStack(alignment: .leading, spacing: 2) {
                 HStack(spacing: 6) {
-                    CalendarOwnerBadge(calendarID: event.calendarID, size: 18)
+                    EventOwnerBadge(event: event, size: 18)
                     Text(event.summary).font(.subheadline.weight(.semibold)).lineLimit(2)
                 }
                 HStack(spacing: 4) {
@@ -345,7 +345,7 @@ struct AddEventView: View {
     @Environment(\.dismiss) private var dismiss
 
     @State private var title = ""
-    @State private var calendarID = ""
+    @State private var who = WhoSelection()
     @State private var allDay = false
     @State private var start = AddEventView.nextFullHour()
     @State private var end = AddEventView.nextFullHour().addingTimeInterval(3600)
@@ -379,13 +379,10 @@ struct AddEventView: View {
                     LocationField(text: $location)
                     TextField("Notiz (optional)", text: $notes, axis: .vertical)
                 }
+                Section("Für wen?") {
+                    WhoPicker(selection: $who)
+                }
                 Section {
-                    Picker("Kalender", selection: $calendarID) {
-                        ForEach(store.writableCalendars) { c in
-                            Label { Text(c.name) } icon: { Image(systemName: "circle.fill").foregroundStyle(store.color(for: c.entity_id)) }
-                                .tag(c.entity_id)
-                        }
-                    }
                     Toggle("Ganztägig", isOn: $allDay)
                     DatePicker("Beginn", selection: $start, displayedComponents: allDay ? [.date] : [.date, .hourAndMinute])
                     DatePicker("Ende", selection: $end, in: start..., displayedComponents: allDay ? [.date] : [.date, .hourAndMinute])
@@ -396,7 +393,7 @@ struct AddEventView: View {
             }
             .navigationTitle("Neuer Termin")
             .navigationBarTitleDisplayMode(.inline)
-            .onAppear { if calendarID.isEmpty { calendarID = store.writableCalendars.first?.entity_id ?? "" } }
+            .onAppear { if who.isEmpty { who = WhoSelection.initial(store) } }
             .onChange(of: start) { old, new in
                 // Dauer beibehalten, wenn der Beginn verschoben wird
                 end = end.addingTimeInterval(new.timeIntervalSince(old))
@@ -406,7 +403,7 @@ struct AddEventView: View {
                 ToolbarItem(placement: .confirmationAction) {
                     if saving { ProgressView() } else {
                         Button("Sichern") { Task { await save() } }
-                            .disabled(title.trimmingCharacters(in: .whitespaces).isEmpty || calendarID.isEmpty)
+                            .disabled(title.trimmingCharacters(in: .whitespaces).isEmpty || who.isEmpty)
                     }
                 }
             }
@@ -417,10 +414,10 @@ struct AddEventView: View {
         saving = true; error = nil
         defer { saving = false }
         do {
-            try await store.createEvent(calendar: calendarID, title: title.trimmingCharacters(in: .whitespaces),
+            try await store.createEvent(calendar: who.calendar, title: title.trimmingCharacters(in: .whitespaces),
                                         start: start, end: max(end, start), allDay: allDay,
                                         location: location.trimmingCharacters(in: .whitespaces),
-                                        notes: notes.trimmingCharacters(in: .whitespacesAndNewlines))
+                                        notes: EventPeople.compose(notes: notes, people: who.peopleForMarker))
             dismiss()
         } catch {
             self.error = error.localizedDescription
@@ -511,7 +508,7 @@ struct EventDetailView: View {
     let event: HAEvent
 
     @State private var title = ""
-    @State private var calendarID = ""
+    @State private var who = WhoSelection()
     @State private var allDay = false
     @State private var start = Date()
     @State private var end = Date()
@@ -567,13 +564,10 @@ struct EventDetailView: View {
             LocationField(text: $location)
             TextField("Notiz", text: $notes, axis: .vertical)
         }
+        Section("Für wen?") {
+            WhoPicker(selection: $who)
+        }
         Section {
-            Picker("Kalender", selection: $calendarID) {
-                ForEach(store.writableCalendars) { c in
-                    Label { Text(c.name) } icon: { Image(systemName: "circle.fill").foregroundStyle(store.color(for: c.entity_id)) }
-                        .tag(c.entity_id)
-                }
-            }
             Toggle("Ganztägig", isOn: $allDay).disabled(event.isSeries)
             DatePicker("Beginn", selection: $start, displayedComponents: allDay ? [.date] : [.date, .hourAndMinute])
                 .disabled(event.isSeries)
@@ -598,9 +592,12 @@ struct EventDetailView: View {
             LabeledContent("Tag", value: event.start.formatted(.dateTime.weekday(.wide).day().month(.wide)))
             if let l = event.location, !l.isEmpty { LabeledContent("Ort", value: l) }
             LabeledContent("Kalender", value: calendarName)
+            if !event.participants.isEmpty {
+                LabeledContent("Dabei", value: FamilyConfig.people.filter { event.participants.contains($0.id) }.map(\.name).joined(separator: ", "))
+            }
         }
-        if let d = event.description, !d.isEmpty {
-            Section("Notiz") { Text(d) }
+        if !event.notes.isEmpty {
+            Section("Notiz") { Text(event.notes) }
         }
         if store.isParent == false || store.activeKid != nil {
             Section { Text("Termine ändern können Mama und Papa.").font(.footnote).foregroundStyle(.secondary) }
@@ -610,13 +607,13 @@ struct EventDetailView: View {
     private func load() {
         guard !loaded else { return }
         title = event.summary
-        calendarID = event.calendarID
+        who = WhoSelection(event: event)
         allDay = event.allDay
         start = event.start
         // ganztägig: Ende ist exklusiv → letzter Tag anzeigen
         end = event.allDay ? (Calendar.current.date(byAdding: .day, value: -1, to: event.end) ?? event.end) : event.end
         location = event.location ?? ""
-        notes = event.description ?? ""
+        notes = event.notes
         DispatchQueue.main.async { loaded = true }
     }
 
@@ -624,10 +621,10 @@ struct EventDetailView: View {
         saving = true; error = nil
         defer { saving = false }
         do {
-            try await store.updateEvent(event, calendar: calendarID, title: title.trimmingCharacters(in: .whitespaces),
+            try await store.updateEvent(event, calendar: who.calendar, title: title.trimmingCharacters(in: .whitespaces),
                                         start: start, end: max(end, start), allDay: allDay,
                                         location: location.trimmingCharacters(in: .whitespaces),
-                                        notes: notes.trimmingCharacters(in: .whitespacesAndNewlines))
+                                        notes: EventPeople.compose(notes: notes, people: who.peopleForMarker))
             dismiss()
         } catch {
             self.error = error.localizedDescription
@@ -642,6 +639,144 @@ struct EventDetailView: View {
             dismiss()
         } catch {
             self.error = error.localizedDescription
+        }
+    }
+}
+
+
+// MARK: - Für wen? Gesichter antippen (mehrere möglich) oder „Familie“
+//
+// 1 Person → ihr eigener Kalender. Mehrere → Familienkalender mit „👥 Dabei: …“ in der Notiz (einmal, nicht doppelt).
+// „Familie“ (oder alle vier) → Familienkalender ohne Zusatz.
+
+struct WhoSelection: Equatable {
+    var people: Set<String> = []     // person.*
+    var family = false
+
+    var isEmpty: Bool { people.isEmpty && !family }
+
+    static let familyCalendar = CalendarOwner.family.first ?? "calendar.personlicher_kalender"
+    static func calendar(of person: String) -> String? { CalendarOwner.persons.first { $0.value == person }?.key }
+
+    var everyone: Bool { people.count == FamilyConfig.people.count }
+
+    var calendar: String {
+        if !family, people.count == 1, let p = people.first, let c = Self.calendar(of: p) { return c }
+        return Self.familyCalendar
+    }
+    /// Für die „Dabei“-Zeile: nur bei 2–3 Personen
+    var peopleForMarker: [String] {
+        family || everyone || people.count < 2 ? [] : FamilyConfig.people.map(\.id).filter { people.contains($0) }
+    }
+
+    init() {}
+
+    init(event: HAEvent) {
+        if let p = CalendarOwner.persons[event.calendarID] {
+            people = [p]
+        } else if !event.participants.isEmpty {
+            people = Set(event.participants)
+        } else {
+            family = true
+        }
+    }
+
+    @MainActor static func initial(_ store: AppStore) -> WhoSelection {
+        var w = WhoSelection()
+        if let me = store.myKey,
+           let p = FamilyConfig.parent(me)?.person ?? FamilyConfig.kid(me)?.person {
+            w.people = [p]
+        } else {
+            w.family = true
+        }
+        return w
+    }
+}
+
+struct WhoPicker: View {
+    @Environment(AppStore.self) private var store
+    @Binding var selection: WhoSelection
+
+    var body: some View {
+        VStack(alignment: .leading, spacing: 8) {
+            HStack(spacing: 10) {
+                ForEach(FamilyConfig.people) { p in face(p) }
+                familyButton
+            }
+            Text(hint).font(.caption).foregroundStyle(.secondary)
+        }
+        .padding(.vertical, 4)
+    }
+
+    private var hint: String {
+        if selection.family || selection.everyone { return "Kommt in den Familienkalender." }
+        let names = FamilyConfig.people.filter { selection.people.contains($0.id) }.map(\.name)
+        switch names.count {
+        case 0: return "Bitte mindestens eine Person wählen."
+        case 1: return "Kommt in den Kalender von \(names[0])."
+        default: return "Kommt einmal in den Familienkalender – mit \(names.joined(separator: " & ")) als dabei."
+        }
+    }
+
+    private func face(_ p: FamilyConfig.Person) -> some View {
+        let on = !selection.family && selection.people.contains(p.id)
+        return Button {
+            selection.family = false
+            if on { selection.people.remove(p.id) } else { selection.people.insert(p.id) }
+        } label: {
+            VStack(spacing: 4) {
+                Avatar(image: store.pictures[p.id], name: p.name, color: p.color, initialFont: .headline, ring: on ? 2.5 : 0)
+                    .frame(width: 42, height: 42)
+                    .opacity(on ? 1 : 0.35)
+                Text(p.name).font(.caption2.weight(.semibold)).foregroundStyle(on ? .primary : .secondary)
+            }
+            .frame(maxWidth: .infinity)
+        }
+        .buttonStyle(.plain)
+        .accessibilityLabel("\(p.name) \(on ? "ausgewählt" : "nicht ausgewählt")")
+    }
+
+    private var familyButton: some View {
+        let on = selection.family
+        let color = store.color(for: WhoSelection.familyCalendar)
+        return Button {
+            selection.family.toggle()
+            if selection.family { selection.people = [] }
+        } label: {
+            VStack(spacing: 4) {
+                Image(systemName: "house.fill")
+                    .font(.system(size: 18, weight: .bold))
+                    .foregroundStyle(.white)
+                    .frame(width: 42, height: 42)
+                    .background(color.gradient, in: Circle())
+                    .opacity(on ? 1 : 0.35)
+                Text("Familie").font(.caption2.weight(.semibold)).foregroundStyle(on ? .primary : .secondary)
+            }
+            .frame(maxWidth: .infinity)
+        }
+        .buttonStyle(.plain)
+    }
+}
+
+/// Gesichter zum Termin: eigener Kalender → eine Person; Familienkalender mit „Dabei“ → mehrere; sonst Haus
+struct EventOwnerBadge: View {
+    @Environment(AppStore.self) private var store
+    let event: HAEvent
+    var size: CGFloat = 20
+
+    var body: some View {
+        let people = event.participants
+        if people.count > 1 {
+            HStack(spacing: -size * 0.35) {
+                ForEach(FamilyConfig.people.filter { people.contains($0.id) }) { p in
+                    Avatar(image: store.pictures[p.id], name: p.name, color: p.color,
+                           initialFont: .system(size: size * 0.5, weight: .bold), ring: 1.5)
+                        .frame(width: size, height: size)
+                }
+            }
+            .accessibilityLabel(FamilyConfig.people.filter { people.contains($0.id) }.map(\.name).joined(separator: " und "))
+        } else {
+            CalendarOwnerBadge(calendarID: event.calendarID, size: size)
         }
     }
 }

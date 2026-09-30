@@ -236,7 +236,7 @@ struct TodayTimeline: View {
                 Text(subtitle(e, running: running)).font(.caption).foregroundStyle(running ? Color.accentColor : .secondary).lineLimit(1)
             }
             Spacer(minLength: 4)
-            CalendarOwnerBadge(calendarID: e.calendarID, size: 22)
+            EventOwnerBadge(event: e, size: 22)
         }
         .padding(.vertical, 10)
     }

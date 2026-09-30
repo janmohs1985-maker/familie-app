@@ -84,6 +84,34 @@ struct HAEvent: Identifiable, Hashable {
     var recurrenceID: String? = nil
     /// Teil einer Serie (Zeiten nur im Kalender selbst änderbar)
     var isSeries: Bool { !(recurrenceID ?? "").isEmpty }
+
+    /// Wer ist dabei (nur Familienkalender): steht als letzte Zeile „👥 Dabei: Jan, Vanessa“ in der Notiz –
+    /// so sieht man es auch im iPhone-Kalender. → person.*-Entitäten
+    var participants: [String] { EventPeople.parse(description).people }
+    /// Notiz ohne die „Dabei“-Zeile
+    var notes: String { EventPeople.parse(description).notes }
+}
+
+enum EventPeople {
+    static let marker = "👥 Dabei:"
+
+    static func parse(_ description: String?) -> (people: [String], notes: String) {
+        guard let d = description, !d.isEmpty else { return ([], "") }
+        var lines = d.components(separatedBy: "\n")
+        guard let i = lines.lastIndex(where: { $0.hasPrefix(marker) }) else { return ([], d) }
+        let names = lines[i].dropFirst(marker.count).split(separator: ",").map { $0.trimmingCharacters(in: .whitespaces).lowercased() }
+        let people = FamilyConfig.people.filter { names.contains($0.name.lowercased()) }.map(\.id)
+        lines.remove(at: i)
+        return (people, lines.joined(separator: "\n").trimmingCharacters(in: .whitespacesAndNewlines))
+    }
+
+    /// Notiz + „Dabei“-Zeile (bei 0 oder 1 Person ohne Zeile)
+    static func compose(notes: String, people: [String]) -> String {
+        let n = notes.trimmingCharacters(in: .whitespacesAndNewlines)
+        let names = FamilyConfig.people.filter { people.contains($0.id) }.map(\.name)
+        guard names.count > 1 else { return n }
+        return (n.isEmpty ? "" : n + "\n\n") + marker + " " + names.joined(separator: ", ")
+    }
 }
 
 /// Rohformat aus GET /api/calendars/<entity>
