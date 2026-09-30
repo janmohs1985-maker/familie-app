@@ -56,12 +56,18 @@ final class AppDelegate: NSObject, UIApplicationDelegate, UNUserNotificationCent
             UNTextInputNotificationAction(identifier: "a_zurueck", title: "↩️ Zurückgeben …", options: [.destructive],
                                           textInputButtonTitle: "Zurückgeben", textInputPlaceholder: "Warum? (optional)"),
         ], intentIdentifiers: [], options: [])
-        UNUserNotificationCenter.current().setNotificationCategories([klingel, aufgabe])
+        // Jemand ist einkaufen (lange drücken): etwas zum Mitbringen dazuschreiben
+        let mitbringen = UNNotificationCategory(identifier: "MITBRINGEN", actions: [
+            UNTextInputNotificationAction(identifier: "mb_text", title: "➕ Etwas mitbringen …", options: [],
+                                          textInputButtonTitle: "Senden", textInputPlaceholder: "z. B. Milch, Brot"),
+        ], intentIdentifiers: [], options: [])
+        UNUserNotificationCenter.current().setNotificationCategories([klingel, aufgabe, mitbringen])
         return true
     }
 
     func application(_ application: UIApplication, didRegisterForRemoteNotificationsWithDeviceToken deviceToken: Data) {
         let hex = deviceToken.map { String(format: "%02x", $0) }.joined()
+        UserDefaults.standard.set(hex, forKey: "pushToken")   // für Antworten aus Mitteilungen, wenn die App nicht läuft
         Task { @MainActor in PushState.shared.token = hex }
     }
 
@@ -84,6 +90,16 @@ final class AppDelegate: NSObject, UIApplicationDelegate, UNUserNotificationCent
             // im Hintergrund öffnen – die App muss dafür nicht aufgehen
             Task {
                 await DoorOpener.openFromNotification()
+                completionHandler()
+            }
+            return
+        }
+        if response.actionIdentifier == "mb_text" {
+            let info = response.notification.request.content.userInfo
+            let text = (response as? UNTextInputNotificationResponse)?.userText ?? ""
+            let link = info["link"] as? String ?? ""
+            Task {
+                await ShoppingFromNotification.send(text: text, shopper: String(link.dropFirst("mitbringen_".count)))
                 completionHandler()
             }
             return
@@ -126,6 +142,41 @@ enum DoorOpener {
         c.userInfo = ["link": "haustuer"]
         c.threadIdentifier = "haustuer"
         let req = UNNotificationRequest(identifier: "familie.tuer." + UUID().uuidString, content: c, trigger: nil)
+        try? await UNUserNotificationCenter.current().add(req)
+    }
+}
+
+/// „Bitte mitbringen“ aus der Mitteilung: Family Hub trägt es ein und sagt dem, der einkauft, Bescheid
+enum ShoppingFromNotification {
+    static func send(text: String, shopper: String) async {
+        let t = text.trimmingCharacters(in: .whitespacesAndNewlines)
+        guard !t.isEmpty else { return }
+        let token = UserDefaults.standard.string(forKey: "pushToken") ?? ""
+        let client = HAClient(credentials: Keychain.load()) { creds in
+            if let creds { Keychain.save(creds) }
+        }
+        var ok = false
+        var err = "Home Assistant war nicht erreichbar."
+        do {
+            let r = try await client.callWithResponse("rest_command", "familie_mitbringen",
+                                                      ["daten": ["token": token, "text": t, "fuer": shopper]], timeout: 40)
+            let c = r["content"] ?? r
+            if c["error"]?.string == nil, !(c["eingetragen"]?.array ?? []).isEmpty { ok = true }
+            else { err = c["error"]?.string ?? err }
+        } catch {}
+        let c = UNMutableNotificationContent()
+        let name = FamilyConfig.parent(shopper)?.name ?? FamilyConfig.kid(shopper)?.name ?? ""
+        if ok {
+            c.title = "✅ Auf der Einkaufsliste"
+            c.body = t + (name.isEmpty ? "" : " – \(name) weiß Bescheid.")
+        } else {
+            c.title = "⚠️ Nicht eingetragen"
+            c.body = err + " Bitte in der App eintragen."
+            c.sound = .default
+        }
+        c.userInfo = ["link": "einkauf"]
+        c.threadIdentifier = "einkauf"
+        let req = UNNotificationRequest(identifier: "familie.mitbringen." + UUID().uuidString, content: c, trigger: nil)
         try? await UNUserNotificationCenter.current().add(req)
     }
 }
