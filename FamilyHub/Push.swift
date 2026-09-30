@@ -46,7 +46,17 @@ final class AppDelegate: NSObject, UIApplicationDelegate, UNUserNotificationCent
                                         options: [.authenticationRequired, .destructive])
         let talk = UNNotificationAction(identifier: "sprechen", title: "🎙 Sprechen", options: [.foreground])
         let klingel = UNNotificationCategory(identifier: "KLINGEL", actions: [talk, open], intentIdentifiers: [], options: [])
-        UNUserNotificationCenter.current().setNotificationCategories([klingel])
+        // Aufgabe vom Partner (lange drücken): annehmen – auch mit Datum oder Nachricht – oder zurückgeben
+        let aufgabe = UNNotificationCategory(identifier: "AUFGABE", actions: [
+            UNNotificationAction(identifier: "a_annehmen", title: "👍 Annehmen", options: []),
+            UNNotificationAction(identifier: "a_heute", title: "📅 Mache ich heute", options: []),
+            UNNotificationAction(identifier: "a_morgen", title: "📅 Mache ich morgen", options: []),
+            UNTextInputNotificationAction(identifier: "a_nachricht", title: "💬 Annehmen mit Nachricht …", options: [],
+                                          textInputButtonTitle: "Senden", textInputPlaceholder: "Nachricht"),
+            UNTextInputNotificationAction(identifier: "a_zurueck", title: "↩️ Zurückgeben …", options: [.destructive],
+                                          textInputButtonTitle: "Zurückgeben", textInputPlaceholder: "Warum? (optional)"),
+        ], intentIdentifiers: [], options: [])
+        UNUserNotificationCenter.current().setNotificationCategories([klingel, aufgabe])
         return true
     }
 
@@ -73,6 +83,17 @@ final class AppDelegate: NSObject, UIApplicationDelegate, UNUserNotificationCent
             // im Hintergrund öffnen – die App muss dafür nicht aufgehen
             Task {
                 await DoorOpener.openFromNotification()
+                completionHandler()
+            }
+            return
+        }
+        if response.actionIdentifier.hasPrefix("a_") {
+            let info = response.notification.request.content.userInfo
+            let text = (response as? UNTextInputNotificationResponse)?.userText ?? ""
+            let action = response.actionIdentifier
+            Task {
+                await TodoFromNotification.answer(action: action, link: info["link"] as? String ?? "",
+                                                  sender: info["von"] as? String ?? "", text: text)
                 completionHandler()
             }
             return
@@ -104,6 +125,42 @@ enum DoorOpener {
         c.userInfo = ["link": "haustuer"]
         c.threadIdentifier = "haustuer"
         let req = UNNotificationRequest(identifier: "familie.tuer." + UUID().uuidString, content: c, trigger: nil)
+        try? await UNUserNotificationCenter.current().add(req)
+    }
+}
+
+/// Aufgabe direkt aus der Mitteilung beantworten (App läuft evtl. nur im Hintergrund)
+enum TodoFromNotification {
+    static func answer(action: String, link: String, sender: String, text: String) async {
+        guard link.hasPrefix("aufgabe_") else { return }
+        let uid = String(link.dropFirst("aufgabe_".count))
+        // ich = der Elternteil, der die Aufgabe NICHT geschickt hat
+        guard let me = FamilyConfig.parents.first(where: { $0.id != sender })?.id, !sender.isEmpty else { return }
+        let cal = Calendar.current
+        let art: TodoAntwort.Art
+        switch action {
+        case "a_heute": art = .annehmen(Date())
+        case "a_morgen": art = .annehmen(cal.date(byAdding: .day, value: 1, to: Date()))
+        case "a_zurueck": art = .zurueck
+        default: art = .annehmen(nil)
+        }
+        let client = HAClient(credentials: Keychain.load()) { creds in
+            if let creds { Keychain.save(creds) }
+        }
+        let err = await TodoAntwort.senden(client: client, uid: uid, me: me, art: art, text: text)
+        let c = UNMutableNotificationContent()
+        let name = FamilyConfig.parent(sender)?.name ?? ""
+        if let err {
+            c.title = "⚠️ Antwort nicht gesendet"
+            c.body = err + " – bitte in der App antworten."
+            c.sound = .default
+        } else {
+            c.title = action == "a_zurueck" ? "↩️ Zurückgegeben" : "👍 Angenommen"
+            c.body = "\(name) weiß Bescheid."
+        }
+        c.userInfo = ["link": "wir"]
+        c.threadIdentifier = "wir"
+        let req = UNNotificationRequest(identifier: "familie.aufgabe." + UUID().uuidString, content: c, trigger: nil)
         try? await UNUserNotificationCenter.current().add(req)
     }
 }

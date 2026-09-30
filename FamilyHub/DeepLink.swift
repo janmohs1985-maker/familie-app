@@ -25,6 +25,7 @@ extension AppStore {
         case "einkauf", "listen": if allows(.listen) { selectedTab = "listen" }
         case "aufgaben": selectedTab = "aufgaben"
         case "wir": selectedTab = "aufgaben"; aufgabenMode = "wir"
+        case let t where t.hasPrefix("aufgabe_"): selectedTab = "aufgaben"; aufgabenMode = "wir"
         case let t where t.hasPrefix("tuer_"):
             // familie://tuer_emma → Heute, Emmas Seite mit den Türöffnungen
             let kid = String(t.dropFirst(5))
