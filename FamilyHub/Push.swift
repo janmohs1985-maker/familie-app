@@ -40,9 +40,10 @@ final class AppDelegate: NSObject, UIApplicationDelegate, UNUserNotificationCent
     func application(_ application: UIApplication,
                      didFinishLaunchingWithOptions launchOptions: [UIApplication.LaunchOptionsKey: Any]? = nil) -> Bool {
         UNUserNotificationCenter.current().delegate = self
-        // Klingel-Mitteilung: Knopf „Öffnen“ (iPhone muss entsperrt sein, danach fragt die App noch mit Face ID)
-        let open = UNNotificationAction(identifier: "oeffnen", title: "Öffnen",
-                                        options: [.foreground, .authenticationRequired])
+        // Klingel-Mitteilung (lange drücken = Live-Bild): „Öffnen“ – iOS verlangt Face ID/Code, dann summt die Tür,
+        // ohne dass die App aufgeht. „App öffnen“ zeigt die Haustür-Seite.
+        let open = UNNotificationAction(identifier: "oeffnen", title: "🔓 Öffnen",
+                                        options: [.authenticationRequired, .destructive])
         let klingel = UNNotificationCategory(identifier: "KLINGEL", actions: [open], intentIdentifiers: [], options: [])
         UNUserNotificationCenter.current().setNotificationCategories([klingel])
         return true
@@ -67,10 +68,41 @@ final class AppDelegate: NSObject, UIApplicationDelegate, UNUserNotificationCent
     /// Antippen: zur passenden Stelle springen (Feld „link“, z. B. essen, aufgaben, einkauf)
     func userNotificationCenter(_ center: UNUserNotificationCenter, didReceive response: UNNotificationResponse,
                                 withCompletionHandler completionHandler: @escaping () -> Void) {
-        var link = (response.notification.request.content.userInfo["link"] as? String) ?? "heute"
-        if response.actionIdentifier == "oeffnen" { link = "haustuer_oeffnen" }
+        if response.actionIdentifier == "oeffnen" {
+            // im Hintergrund öffnen – die App muss dafür nicht aufgehen
+            Task {
+                await DoorOpener.openFromNotification()
+                completionHandler()
+            }
+            return
+        }
+        let link = (response.notification.request.content.userInfo["link"] as? String) ?? "heute"
         Task { @MainActor in PushState.shared.pendingLink = link }
         completionHandler()
+    }
+}
+
+/// Haustür aus der Mitteilung öffnen (App läuft dabei evtl. nur im Hintergrund)
+enum DoorOpener {
+    static func openFromNotification() async {
+        let client = HAClient(credentials: Keychain.load()) { creds in
+            if let creds { Keychain.save(creds) }
+        }
+        let ok: Bool
+        do {
+            try await client.call("button", "press", ["entity_id": QuickConfig.frontDoor])
+            ok = true
+        } catch {
+            ok = false
+        }
+        let c = UNMutableNotificationContent()
+        c.title = ok ? "🔓 Haustür geöffnet" : "⚠️ Haustür nicht geöffnet"
+        c.body = ok ? "Der Türöffner hat gesummt." : "Home Assistant war nicht erreichbar – bitte in der App öffnen."
+        c.sound = ok ? nil : .default
+        c.userInfo = ["link": "haustuer"]
+        c.threadIdentifier = "haustuer"
+        let req = UNNotificationRequest(identifier: "familie.tuer." + UUID().uuidString, content: c, trigger: nil)
+        try? await UNUserNotificationCenter.current().add(req)
     }
 }
 

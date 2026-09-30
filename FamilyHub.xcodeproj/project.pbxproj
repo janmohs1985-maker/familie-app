@@ -9,10 +9,12 @@
 /* Begin PBXFileReference section */
 		F0A1000000000000000000A1 /* Familie.app */ = {isa = PBXFileReference; explicitFileType = wrapper.application; includeInIndex = 0; path = Familie.app; sourceTree = BUILT_PRODUCTS_DIR; };
 		F0A1000000000000000000D1 /* FamilieMitteilung.appex */ = {isa = PBXFileReference; explicitFileType = "wrapper.app-extension"; includeInIndex = 0; path = FamilieMitteilung.appex; sourceTree = BUILT_PRODUCTS_DIR; };
+		F0A1000000000000000000E1 /* FamilieKlingel.appex */ = {isa = PBXFileReference; explicitFileType = "wrapper.app-extension"; includeInIndex = 0; path = FamilieKlingel.appex; sourceTree = BUILT_PRODUCTS_DIR; };
 /* End PBXFileReference section */
 
 /* Begin PBXBuildFile section */
 		F0A1000000000000000000D9 /* FamilieMitteilung.appex in Embed Foundation Extensions */ = {isa = PBXBuildFile; fileRef = F0A1000000000000000000D1 /* FamilieMitteilung.appex */; settings = {ATTRIBUTES = (RemoveHeadersOnCopy, ); }; };
+		F0A1000000000000000000E9 /* FamilieKlingel.appex in Embed Foundation Extensions */ = {isa = PBXBuildFile; fileRef = F0A1000000000000000000E1 /* FamilieKlingel.appex */; settings = {ATTRIBUTES = (RemoveHeadersOnCopy, ); }; };
 /* End PBXBuildFile section */
 
 /* Begin PBXContainerItemProxy section */
@@ -22,6 +24,13 @@
 			proxyType = 1;
 			remoteGlobalIDString = F0A1000000000000000000D5;
 			remoteInfo = FamilieMitteilung;
+		};
+		F0A1000000000000000000EA /* PBXContainerItemProxy */ = {
+			isa = PBXContainerItemProxy;
+			containerPortal = F0A1000000000000000000A9 /* Project object */;
+			proxyType = 1;
+			remoteGlobalIDString = F0A1000000000000000000E5;
+			remoteInfo = FamilieKlingel;
 		};
 /* End PBXContainerItemProxy section */
 
@@ -33,6 +42,7 @@
 			dstSubfolderSpec = 13;
 			files = (
 				F0A1000000000000000000D9 /* FamilieMitteilung.appex in Embed Foundation Extensions */,
+				F0A1000000000000000000E9 /* FamilieKlingel.appex in Embed Foundation Extensions */,
 			);
 			name = "Embed Foundation Extensions";
 			runOnlyForDeploymentPostprocessing = 0;
@@ -48,6 +58,11 @@
 		F0A1000000000000000000D2 /* FamilieMitteilung */ = {
 			isa = PBXFileSystemSynchronizedRootGroup;
 			path = FamilieMitteilung;
+			sourceTree = "<group>";
+		};
+		F0A1000000000000000000E2 /* FamilieKlingel */ = {
+			isa = PBXFileSystemSynchronizedRootGroup;
+			path = FamilieKlingel;
 			sourceTree = "<group>";
 		};
 /* End PBXFileSystemSynchronizedRootGroup section */
@@ -67,6 +82,13 @@
 			);
 			runOnlyForDeploymentPostprocessing = 0;
 		};
+		F0A1000000000000000000E3 /* Frameworks */ = {
+			isa = PBXFrameworksBuildPhase;
+			buildActionMask = 2147483647;
+			files = (
+			);
+			runOnlyForDeploymentPostprocessing = 0;
+		};
 /* End PBXFrameworksBuildPhase section */
 
 /* Begin PBXGroup section */
@@ -75,6 +97,7 @@
 			children = (
 				F0A1000000000000000000A2 /* FamilyHub */,
 				F0A1000000000000000000D2 /* FamilieMitteilung */,
+				F0A1000000000000000000E2 /* FamilieKlingel */,
 				F0A1000000000000000000A5 /* Products */,
 			);
 			sourceTree = "<group>";
@@ -84,6 +107,7 @@
 			children = (
 				F0A1000000000000000000A1 /* Familie.app */,
 				F0A1000000000000000000D1 /* FamilieMitteilung.appex */,
+				F0A1000000000000000000E1 /* FamilieKlingel.appex */,
 			);
 			name = Products;
 			sourceTree = "<group>";
@@ -104,6 +128,7 @@
 			);
 			dependencies = (
 				F0A1000000000000000000DB /* PBXTargetDependency */,
+				F0A1000000000000000000EB /* PBXTargetDependency */,
 			);
 			fileSystemSynchronizedGroups = (
 				F0A1000000000000000000A2 /* FamilyHub */,
@@ -137,6 +162,28 @@
 			productReference = F0A1000000000000000000D1 /* FamilieMitteilung.appex */;
 			productType = "com.apple.product-type.app-extension";
 		};
+		F0A1000000000000000000E5 /* FamilieKlingel */ = {
+			isa = PBXNativeTarget;
+			buildConfigurationList = F0A1000000000000000000E6 /* Build configuration list for PBXNativeTarget "FamilieKlingel" */;
+			buildPhases = (
+				F0A1000000000000000000E4 /* Sources */,
+				F0A1000000000000000000E3 /* Frameworks */,
+				F0A1000000000000000000ED /* Resources */,
+			);
+			buildRules = (
+			);
+			dependencies = (
+			);
+			fileSystemSynchronizedGroups = (
+				F0A1000000000000000000E2 /* FamilieKlingel */,
+			);
+			name = FamilieKlingel;
+			packageProductDependencies = (
+			);
+			productName = FamilieKlingel;
+			productReference = F0A1000000000000000000E1 /* FamilieKlingel.appex */;
+			productType = "com.apple.product-type.app-extension";
+		};
 /* End PBXNativeTarget section */
 
 /* Begin PBXProject section */
@@ -151,6 +198,9 @@
 						CreatedOnToolsVersion = 16.0;
 					};
 					F0A1000000000000000000D5 = {
+						CreatedOnToolsVersion = 16.0;
+					};
+					F0A1000000000000000000E5 = {
 						CreatedOnToolsVersion = 16.0;
 					};
 				};
@@ -171,6 +221,7 @@
 			targets = (
 				F0A1000000000000000000A6 /* FamilyHub */,
 				F0A1000000000000000000D5 /* FamilieMitteilung */,
+				F0A1000000000000000000E5 /* FamilieKlingel */,
 			);
 		};
 /* End PBXProject section */
@@ -184,6 +235,13 @@
 			runOnlyForDeploymentPostprocessing = 0;
 		};
 		F0A1000000000000000000DD /* Resources */ = {
+			isa = PBXResourcesBuildPhase;
+			buildActionMask = 2147483647;
+			files = (
+			);
+			runOnlyForDeploymentPostprocessing = 0;
+		};
+		F0A1000000000000000000ED /* Resources */ = {
 			isa = PBXResourcesBuildPhase;
 			buildActionMask = 2147483647;
 			files = (
@@ -207,6 +265,13 @@
 			);
 			runOnlyForDeploymentPostprocessing = 0;
 		};
+		F0A1000000000000000000E4 /* Sources */ = {
+			isa = PBXSourcesBuildPhase;
+			buildActionMask = 2147483647;
+			files = (
+			);
+			runOnlyForDeploymentPostprocessing = 0;
+		};
 /* End PBXSourcesBuildPhase section */
 
 /* Begin PBXTargetDependency section */
@@ -214,6 +279,11 @@
 			isa = PBXTargetDependency;
 			target = F0A1000000000000000000D5 /* FamilieMitteilung */;
 			targetProxy = F0A1000000000000000000DA /* PBXContainerItemProxy */;
+		};
+		F0A1000000000000000000EB /* PBXTargetDependency */ = {
+			isa = PBXTargetDependency;
+			target = F0A1000000000000000000E5 /* FamilieKlingel */;
+			targetProxy = F0A1000000000000000000EA /* PBXContainerItemProxy */;
 		};
 /* End PBXTargetDependency section */
 
@@ -390,6 +460,60 @@
 			};
 			name = Release;
 		};
+		F0A1000000000000000000E7 /* Debug */ = {
+			isa = XCBuildConfiguration;
+			buildSettings = {
+				APPLICATION_EXTENSION_API_ONLY = YES;
+				CODE_SIGN_STYLE = Automatic;
+				CURRENT_PROJECT_VERSION = 1;
+				DEVELOPMENT_TEAM = "";
+				GENERATE_INFOPLIST_FILE = YES;
+				INFOPLIST_FILE = "FamilieKlingel-Info.plist";
+				INFOPLIST_KEY_CFBundleDisplayName = "Familie Klingel";
+				LD_RUNPATH_SEARCH_PATHS = (
+					"$(inherited)",
+					"@executable_path/Frameworks",
+					"@executable_path/../../Frameworks",
+				);
+				MARKETING_VERSION = 1.0;
+				PRODUCT_BUNDLE_IDENTIFIER = es.mohs.familie.klingel;
+				PRODUCT_NAME = "$(TARGET_NAME)";
+				PROVISIONING_PROFILE_SPECIFIER = "$(FAMILIE_PROFILE_KLINGEL)";
+				SKIP_INSTALL = YES;
+				SUPPORTED_PLATFORMS = "iphoneos iphonesimulator";
+				SUPPORTS_MACCATALYST = NO;
+				SWIFT_VERSION = 5.0;
+				TARGETED_DEVICE_FAMILY = 1;
+			};
+			name = Debug;
+		};
+		F0A1000000000000000000E8 /* Release */ = {
+			isa = XCBuildConfiguration;
+			buildSettings = {
+				APPLICATION_EXTENSION_API_ONLY = YES;
+				CODE_SIGN_STYLE = Automatic;
+				CURRENT_PROJECT_VERSION = 1;
+				DEVELOPMENT_TEAM = "";
+				GENERATE_INFOPLIST_FILE = YES;
+				INFOPLIST_FILE = "FamilieKlingel-Info.plist";
+				INFOPLIST_KEY_CFBundleDisplayName = "Familie Klingel";
+				LD_RUNPATH_SEARCH_PATHS = (
+					"$(inherited)",
+					"@executable_path/Frameworks",
+					"@executable_path/../../Frameworks",
+				);
+				MARKETING_VERSION = 1.0;
+				PRODUCT_BUNDLE_IDENTIFIER = es.mohs.familie.klingel;
+				PRODUCT_NAME = "$(TARGET_NAME)";
+				PROVISIONING_PROFILE_SPECIFIER = "$(FAMILIE_PROFILE_KLINGEL)";
+				SKIP_INSTALL = YES;
+				SUPPORTED_PLATFORMS = "iphoneos iphonesimulator";
+				SUPPORTS_MACCATALYST = NO;
+				SWIFT_VERSION = 5.0;
+				TARGETED_DEVICE_FAMILY = 1;
+			};
+			name = Release;
+		};
 /* End XCBuildConfiguration section */
 
 /* Begin XCConfigurationList section */
@@ -416,6 +540,15 @@
 			buildConfigurations = (
 				F0A1000000000000000000D7 /* Debug */,
 				F0A1000000000000000000D8 /* Release */,
+			);
+			defaultConfigurationIsVisible = 0;
+			defaultConfigurationName = Release;
+		};
+		F0A1000000000000000000E6 /* Build configuration list for PBXNativeTarget "FamilieKlingel" */ = {
+			isa = XCConfigurationList;
+			buildConfigurations = (
+				F0A1000000000000000000E7 /* Debug */,
+				F0A1000000000000000000E8 /* Release */,
 			);
 			defaultConfigurationIsVisible = 0;
 			defaultConfigurationName = Release;
