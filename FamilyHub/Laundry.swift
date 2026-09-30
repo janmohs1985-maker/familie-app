@@ -284,7 +284,7 @@ struct LaundryView: View {
 
 // MARK: - Karte auf „Heute“ (nur solange etwas läuft)
 
-/// „Jetzt wichtig“ auf Heute: laufende Wäsche und Hausakku als Ring-Kacheln
+/// „Aktuell“ auf Heute: laufende Wäsche und Hausakku als Ring-Kacheln
 struct LaundryTodayCard: View {
     @Environment(AppStore.self) private var store
     @State private var runs: [LaundryRun] = []
@@ -293,17 +293,13 @@ struct LaundryTodayCard: View {
 
     var body: some View {
         let active = LaundryConfig.devices.filter { store.laundryIsRunning($0) }
-        let soc: Double? = parent ? store.num(EnergyConfig.soc) : nil
-        if !active.isEmpty || soc != nil {
+        if !active.isEmpty {
             TimelineView(.periodic(from: .now, by: 30)) { ctx in
                 LazyVGrid(columns: [GridItem(.flexible(), spacing: 12), GridItem(.flexible(), spacing: 12)], spacing: 12) {
                     ForEach(active) { d in
                         NavigationLink { LaundryView() } label: { laundryTile(d, now: ctx.date) }
                             .buttonStyle(.plain)
-                    }
-                    if let soc {
-                        NavigationLink { EnergyView() } label: { batteryTile(soc) }
-                            .buttonStyle(.plain)
+                            .dismissable(store.dismissKeyLaundry(d))
                     }
                 }
             }

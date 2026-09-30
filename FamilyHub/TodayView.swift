@@ -17,10 +17,11 @@ struct TodayView: View {
                     heroCard
                     ErrorBanner()
                     AppUpdateBanner()
-                    // 1. Jetzt wichtig: was gerade läuft, dann was ansteht
+                    // 1. Aktuell: was gerade läuft, dann was ansteht
                     let upcoming = store.upcomingItems(includeWaste: show(.waste))
+                        .filter { !Dismissed.shared.isHidden(store.dismissKeyUpcoming($0)) }
                     if showNowHeader(upcoming) {
-                        TodaySectionHeader(title: "Jetzt wichtig")
+                        TodaySectionHeader(title: "Aktuell")
                     }
                     ForEach(nowCards) { k in card(k) }
                     if !upcoming.isEmpty {
@@ -80,14 +81,14 @@ struct TodayView: View {
     @ViewBuilder private func card(_ k: TodayCardKind) -> some View {
         switch k {
         case .weather: weatherCard
-        case .mailbox: mailboxBanner
-        case .doorbell: if store.ringRecently { DoorbellCard() }
+        case .mailbox: mailboxBanner.dismissable(store.dismissKeyMailbox)
+        case .doorbell: if store.ringRecently { DoorbellCard().dismissable(store.dismissKeyDoorbell) }
         case .laundry: LaundryTodayCard()
-        case .kitchen: KitchenTodayCard()
+        case .kitchen: KitchenTodayCard().dismissable(store.dismissKeyKitchen)
         case .safety: SafetyTodayCard()
         case .parentTodos: ParentTodosTodayCard()
         case .music: MusicTodayCard()
-        case .vacuum: VacuumTodayCard()
+        case .vacuum: VacuumTodayCard().dismissable(store.dismissKeyVacuum)
         case .people: peopleCard
         case .school: schoolCard
         case .freizeit: FreizeitTodayCard()
@@ -121,8 +122,8 @@ struct TodayView: View {
         !hiddenCards.contains(k.rawValue) && store.todayCardAvailable(k)
     }
 
-    /// „Jetzt wichtig“: Meldungen und laufende Geräte – erscheinen nur bei Bedarf
-    private static let nowKinds: [TodayCardKind] = [.safety, .doorbell, .mailbox, .laundry, .kitchen]
+    /// „Aktuell“: Meldungen und laufende Geräte – erscheinen nur bei Bedarf
+    private static let nowKinds: [TodayCardKind] = [.safety, .doorbell, .mailbox, .laundry, .kitchen, .vacuum, .music]
     private var nowCards: [TodayCardKind] { Self.nowKinds.filter { show($0) } }
 
     /// Rest in der Reihenfolge von „Heute anordnen“ (Wetter/Familie stehen im Kopf, Müll/Termine oben)
@@ -133,8 +134,9 @@ struct TodayView: View {
 
     private func showNowHeader(_ upcoming: [UpcomingItem]) -> Bool {
         if !upcoming.isEmpty { return true }
-        if store.isParent && store.activeKid == nil && show(.laundry) && store.num(EnergyConfig.soc) != nil { return true }
+        if FamilyConfig.vacuums.contains(where: { store.vacIsCleaning($0) }) && !Dismissed.shared.isHidden(store.dismissKeyVacuum) { return true }
         if store.runningAppliances > 0 || store.ringRecently { return true }
+        if show(.music), FamilyConfig.speakers.contains(where: { store.speakerState($0.id)?.state == "playing" }) { return true }
         if store.states[FamilyConfig.mailbox]?.state == "on" { return true }
         return !store.smokeAlarm.isEmpty || !store.smokeProblems.isEmpty
     }

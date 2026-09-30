@@ -1,6 +1,6 @@
 import SwiftUI
 
-// MARK: - Heute: „Jetzt wichtig“ (was ansteht) und „Heute“ (Zeitleiste)
+// MARK: - Heute: „Aktuell“ (was ansteht) und „Heute“ (Zeitleiste)
 
 struct TodaySectionHeader: View {
     let title: String
@@ -95,8 +95,11 @@ struct UpcomingCard: View {
     var body: some View {
         VStack(spacing: 0) {
             ForEach(Array(items.prefix(6).enumerated()), id: \.element.id) { i, item in
-                if i > 0 { Divider().padding(.leading, 50) }
-                row(item)
+                VStack(spacing: 0) {
+                    if i > 0 { Divider().padding(.leading, 50) }
+                    row(item)
+                }
+                .dismissable(store.dismissKeyUpcoming(item))
             }
         }
         .padding(.horizontal, 16)

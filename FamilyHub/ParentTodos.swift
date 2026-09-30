@@ -449,28 +449,27 @@ struct ParentTodosTodayCard: View {
 
     var body: some View {
         if store.canUseParentTodos, store.myParentID != nil {
-            let open = store.myOpenTodos
+            // Fällige (überfällig, heute, morgen) stehen schon unter „Aktuell“ – hier nur der Rest
+            let cal = Calendar.current
+            let limit = cal.date(byAdding: .day, value: 2, to: cal.startOfDay(for: Date())) ?? Date()
+            let open = store.myOpenTodos.filter { t in t.due.map { $0 >= limit } ?? true }
             let me = store.myParentID ?? ""
-            VStack(alignment: .leading, spacing: 0) {
-                header(open.count)
-                if open.isEmpty {
-                    Label("Nichts offen – alles erledigt", systemImage: "checkmark.seal.fill")
-                        .font(.subheadline)
-                        .foregroundStyle(.green)
-                        .padding(.vertical, 12)
-                }
-                ForEach(Array(open.prefix(5).enumerated()), id: \.element.id) { i, t in
-                    Divider().padding(.leading, i == 0 ? 0 : 40)
-                    TodayTodoRow(todo: t, me: me) {
-                        Task { await store.setParentTodo(t, done: true) }
+            if !open.isEmpty {
+                VStack(alignment: .leading, spacing: 0) {
+                    header(open.count)
+                    ForEach(Array(open.prefix(3).enumerated()), id: \.element.id) { i, t in
+                        Divider().padding(.leading, i == 0 ? 0 : 40)
+                        TodayTodoRow(todo: t, me: me) {
+                            Task { await store.setParentTodo(t, done: true) }
+                        }
                     }
                 }
+                .padding(.horizontal, 16)
+                .padding(.top, 12)
+                .padding(.bottom, 4)
+                .frame(maxWidth: .infinity, alignment: .leading)
+                .cardSurface()
             }
-            .padding(.horizontal, 16)
-            .padding(.top, 12)
-            .padding(.bottom, 4)
-            .frame(maxWidth: .infinity, alignment: .leading)
-            .cardSurface()
         }
     }
 
@@ -481,7 +480,7 @@ struct ParentTodosTodayCard: View {
                 .foregroundStyle(.white)
                 .frame(width: 28, height: 28)
                 .background(Color.orange.gradient, in: RoundedRectangle(cornerRadius: 8, style: .continuous))
-            Text("Für dich").font(.headline)
+            Text("Weitere Aufgaben").font(.headline)
             if count > 0 {
                 Text("\(count)")
                     .font(.caption.weight(.bold).monospacedDigit())
@@ -495,7 +494,7 @@ struct ParentTodosTodayCard: View {
                 store.selectedTab = "aufgaben"
             } label: {
                 HStack(spacing: 3) {
-                    Text(count > 5 ? "Alle \(count)" : "Liste")
+                    Text(count > 3 ? "Alle \(count)" : "Liste")
                     Image(systemName: "chevron.right").font(.caption2.weight(.bold))
                 }
                 .font(.subheadline.weight(.semibold))
