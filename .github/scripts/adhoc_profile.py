@@ -13,7 +13,8 @@ ISSUER = os.environ["ASC_ISSUER_ID"]
 KEY = os.environ["ASC_KEY_P8"]
 BUNDLE = os.environ.get("BUNDLE_ID", "es.mohs.familie")
 SERIAL = os.environ["CERT_SERIAL"].upper().lstrip("0")
-PREFIX = "Familie AdHoc CI"
+PREFIX = os.environ.get("PROFILE_PREFIX", "Familie AdHoc CI")
+BUNDLE_NAME = os.environ.get("BUNDLE_NAME", "Familie")
 API = "https://api.appstoreconnect.apple.com/v1"
 
 
@@ -51,7 +52,8 @@ if ids:
     bundle_id = ids[0]["id"]
 else:
     bundle_id = call("POST", "/bundleIds", {"data": {"type": "bundleIds", "attributes": {
-        "identifier": BUNDLE, "name": "Familie", "platform": "IOS"}}})["data"]["id"]
+        "identifier": BUNDLE, "name": BUNDLE_NAME, "platform": "IOS"}}})["data"]["id"]
+    print(f"App-ID {BUNDLE} angelegt", file=sys.stderr)
 
 # 2) Zertifikat zur Seriennummer
 certs = all_pages("/certificates?limit=200")

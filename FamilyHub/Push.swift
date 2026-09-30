@@ -40,6 +40,11 @@ final class AppDelegate: NSObject, UIApplicationDelegate, UNUserNotificationCent
     func application(_ application: UIApplication,
                      didFinishLaunchingWithOptions launchOptions: [UIApplication.LaunchOptionsKey: Any]? = nil) -> Bool {
         UNUserNotificationCenter.current().delegate = self
+        // Klingel-Mitteilung: Knopf „Öffnen“ (iPhone muss entsperrt sein, danach fragt die App noch mit Face ID)
+        let open = UNNotificationAction(identifier: "oeffnen", title: "Öffnen",
+                                        options: [.foreground, .authenticationRequired])
+        let klingel = UNNotificationCategory(identifier: "KLINGEL", actions: [open], intentIdentifiers: [], options: [])
+        UNUserNotificationCenter.current().setNotificationCategories([klingel])
         return true
     }
 
@@ -62,7 +67,8 @@ final class AppDelegate: NSObject, UIApplicationDelegate, UNUserNotificationCent
     /// Antippen: zur passenden Stelle springen (Feld „link“, z. B. essen, aufgaben, einkauf)
     func userNotificationCenter(_ center: UNUserNotificationCenter, didReceive response: UNNotificationResponse,
                                 withCompletionHandler completionHandler: @escaping () -> Void) {
-        let link = (response.notification.request.content.userInfo["link"] as? String) ?? "heute"
+        var link = (response.notification.request.content.userInfo["link"] as? String) ?? "heute"
+        if response.actionIdentifier == "oeffnen" { link = "haustuer_oeffnen" }
         Task { @MainActor in PushState.shared.pendingLink = link }
         completionHandler()
     }

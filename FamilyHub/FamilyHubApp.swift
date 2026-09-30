@@ -92,6 +92,7 @@ struct MainTabs: View {
     @State private var visited: Set<String> = ["heute"]
     @State private var keyboard = KeyboardWatch.shared
     @State private var push = PushState.shared
+    @State private var doorConfirm = false
 
     var body: some View {
         let tabs = specs
@@ -121,7 +122,23 @@ struct MainTabs: View {
         .onChange(of: push.pendingLink, initial: true) { _, link in
             guard let link else { return }
             push.pendingLink = nil
+            if link == "haustuer_oeffnen" {
+                // aus der Klingel-Mitteilung: nachfragen, dann Face ID, dann öffnen (nur Eltern)
+                if store.isParent && store.activeKid == nil { doorConfirm = true }
+                return
+            }
             if let url = URL(string: "familie://" + link) { store.openLink(url) }
+        }
+        .confirmationDialog("Haustür öffnen?", isPresented: $doorConfirm, titleVisibility: .visible) {
+            Button("Haustür öffnen") {
+                Task {
+                    try? await Task.sleep(for: .milliseconds(350))
+                    guard await SecureAuth.confirm("Haustür öffnen") else { return }
+                    do { try await store.client.call("button", "press", ["entity_id": QuickConfig.frontDoor]) }
+                    catch { store.report(error) }
+                }
+            }
+            Button("Abbrechen", role: .cancel) { }
         }
     }
 

@@ -53,12 +53,16 @@ jobs:
               || python3 -m pip install --quiet --user pyjwt cryptography
             PROFILE=$(CERT_SERIAL="$CERT_SERIAL" python3 .github/scripts/adhoc_profile.py)
             echo "Profil: $PROFILE"
+            # Profil für die Mitteilungs-Erweiterung (Bilder in Mitteilungen); App-ID wird bei Bedarf angelegt
+            PROFILE_NSE=$(CERT_SERIAL="$CERT_SERIAL" BUNDLE_ID=es.mohs.familie.mitteilung BUNDLE_NAME="Familie Mitteilungen" \
+              PROFILE_PREFIX="Familie Mitteilung AdHoc CI" python3 .github/scripts/adhoc_profile.py)
+            echo "Profil Erweiterung: $PROFILE_NSE"
             # 3) Archiv bauen (manuell signiert, es entstehen keine neuen Zertifikate)
             xcodebuild archive \
               -project FamilyHub.xcodeproj -scheme FamilyHub -configuration Release \
               -destination generic/platform=iOS -archivePath build/Familie.xcarchive \
               DEVELOPMENT_TEAM="$TEAM_ID" CODE_SIGN_STYLE=Manual \
-              CODE_SIGN_IDENTITY="Apple Distribution" PROVISIONING_PROFILE_SPECIFIER="$PROFILE" \
+              CODE_SIGN_IDENTITY="Apple Distribution" FAMILIE_PROFILE_APP="$PROFILE" FAMILIE_PROFILE_NSE="$PROFILE_NSE" \
               OTHER_CODE_SIGN_FLAGS="--keychain $KC" \
               MARKETING_VERSION="$VER" CURRENT_PROJECT_VERSION="$BUILD" > build.log 2>&1 || true
             grep -E "error:|ARCHIVE (SUCCEEDED|FAILED)" build.log | sort -u | head -60 || true
@@ -70,7 +74,7 @@ jobs:
             <key>teamID</key><string>$TEAM_ID</string>
             <key>signingStyle</key><string>manual</string>
             <key>signingCertificate</key><string>Apple Distribution</string>
-            <key>provisioningProfiles</key><dict><key>es.mohs.familie</key><string>$PROFILE</string></dict>
+            <key>provisioningProfiles</key><dict><key>es.mohs.familie</key><string>$PROFILE</string><key>es.mohs.familie.mitteilung</key><string>$PROFILE_NSE</string></dict>
             <key>thinning</key><string>&lt;none&gt;</string>
           </dict></plist>
           PLIST
