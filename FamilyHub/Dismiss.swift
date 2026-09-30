@@ -31,13 +31,18 @@ struct DismissableModifier: ViewModifier {
     @State private var dismissed = Dismissed.shared
     @State private var offset: CGFloat = 0
 
+    private var fade: Double {
+        let moved = Double(abs(offset)) / 260.0
+        return 1.0 - Swift.min(0.7, moved)
+    }
+
     func body(content: Content) -> some View {
         if let key, dismissed.isHidden(key) {
             EmptyView()
         } else if let key {
             content
                 .offset(x: offset)
-                .opacity(1 - min(0.7, abs(offset) / 260))
+                .opacity(fade)
                 .simultaneousGesture(
                     DragGesture(minimumDistance: 24)
                         .onChanged { v in

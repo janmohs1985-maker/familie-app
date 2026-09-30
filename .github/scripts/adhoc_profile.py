@@ -63,6 +63,7 @@ if CAPS:
         have = {c["attributes"]["capabilityType"] for c in call("GET", f"/bundleIds/{bundle_id}/bundleIdCapabilities").get("data", [])}
     except SystemExit:
         have, ok = set(), False
+    print("Fähigkeiten der App-ID: " + (", ".join(sorted(have)) or "keine"), file=sys.stderr)
     for cap in CAPS:
         if cap in have:
             continue
