@@ -5,6 +5,7 @@ import UserNotificationsUI
 // Ansicht beim langen Drücken auf die Klingel-Mitteilung: Live-Bild der Doorbird (ca. 2 Bilder pro Sekunde).
 // Die Knöpfe („Öffnen“, „Sprechen“) kommen von der Mitteilungs-Kategorie KLINGEL der App.
 
+@objc(NotificationViewController)
 final class NotificationViewController: UIViewController, UNNotificationContentExtension {
     private let imageView = UIImageView()
     private let badge = UILabel()
@@ -17,7 +18,6 @@ final class NotificationViewController: UIViewController, UNNotificationContentE
     override func viewDidLoad() {
         super.viewDidLoad()
         view.backgroundColor = .black
-        preferredContentSize = CGSize(width: view.bounds.width, height: view.bounds.width * 0.75)
 
         imageView.contentMode = .scaleAspectFill
         imageView.clipsToBounds = true
@@ -39,6 +39,7 @@ final class NotificationViewController: UIViewController, UNNotificationContentE
         hint.textAlignment = .center
         hint.numberOfLines = 2
         hint.translatesAutoresizingMaskIntoConstraints = false
+        hint.text = "Live-Bild wird geladen …"
         view.addSubview(hint)
 
         NSLayoutConstraint.activate([
@@ -57,9 +58,17 @@ final class NotificationViewController: UIViewController, UNNotificationContentE
     func didReceive(_ notification: UNNotification) {
         let content = notification.request.content
         // zuerst das Foto vom Klingeln zeigen
-        if let att = content.attachments.first, att.url.startAccessingSecurityScopedResource() {
+        if let att = content.attachments.first {
+            let scoped = att.url.startAccessingSecurityScopedResource()
             if let data = try? Data(contentsOf: att.url) { imageView.image = UIImage(data: data) }
-            att.url.stopAccessingSecurityScopedResource()
+            if scoped { att.url.stopAccessingSecurityScopedResource() }
+        }
+        // falls das Foto nicht als Anhang lesbar ist: direkt laden
+        if imageView.image == nil, let s = content.userInfo["bild"] as? String, let url = URL(string: s) {
+            URLSession.shared.dataTask(with: url) { [weak self] data, _, _ in
+                guard let data, let img = UIImage(data: data) else { return }
+                DispatchQueue.main.async { if self?.imageView.image == nil { self?.imageView.image = img } }
+            }.resume()
         }
         if let s = content.userInfo["live"] as? String, let url = URL(string: s) {
             liveURL = url
