@@ -24,6 +24,7 @@ struct FamilyHubApp: App {
                     await store.reportDevice()
                     await PushState.shared.refresh()
                     await LocalReminders.reschedule(store)
+                    await NotificationHistory.shared.load(store)
                 }
             } else if phase == .background {
                 store.stopPolling()

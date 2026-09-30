@@ -58,7 +58,11 @@ struct TodayView: View {
                 .padding()
             }
             .background(AppBackground())
-            .refreshable { await store.refreshAll(); await ExamsModel.shared.load(store) }
+            .refreshable {
+                await store.refreshAll()
+                await ExamsModel.shared.load(store)
+                await NotificationHistory.shared.load(store)
+            }
             .task { if !ExamsModel.shared.loaded { await ExamsModel.shared.load(store) } }
             .navigationTitle("")
             .navigationBarTitleDisplayMode(.inline)
@@ -66,6 +70,7 @@ struct TodayView: View {
                 if store.isAdmin {
                     Button { showArrange = true } label: { Image(systemName: "arrow.up.arrow.down") }
                 }
+                NotificationHistoryButton()
                 Button { showSettings = true } label: { Image(systemName: "gearshape") }
             }
             .sheet(isPresented: $showArrange) { TodayArrangeView() }

@@ -73,6 +73,7 @@ final class AppDelegate: NSObject, UIApplicationDelegate, UNUserNotificationCent
     /// Auch bei offener App oben einblenden
     func userNotificationCenter(_ center: UNUserNotificationCenter, willPresent notification: UNNotification,
                                 withCompletionHandler completionHandler: @escaping (UNNotificationPresentationOptions) -> Void) {
+        Task { @MainActor in NotificationHistory.shared.arrived += 1 }
         completionHandler([.banner, .list, .sound])
     }
 
@@ -162,6 +163,226 @@ enum TodoFromNotification {
         c.threadIdentifier = "wir"
         let req = UNNotificationRequest(identifier: "familie.aufgabe." + UUID().uuidString, content: c, trigger: nil)
         try? await UNUserNotificationCenter.current().add(req)
+    }
+}
+
+// MARK: - Verlauf (Glocke auf „Heute“)
+//
+// Family Hub schreibt jede Mitteilung pro Person mit (14 Tage). Abgefragt wird mit dem eigenen Push-Token –
+// so bekommt jedes iPhone nur die Mitteilungen seiner Person.
+
+struct HistoryEntry: Identifiable, Hashable {
+    let date: Date
+    let title: String
+    let text: String
+    let link: String
+    let from: String
+    let fromName: String
+    let symbol: String
+    let color: String
+    let image: String
+    var id: String { "\(date.timeIntervalSince1970)|\(title)|\(text)" }
+}
+
+@MainActor @Observable
+final class NotificationHistory {
+    static let shared = NotificationHistory()
+    private static let readKey = "verlaufGelesenBis"
+    var entries: [HistoryEntry] = []
+    var loaded = false
+    var error: String?
+    var arrived = 0                      // Mitteilung kam bei offener App → neu laden
+    private(set) var readUntil: Double = UserDefaults.standard.double(forKey: NotificationHistory.readKey)
+
+    var unread: Int { entries.filter { $0.date.timeIntervalSince1970 > readUntil }.count }
+
+    func isUnread(_ e: HistoryEntry) -> Bool { e.date.timeIntervalSince1970 > readUntil }
+
+    func markAllRead() {
+        guard let newest = entries.first?.date.timeIntervalSince1970, newest > readUntil else { return }
+        readUntil = newest
+        UserDefaults.standard.set(newest, forKey: Self.readKey)
+    }
+
+    func load(_ store: AppStore) async {
+        guard store.isLoggedIn else { return }
+        guard let token = PushState.shared.token else {
+            error = "Mitteilungen sind auf diesem iPhone noch nicht eingeschaltet."
+            loaded = true
+            return
+        }
+        do {
+            let r = try await store.client.callWithResponse("rest_command", "familie_verlauf", ["daten": ["token": token]], timeout: 20)
+            let c = r["content"] ?? r
+            error = (c["eintraege"]?.array ?? []).isEmpty ? c["error"]?.string : nil
+            entries = (c["eintraege"]?.array ?? []).compactMap { e in
+                guard let t = e["t"]?.double else { return nil }
+                return HistoryEntry(date: Date(timeIntervalSince1970: t),
+                                    title: e["titel"]?.string ?? "", text: e["text"]?.string ?? "",
+                                    link: e["link"]?.string ?? "heute", from: e["von"]?.string ?? "",
+                                    fromName: e["von_name"]?.string ?? "", symbol: e["symbol"]?.string ?? "",
+                                    color: e["farbe"]?.string ?? "", image: e["bild"]?.string ?? "")
+            }
+        } catch {
+            self.error = "Verlauf nicht erreichbar"
+        }
+        loaded = true
+    }
+}
+
+struct NotificationHistoryButton: View {
+    @Environment(AppStore.self) private var store
+    @State private var history = NotificationHistory.shared
+    @State private var show = false
+
+    var body: some View {
+        Button { show = true } label: {
+            Image(systemName: history.unread > 0 ? "bell.badge.fill" : "bell")
+                .symbolRenderingMode(history.unread > 0 ? .palette : .monochrome)
+                .foregroundStyle(history.unread > 0 ? Color.red : Color.accentColor, Color.accentColor)
+        }
+        .accessibilityLabel(history.unread > 0 ? "Mitteilungen, \(history.unread) neu" : "Mitteilungen")
+        .sheet(isPresented: $show) { NotificationHistoryView() }
+        .task { await history.load(store) }
+        .onChange(of: history.arrived) { _, _ in Task { await history.load(store) } }
+        .onChange(of: PushState.shared.token) { _, _ in Task { await history.load(store) } }
+    }
+}
+
+struct NotificationHistoryView: View {
+    @Environment(AppStore.self) private var store
+    @Environment(\.dismiss) private var dismiss
+    @State private var history = NotificationHistory.shared
+    @State private var readBefore: Double = 0
+
+    struct DayGroup: Identifiable {
+        let day: Date
+        let items: [HistoryEntry]
+        var id: Date { day }
+    }
+
+    private var days: [DayGroup] {
+        let cal = Calendar.current
+        let groups = Dictionary(grouping: history.entries) { cal.startOfDay(for: $0.date) }
+        return groups.keys.sorted(by: >).map { DayGroup(day: $0, items: groups[$0] ?? []) }
+    }
+
+    var body: some View {
+        NavigationStack {
+            List {
+                if let err = history.error, history.entries.isEmpty {
+                    Label(err, systemImage: "bell.slash").foregroundStyle(.secondary)
+                } else if history.loaded && history.entries.isEmpty {
+                    Label("Noch keine Mitteilungen", systemImage: "bell").foregroundStyle(.secondary)
+                }
+                ForEach(days) { g in
+                    Section(dayTitle(g.day)) {
+                        ForEach(g.items) { e in
+                            Button { open(e) } label: { row(e) }
+                                .buttonStyle(.plain)
+                        }
+                    }
+                }
+                if !history.entries.isEmpty {
+                    Text("Es werden die Mitteilungen der letzten 14 Tage aufgehoben.")
+                        .font(.caption).foregroundStyle(.secondary)
+                        .frame(maxWidth: .infinity)
+                        .listRowBackground(Color.clear)
+                }
+            }
+            .navigationTitle("Mitteilungen")
+            .navigationBarTitleDisplayMode(.inline)
+            .toolbar { Button("Fertig") { dismiss() } }
+            .refreshable { await history.load(store) }
+            .task {
+                readBefore = history.readUntil
+                await history.load(store)
+                history.markAllRead()
+            }
+        }
+    }
+
+    private func dayTitle(_ d: Date) -> String {
+        let cal = Calendar.current
+        if cal.isDateInToday(d) { return "Heute" }
+        if cal.isDateInYesterday(d) { return "Gestern" }
+        return d.formatted(.dateTime.weekday(.wide).day().month(.wide))
+    }
+
+    private func personPicture(_ key: String) -> (UIImage?, Color)? {
+        if let p = FamilyConfig.parent(key) { return (store.pictures[p.person], p.color) }
+        if let k = FamilyConfig.kid(key) { return (store.pictures[k.person], k.color) }
+        return nil
+    }
+
+    private func row(_ e: HistoryEntry) -> some View {
+        let fresh = e.date.timeIntervalSince1970 > readBefore
+        return HStack(alignment: .top, spacing: 12) {
+            Group {
+                if !e.from.isEmpty, let pic = personPicture(e.from) {
+                    Avatar(image: pic.0, name: e.fromName.isEmpty ? e.from : e.fromName, color: pic.1,
+                           initialFont: .headline, ring: 0)
+                } else {
+                    let tint = Color(hexString: e.color) ?? .indigo
+                    Image(systemName: e.symbol.isEmpty ? "bell.fill" : e.symbol)
+                        .font(.system(size: 17, weight: .semibold))
+                        .foregroundStyle(.white)
+                        .frame(maxWidth: .infinity, maxHeight: .infinity)
+                        .background(tint.gradient, in: RoundedRectangle(cornerRadius: 10, style: .continuous))
+                }
+            }
+            .frame(width: 40, height: 40)
+            VStack(alignment: .leading, spacing: 2) {
+                HStack(alignment: .firstTextBaseline) {
+                    Text(e.fromName.isEmpty ? e.title : e.fromName)
+                        .font(.subheadline.weight(.semibold))
+                        .lineLimit(1)
+                    Spacer(minLength: 6)
+                    Text(e.date.formatted(date: .omitted, time: .shortened))
+                        .font(.caption).foregroundStyle(.secondary)
+                    if fresh {
+                        Circle().fill(Color.accentColor).frame(width: 8, height: 8)
+                    }
+                }
+                if !e.fromName.isEmpty, !e.title.isEmpty {
+                    Text(e.title).font(.subheadline).lineLimit(2)
+                }
+                if !e.text.isEmpty {
+                    Text(e.text).font(.caption).foregroundStyle(.secondary).lineLimit(4)
+                }
+            }
+            if let url = URL(string: e.image), !e.image.isEmpty {
+                AsyncImage(url: url) { img in
+                    img.resizable().scaledToFill()
+                } placeholder: {
+                    Color(.tertiarySystemFill)
+                }
+                .frame(width: 52, height: 52)
+                .clipShape(RoundedRectangle(cornerRadius: 8, style: .continuous))
+            }
+        }
+        .padding(.vertical, 3)
+        .contentShape(Rectangle())
+    }
+
+    private func open(_ e: HistoryEntry) {
+        dismiss()
+        let link = e.link
+        let store = store
+        Task { @MainActor in
+            try? await Task.sleep(for: .milliseconds(350))
+            if let url = URL(string: "familie://" + link) { store.openLink(url) }
+        }
+    }
+}
+
+extension Color {
+    /// „#FF9500“ → Farbe
+    init?(hexString: String) {
+        var s = hexString.trimmingCharacters(in: .whitespaces)
+        if s.hasPrefix("#") { s.removeFirst() }
+        guard s.count == 6, let v = UInt32(s, radix: 16) else { return nil }
+        self.init(red: Double((v >> 16) & 0xFF) / 255, green: Double((v >> 8) & 0xFF) / 255, blue: Double(v & 0xFF) / 255)
     }
 }
 
