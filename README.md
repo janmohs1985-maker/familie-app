@@ -120,7 +120,11 @@ Oben erscheint „Neue Version verfügbar“, sobald ein neues Update bereitlieg
 Sonos Küche und Move 2 mit den Spotify-Bibliotheken von Jan und Vanessa sowie Suche über Music Assistant. **Zusammen abspielen:** Lautsprecher zusammenschalten, sodass die gleiche Musik überall läuft.
 
 ### Mitteilungen
-Alle Mitteilungen laufen über `script.familie_mitteilung` in der Gruppe „Familie“. Antippen öffnet die passende Stelle der App (`familie://…`). Kritische Mitteilungen (Rauchalarm) kommen auch im Nicht-stören-Modus durch.
+Alle Mitteilungen laufen über `script.familie_mitteilung`. Antippen öffnet die passende Stelle der App (`familie://…`).
+
+- **Direkt von „Familie“ (Push über Apple):** Das Skript ruft zuerst `rest_command.familie_push` auf. Family Hub schickt die Mitteilung an alle iPhones der Empfänger, die sich mit Push-Token gemeldet haben (Geräteliste `/geraete`). Nötig sind im Add-on die Optionen `apns_key` (Inhalt der .p8-Datei), `apns_key_id` und `apns_team_id`; die App braucht das Entitlement `aps-environment` (Datei `Familie.entitlements`) und im Apple-Konto „Push Notifications“ beim Identifier `es.mohs.familie`.
+- **Über die Home-Assistant-App:** alle, die per Familie-App nicht erreicht wurden, außerdem kritische Mitteilungen (Rauchalarm, klingeln auch bei lautlos) und Mitteilungen mit Bild (Klingel).
+- **Lokale Erinnerungen** plant die App selbst: Klassenarbeit am Vorabend (18 Uhr), Mülltonne am Vorabend (19 Uhr, nur Eltern). Ein- und ausschalten unter Einstellungen → Mitteilungen; dort gibt es auch eine Test-Mitteilung.
 
 Beispiele:
 - Tür geöffnet (Emma/Leoni)

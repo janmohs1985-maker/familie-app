@@ -758,6 +758,8 @@ struct SettingsView: View {
 
                 AppLockSection()
 
+                NotificationSettingsSection()
+
                 Section {
                     Picker("Erscheinungsbild", selection: $appearance) {
                         Text("Wie iPhone").tag("system")

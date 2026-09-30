@@ -78,6 +78,8 @@ extension AppStore {
             "person": currentPersonName ?? "",
         ]
         if let k = detectedKid { data["kind"] = k }
+        if let t = PushState.shared.token { data["push"] = t }
+        data["push_erlaubt"] = PushState.shared.authorized ? "true" : "false"
         do {
             try await client.call("rest_command", "familie_geraet_set", ["daten": data])
             DeviceReport.last = Date()

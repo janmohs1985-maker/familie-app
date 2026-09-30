@@ -2,6 +2,7 @@ import SwiftUI
 
 @main
 struct FamilyHubApp: App {
+    @UIApplicationDelegateAdaptor(AppDelegate.self) private var appDelegate
     @State private var store = AppStore()
     @Environment(\.scenePhase) private var scenePhase
     @AppStorage("appearance") private var appearance = "system"
@@ -18,7 +19,12 @@ struct FamilyHubApp: App {
             AppLock.shared.sceneChanged(phase)
             if phase == .active, store.isLoggedIn {
                 store.startPolling()
-                Task { await store.refreshAll(); await store.reportDevice() }
+                Task {
+                    await store.refreshAll()
+                    await store.reportDevice()
+                    await PushState.shared.refresh()
+                    await LocalReminders.reschedule(store)
+                }
             } else if phase == .background {
                 store.stopPolling()
             }
@@ -36,7 +42,13 @@ struct RootView: View {
         Group {
             if store.isLoggedIn {
                 MainTabs()
-                .task { store.startPolling(); await store.refreshAll(); await store.reportDevice() }
+                .task {
+                    store.startPolling()
+                    await store.refreshAll()
+                    await PushState.shared.setup()
+                    await store.reportDevice()
+                    await LocalReminders.reschedule(store)
+                }
                 .onChange(of: hiddenTabs) { _, hidden in
                     if hidden.contains(store.selectedTab) { store.selectedTab = "heute" }
                 }
@@ -79,6 +91,7 @@ struct MainTabs: View {
     @Environment(AppStore.self) private var store
     @State private var visited: Set<String> = ["heute"]
     @State private var keyboard = KeyboardWatch.shared
+    @State private var push = PushState.shared
 
     var body: some View {
         let tabs = specs
@@ -102,6 +115,14 @@ struct MainTabs: View {
         }
         .animation(.easeOut(duration: 0.2), value: keyboard.visible)
         .onChange(of: store.selectedTab, initial: true) { _, t in visited.insert(t) }
+        // neues Push-Token → sofort an Family Hub melden
+        .onChange(of: push.token) { _, _ in Task { await store.reportDevice(force: true) } }
+        // Mitteilung angetippt → passende Seite öffnen
+        .onChange(of: push.pendingLink, initial: true) { _, link in
+            guard let link else { return }
+            push.pendingLink = nil
+            if let url = URL(string: "familie://" + link) { store.openLink(url) }
+        }
     }
 
     private var specs: [TabSpec] {
