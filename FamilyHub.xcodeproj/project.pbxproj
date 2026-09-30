@@ -470,6 +470,11 @@
 				GENERATE_INFOPLIST_FILE = YES;
 				INFOPLIST_FILE = "FamilieKlingel-Info.plist";
 				INFOPLIST_KEY_CFBundleDisplayName = "Familie Klingel";
+				OTHER_LDFLAGS = (
+					"$(inherited)",
+					"-Wl,-needed_framework,UserNotificationsUI",
+					"-Wl,-needed_framework,UserNotifications",
+				);
 				LD_RUNPATH_SEARCH_PATHS = (
 					"$(inherited)",
 					"@executable_path/Frameworks",
@@ -497,6 +502,11 @@
 				GENERATE_INFOPLIST_FILE = YES;
 				INFOPLIST_FILE = "FamilieKlingel-Info.plist";
 				INFOPLIST_KEY_CFBundleDisplayName = "Familie Klingel";
+				OTHER_LDFLAGS = (
+					"$(inherited)",
+					"-Wl,-needed_framework,UserNotificationsUI",
+					"-Wl,-needed_framework,UserNotifications",
+				);
 				LD_RUNPATH_SEARCH_PATHS = (
 					"$(inherited)",
 					"@executable_path/Frameworks",
