@@ -172,7 +172,7 @@ extension AppStore {
                                                        "item": "\(name(kid)): \(r.title)",
                                                        "description": ChoreText.jsonString(["kind": kid, "punkte": r.points])])
         }
-        await notify("eltern", "🎁 \(name(kid)) möchte einlösen", "\(r.title) (\(ChoreText.pointsText(r.points)))")
+        // keine Mitteilung – Wunsch der Eltern; die Anfrage steht unter Aufgaben → Kinder
     }
 
     func requestPayout(kid: String, euro: Int) async {
@@ -183,7 +183,7 @@ extension AppStore {
                                                        "item": "\(name(kid)): Taschengeld \(euro) €",
                                                        "description": ChoreText.jsonString(["kind": kid, "punkte": pts, "art": "taschengeld"])])
         }
-        await notify("eltern", "💶 \(name(kid)) möchte Taschengeld", "\(euro) € auszahlen (\(ChoreText.pointsText(pts)))")
+        // keine Mitteilung – Wunsch der Eltern; die Anfrage steht unter Aufgaben → Kinder
     }
 
     /// Kind zieht eine eigene Anfrage zurück

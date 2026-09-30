@@ -124,6 +124,10 @@ Alle Mitteilungen laufen über `script.familie_mitteilung`. Antippen öffnet die
 
 - **Direkt von „Familie“ (Push über Apple):** Das Skript ruft zuerst `rest_command.familie_push` auf. Family Hub schickt die Mitteilung an alle iPhones der Empfänger, die sich mit Push-Token gemeldet haben (Geräteliste `/geraete`). Nötig sind im Add-on die Optionen `apns_key` (Inhalt der .p8-Datei), `apns_key_id` und `apns_team_id`; die App braucht das Entitlement `aps-environment` (Datei `Familie.entitlements`) und im Apple-Konto „Push Notifications“ beim Identifier `es.mohs.familie`.
 - **Über die Home-Assistant-App:** alle, die per Familie-App nicht erreicht wurden, außerdem kritische Mitteilungen (Rauchalarm, klingeln auch bei lautlos) und Mitteilungen mit Bild (Klingel).
+- **Wächter in Family Hub** (braucht `homeassistant_api: true`): schaut jede Minute nach Änderungen – egal ob aus der App, per Alexa oder direkt im Kalender – und meldet sie gebündelt (2 Min. nach der letzten Änderung): Einkaufsliste → Eltern, Essensplan → alle außer dem, der es eingetragen hat, neue Termine (nächste 60 Tage) → Eltern, Klassenarbeit neu / gelernt → Eltern.
+- **Morgen-Zusammenfassung** an alle, jeder seine Version (Termine, Klassenarbeiten, Müll, Essen, fällige Eltern-Aufgaben): Schultage 6:45, Wochenende/Ferien/Feiertage 8:30.
+- **Ruhezeit 21:30–6:30:** normale Mitteilungen werden gesammelt und morgens als „Über Nacht“ nachgeliefert. Kritisches und Klingel kommen sofort.
+- **Heimkommen / nicht daheim:** nur an den Elternteil, der gerade nicht zu Hause ist (`an: eltern_unterwegs`).
 - **Lokale Erinnerungen** plant die App selbst: Klassenarbeit am Vorabend (18 Uhr), Mülltonne am Vorabend (19 Uhr, nur Eltern). Ein- und ausschalten unter Einstellungen → Mitteilungen; dort gibt es auch eine Test-Mitteilung.
 
 Beispiele:

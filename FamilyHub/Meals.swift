@@ -68,7 +68,8 @@ extension AppStore {
     }
 
     private func mealJSON(_ slot: String, _ ingredients: [String]) -> String {
-        ChoreText.jsonString(["mahlzeit": slot, "zutaten": ingredients])
+        // „von“: damit Family Hub die Mitteilung nicht an den schickt, der es eingetragen hat
+        ChoreText.jsonString(["mahlzeit": slot, "zutaten": ingredients, "von": myKey ?? ""])
     }
 
     // MARK: Eltern
