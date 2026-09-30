@@ -17,8 +17,7 @@ struct TodayView: View {
                     heroCard
                     ErrorBanner()
                     AppUpdateBanner()
-                    // Wetter und Familie stecken jetzt im Kopfbereich
-                    ForEach(TodayCardKind.ordered(orderRaw).filter { $0 != .weather && $0 != .people && !hiddenCards.contains($0.rawValue) && store.todayCardAvailable($0) }) { k in
+                    ForEach(visibleCards) { k in
                         card(k)
                     }
                     if let t = store.lastUpdate {
@@ -93,6 +92,17 @@ struct TodayView: View {
         case 17..<22: return "Guten Abend"
         default: return "Gute Nacht"
         }
+    }
+
+    /// Reihenfolge nach Wichtigkeit: Meldungen, die nur bei Bedarf erscheinen (Rauch, Klingel, Post,
+    /// laufende Geräte), stehen immer oben – danach die gewohnte Reihenfolge.
+    /// Wetter und Familie stecken im Kopfbereich.
+    private var visibleCards: [TodayCardKind] {
+        let urgent: [TodayCardKind] = [.safety, .doorbell, .mailbox, .laundry, .kitchen]
+        let all = TodayCardKind.ordered(orderRaw).filter {
+            $0 != .weather && $0 != .people && !hiddenCards.contains($0.rawValue) && store.todayCardAvailable($0)
+        }
+        return urgent.filter { all.contains($0) } + all.filter { !urgent.contains($0) }
     }
 
     // MARK: Kopfbereich (Glas): Begrüßung, Wetter, Familie

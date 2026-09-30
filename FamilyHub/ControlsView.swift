@@ -51,26 +51,27 @@ struct ControlsView: View {
     private let columns = [GridItem(.flexible(), spacing: 12), GridItem(.flexible(), spacing: 12)]
     private let controlColumns = Array(repeating: GridItem(.flexible(), spacing: 10), count: 3)
     @State private var showReorder = false
-    @AppStorage("zuhauseMode") private var mode = "uebersicht"
 
     var body: some View {
         NavigationStack {
             ScrollView {
-                ErrorBanner().padding(.horizontal)
-                if store.allows(.raeume) {
-                    Picker("Ansicht", selection: $mode) {
-                        Text("Übersicht").tag("uebersicht")
-                        Text("Räume").tag("raeume")
+                VStack(alignment: .leading, spacing: 14) {
+                    ErrorBanner().padding(.horizontal)
+                    if store.isParent && store.activeKid == nil {
+                        HomeStatusChips().padding(.horizontal)
+                        Text("Favoriten")
+                            .font(.title3.weight(.bold))
+                            .padding(.horizontal)
+                            .padding(.top, 4)
+                        QuickActionsRow().padding(.horizontal)
+                        Text("Bereiche")
+                            .font(.title3.weight(.bold))
+                            .padding(.horizontal)
+                            .padding(.top, 4)
                     }
-                    .pickerStyle(.segmented)
-                    .padding(.horizontal)
-                    .padding(.top, 4)
-                }
-                if mode == "raeume" && store.allows(.raeume) {
-                    RoomsOverview().padding(.top, 8)
-                } else {
                     overview
                 }
+                .padding(.top, 4)
                 Spacer(minLength: 24)
             }
             .background(AppBackground())
@@ -123,112 +124,10 @@ struct ControlsView: View {
                     }
                 }
 
-                if [KidFeature.strom, .heizung, .beschattung, .rauchmelder, .internet, .waesche, .pool, .bewaesserung, .saugroboter].contains(where: { store.allows($0) }) {
-                    SectionTitle("Haus")
-                    LazyVGrid(columns: columns, spacing: 12) {
-                        if store.allows(.strom) {
-                            NavigationLink { EnergyView() } label: {
-                                HubTile(title: "Haus & Strom", symbol: "bolt.fill", color: .yellow)
-                            }
-                        }
-                        if store.allows(.heizung) {
-                            NavigationLink { HeatingView() } label: {
-                                HubTile(title: "Heizung", symbol: "heat.waves", color: .red)
-                            }
-                        }
-                        if store.allows(.beschattung) {
-                            NavigationLink { ShadingView() } label: {
-                                HubTile(title: "Beschattung", symbol: "blinds.horizontal.closed", color: .orange)
-                            }
-                        }
-                        if store.allows(.rauchmelder) {
-                            NavigationLink { SmokeView() } label: {
-                                HubTile(title: store.smokeAlarm.isEmpty ? (store.smokeProblems.isEmpty ? "Rauchmelder" : "Rauchmelder ⚠︎") : "RAUCH!",
-                                        symbol: "smoke.fill", color: store.smokeAlarm.isEmpty ? .gray : .red)
-                            }
-                        }
-                        if store.isParent && store.activeKid == nil {
-                            NavigationLink { DevicesView() } label: {
-                                HubTile(title: "Zigbee-Geräte", symbol: "dot.radiowaves.left.and.right", color: .purple)
-                            }
-                        }
-                        if store.allows(.internet) {
-                            NavigationLink { NetworkView() } label: {
-                                HubTile(title: "Internet", symbol: "globe.europe.africa.fill", color: .indigo)
-                            }
-                        }
-                        if store.allows(.waesche) {
-                            NavigationLink { AppliancesView() } label: {
-                                HubTile(title: "Haushaltsgeräte", symbol: "washer.fill", color: .teal)
-                            }
-                        }
-                        if store.allows(.pool) {
-                            NavigationLink { PoolView() } label: {
-                                HubTile(title: "Pool", symbol: "figure.pool.swim", color: .blue)
-                            }
-                        }
-                        if store.allows(.bewaesserung) {
-                            NavigationLink { IrrigationView() } label: {
-                                HubTile(title: "Bewässerung", symbol: "sprinkler.and.droplets.fill", color: .cyan)
-                            }
-                        }
-                        if store.allows(.saugroboter) {
-                            NavigationLink { VacuumsView() } label: {
-                                HubTile(title: "Saugroboter", symbol: "fan.fill", color: .mint)
-                            }
-                        }
-                    }
-                    .padding(.horizontal)
-                    .buttonStyle(.plain)
+                if store.activeKid != nil && !store.visibleControls.isEmpty {
+                    SectionTitle("Bereiche")
                 }
-
-                SectionTitle("Familie")
-                LazyVGrid(columns: columns, spacing: 12) {
-                    if store.allows(.stundenplan) || store.allows(.schulmappe) {
-                        NavigationLink { KidsHubView() } label: {
-                            HubTile(title: store.activeKid == nil ? "Schule & Kinder" : "Schule", symbol: "graduationcap.fill", color: .teal)
-                        }
-                    }
-                    if store.allows(.essensplan) {
-                        NavigationLink { MealPlanView() } label: {
-                            HubTile(title: "Essensplan", symbol: "fork.knife", color: .orange)
-                        }
-                    }
-                    if store.allows(.musik) {
-                        NavigationLink { MusicView() } label: {
-                            HubTile(title: "Musik", symbol: "hifispeaker.2.fill", color: .pink)
-                        }
-                    }
-                    if store.allows(.haustuer) {
-                        NavigationLink { DoorbellView() } label: {
-                            HubTile(title: "Haustür", symbol: "bell.fill", color: .yellow)
-                        }
-                    }
-                }
-                .padding(.horizontal)
-                .buttonStyle(.plain)
-
-                if store.isParent && store.activeKid == nil {
-                    SectionTitle("Verwaltung")
-                    LazyVGrid(columns: columns, spacing: 12) {
-                        NavigationLink { DocumentsView() } label: {
-                            HubTile(title: "Dokumente & Paperless", symbol: "doc.text.magnifyingglass", color: .indigo)
-                        }
-                        Button { showMap = true } label: {
-                            HubTile(title: "Wo sind alle?", symbol: "map.fill", color: .green)
-                        }
-                        if store.isAdmin {
-                            NavigationLink { KidsAdminView() } label: {
-                                HubTile(title: "Für die Kinder", symbol: "figure.2.and.child.holdinghands", color: .pink)
-                            }
-                        }
-                        Button { showSettings = true } label: {
-                            HubTile(title: "Einstellungen", symbol: "gearshape.fill", color: .gray)
-                        }
-                    }
-                    .padding(.horizontal)
-                    .buttonStyle(.plain)
-                }
+                HomeAreasOverview()
     }
 
     private func takeRoute(_ r: String?) {
@@ -792,49 +691,73 @@ struct SettingsView: View {
     @AppStorage("startAnimation") private var startAnimation = true
     @AppStorage("appearance") private var appearance = "system"
 
+    private var myPerson: FamilyConfig.Person? {
+        if let p = store.myParentID, let par = FamilyConfig.parent(p) {
+            return FamilyConfig.people.first { $0.id == par.person }
+        }
+        if let k = store.detectedKid, let kid = FamilyConfig.kid(k) {
+            return FamilyConfig.people.first { $0.id == kid.person }
+        }
+        return nil
+    }
+
+    private var roleText: String {
+        if store.isParent { return store.isAdmin ? "Eltern · Verwaltung" : "Eltern" }
+        return "Kind"
+    }
+
     var body: some View {
         NavigationStack {
             Form {
-                Section("Verbindung") {
-                    LabeledContent("Server", value: store.credentials?.server ?? "–")
-                    LabeledContent("Anmeldung", value: store.credentials?.longLivedToken != nil ? "Token" : "Benutzer")
-                    LabeledContent("Status", value: serverStatus ?? "prüfe …")
-                    if let t = store.lastUpdate {
-                        LabeledContent("Letztes Update", value: t.formatted(date: .omitted, time: .standard))
-                    }
-                }
+                // Wer bin ich
                 Section {
-                    LabeledContent("Rolle", value: store.isParent ? "Eltern" : (FamilyConfig.kid(store.detectedKid ?? "")?.name ?? "–"))
+                    HStack(spacing: 14) {
+                        if let p = myPerson {
+                            Avatar(image: store.pictures[p.id], name: p.name, color: p.color, ring: 0)
+                                .frame(width: 56, height: 56)
+                        }
+                        VStack(alignment: .leading, spacing: 2) {
+                            Text(myPerson?.name ?? "Familie").font(.title3.weight(.bold))
+                            Text(roleText).font(.subheadline).foregroundStyle(.secondary)
+                        }
+                    }
+                    .padding(.vertical, 4)
                     if store.isParent {
-                        Picker("Aufgaben ansehen als", selection: Bindable(store).viewAs) {
+                        Picker("App ansehen als", selection: Bindable(store).viewAs) {
                             Text("Eltern").tag("auto")
                             ForEach(FamilyConfig.kids) { k in Text(k.name).tag(k.id) }
                         }
                     }
-                } header: { Text("Benutzer") } footer: {
+                } footer: {
                     if store.isParent { Text("Zum Ausprobieren: So sieht die App für die Kinder aus.") }
                 }
-                if store.canManageNetwork {
-                    Section("Kinder") {
-                        NavigationLink { KidPermissionsView() } label: {
-                            Label("Was die Kinder sehen dürfen", systemImage: "person.2.badge.gearshape.fill")
-                        }
-                    }
-                    Section("Netzwerk") {
-                        NavigationLink { GuestWifiView() } label: {
-                            Label("Gäste-WLAN", systemImage: "wifi")
-                        }
-                    }
-                }
-                if store.isAdmin {
+
+                // Familie verwalten
+                if store.canManageNetwork || store.isAdmin {
                     Section("Familie") {
-                        NavigationLink { FamilyDevicesView() } label: {
-                            Label("Geräte der Familie", systemImage: "iphone.gen3.radiowaves.left.and.right")
+                        if store.canManageNetwork {
+                            NavigationLink { KidPermissionsView() } label: {
+                                Label("Was die Kinder sehen dürfen", systemImage: "person.2.badge.gearshape.fill")
+                            }
+                        }
+                        if store.isAdmin {
+                            NavigationLink { KidsAdminView() } label: {
+                                Label("Für die Kinder", systemImage: "figure.2.and.child.holdinghands")
+                            }
+                            NavigationLink { FamilyDevicesView() } label: {
+                                Label("Geräte der Familie", systemImage: "iphone.gen3.radiowaves.left.and.right")
+                            }
+                        }
+                        if store.canManageNetwork {
+                            NavigationLink { GuestWifiView() } label: {
+                                Label("Gäste-WLAN", systemImage: "wifi")
+                            }
                         }
                     }
                 }
-                AppVersionSection()
+
                 AppLockSection()
+
                 Section {
                     Picker("Erscheinungsbild", selection: $appearance) {
                         Text("Wie iPhone").tag("system")
@@ -845,10 +768,35 @@ struct SettingsView: View {
                 } header: { Text("Darstellung") } footer: {
                     Text("„Wie iPhone“ wechselt automatisch mit dem Dunkelmodus des Handys.")
                 }
-                Section("Gefunden") {
-                    LabeledContent("Kalender", value: "\(store.calendars.count)")
-                    LabeledContent("Listen", value: "\(store.todoLists.count)")
-                }
+
+                AppVersionSection()
+
+                Section {
+                    NavigationLink {
+                        Form {
+                            Section("Verbindung") {
+                                LabeledContent("Server", value: store.credentials?.server ?? "–")
+                                LabeledContent("Anmeldung", value: store.credentials?.longLivedToken != nil ? "Token" : "Benutzer")
+                                LabeledContent("Status", value: serverStatus ?? "prüfe …")
+                                if let t = store.lastUpdate {
+                                    LabeledContent("Letztes Update", value: t.formatted(date: .omitted, time: .standard))
+                                }
+                            }
+                            Section("Gefunden") {
+                                LabeledContent("Kalender", value: "\(store.calendars.count)")
+                                LabeledContent("Listen", value: "\(store.todoLists.count)")
+                            }
+                        }
+                        .navigationTitle("Verbindung")
+                    } label: {
+                        HStack {
+                            Label("Verbindung", systemImage: "network")
+                            Spacer()
+                            Text(serverStatus ?? "prüfe …").foregroundStyle(.secondary)
+                        }
+                    }
+                } header: { Text("Info") }
+
                 Section {
                     Button("Abmelden", role: .destructive) {
                         Task { await store.logout(); dismiss() }
