@@ -39,17 +39,45 @@ enum HomeArea: String, CaseIterable, Identifiable, Hashable {
 
 @MainActor
 extension AppStore {
-    var lightsOn: Int {
-        states.values.filter { $0.entity_id.hasPrefix("light.") && $0.state == "on" && $0.attr("entity_id") == nil }.count
+    /// Keine „echten“ Lampen: Status-LEDs von Netzwerkgeräten, Drucker, Browser-Bildschirme, Anzeigen
+    static func isRealLight(_ id: String) -> Bool {
+        let skip = ["light.access_point_", "light.us_8_", "light.usw_", "light.udm_", "light.browser_mod_", "light.x1c_", "light.awtrix", "light.tuya_01"]
+        if skip.contains(where: { id.hasPrefix($0) }) { return false }
+        if id.contains("indicator") || id.hasSuffix("_screen") || id.contains("druckraum") { return false }
+        return true
     }
 
-    /// Offene Fenster / Türen laut Kontakt-Sensoren (nil = keine Sensoren gefunden)
-    func openContacts(_ classes: Set<String>) -> Int? {
-        let list = states.values.filter {
-            $0.entity_id.hasPrefix("binary_sensor.") && classes.contains($0.attr("device_class")?.string ?? "") && !$0.isUnavailable
+    /// Eingeschaltete Lampen (ohne Gruppen und ohne Status-LEDs), nach Name sortiert
+    var lightsOnStates: [HAState] {
+        states.values.filter {
+            $0.entity_id.hasPrefix("light.") && $0.state == "on" && $0.attr("entity_id") == nil && Self.isRealLight($0.entity_id)
         }
+        .sorted { $0.name.localizedStandardCompare($1.name) == .orderedAscending }
+    }
+    var lightsOn: Int { lightsOnStates.count }
+
+    /// Kontakt-Sensoren einer Art – ohne Sammelsensoren („Alle Fenster“) und ohne Tor-Hilfssensoren
+    /// wie „Garagentor Geschlossen“ / „Fahren“, die sonst als offen zählen würden
+    func contactSensors(_ classes: Set<String>) -> [HAState] {
+        states.values.filter { s in
+            let id = s.entity_id
+            guard id.hasPrefix("binary_sensor."), classes.contains(s.attr("device_class")?.string ?? ""), !s.isUnavailable else { return false }
+            if s.attr("entity_id") != nil || id.hasPrefix("binary_sensor.alle_") { return false }
+            if id.contains("geschlossen") || id.contains("fahren") { return false }
+            return true
+        }
+    }
+
+    /// Offene Fenster / Türen (nil = keine Sensoren gefunden)
+    func openContacts(_ classes: Set<String>) -> Int? {
+        let list = contactSensors(classes)
         guard !list.isEmpty else { return nil }
         return list.filter { $0.state == "on" }.count
+    }
+
+    func openContactStates(_ classes: Set<String>) -> [HAState] {
+        contactSensors(classes).filter { $0.state == "on" }
+            .sorted { $0.name.localizedStandardCompare($1.name) == .orderedAscending }
     }
 
     var runningAppliances: Int { LaundryConfig.devices.filter { laundryIsRunning($0) }.count }
@@ -69,6 +97,7 @@ extension AppStore {
 
 struct HomeStatusChips: View {
     @Environment(AppStore.self) private var store
+    @State private var sheet: HomeListKind?
 
     var body: some View {
         let windows = store.openContacts(["window"])
@@ -83,31 +112,183 @@ struct HomeStatusChips: View {
                 if let doors {
                     chip(doors == 0 ? "door.left.hand.closed" : "door.left.hand.open",
                          doors == 0 ? "Türen zu" : (doors == 1 ? "1 Tür offen" : "\(doors) Türen offen"),
-                         doors == 0 ? .green : .orange)
+                         doors == 0 ? .green : .orange, open: .doors)
                 }
                 if let windows {
                     chip(windows == 0 ? "window.vertical.closed" : "window.vertical.open",
                          windows == 0 ? "Fenster zu" : (windows == 1 ? "1 Fenster offen" : "\(windows) Fenster offen"),
-                         windows == 0 ? .green : .orange)
+                         windows == 0 ? .green : .orange, open: .windows)
                 }
                 let lights = store.lightsOn
                 chip(lights > 0 ? "lightbulb.fill" : "lightbulb", lights == 1 ? "1 Licht an" : "\(lights) Lichter an",
-                     lights > 0 ? .yellow : .secondary)
+                     lights > 0 ? .yellow : .secondary, open: .lights)
                 if store.runningAppliances > 0 {
                     chip("washer.fill", "Wäsche läuft", .teal)
                 }
             }
         }
         .scrollClipDisabled()
+        .sheet(item: $sheet) { k in HomeStatusSheet(kind: k) }
     }
 
-    private func chip(_ symbol: String, _ text: String, _ color: Color) -> some View {
-        HStack(spacing: 5) {
-            Image(systemName: symbol).font(.caption.weight(.bold)).foregroundStyle(color)
-            Text(text).font(.footnote.weight(.semibold))
+    private func chip(_ symbol: String, _ text: String, _ color: Color, open: HomeListKind? = nil) -> some View {
+        Button {
+            if let open { sheet = open }
+        } label: {
+            HStack(spacing: 5) {
+                Image(systemName: symbol).font(.caption.weight(.bold)).foregroundStyle(color)
+                Text(text).font(.footnote.weight(.semibold))
+                if open != nil {
+                    Image(systemName: "chevron.down").font(.system(size: 8, weight: .bold)).foregroundStyle(.secondary)
+                }
+            }
+            .padding(.horizontal, 11).padding(.vertical, 7)
+            .background(Color(.systemBackground).opacity(0.6), in: Capsule())
+            .contentShape(Capsule())
         }
-        .padding(.horizontal, 11).padding(.vertical, 7)
-        .background(Color(.systemBackground).opacity(0.6), in: Capsule())
+        .buttonStyle(.plain)
+    }
+}
+
+enum HomeListKind: String, Identifiable {
+    case doors, windows, lights
+    var id: String { rawValue }
+    var title: String {
+        switch self {
+        case .doors: "Offene Türen"
+        case .windows: "Offene Fenster"
+        case .lights: "Lichter an"
+        }
+    }
+}
+
+/// Liste hinter einem Status-Chip: offene Türen/Fenster ansehen, Lichter einzeln oder alle ausschalten
+struct HomeStatusSheet: View {
+    @Environment(AppStore.self) private var store
+    @Environment(\.dismiss) private var dismiss
+    let kind: HomeListKind
+    @State private var busy: Set<String> = []
+    @State private var confirmAll = false
+
+    var body: some View {
+        NavigationStack {
+            List {
+                switch kind {
+                case .lights: lightsSection
+                case .doors: contactsSection(store.openContactStates(["door", "garage_door"]), empty: "Alle Türen sind zu.", symbol: "door.left.hand.open")
+                case .windows: contactsSection(store.openContactStates(["window"]), empty: "Alle Fenster sind zu.", symbol: "window.vertical.open")
+                }
+            }
+            .navigationTitle(kind.title)
+            .navigationBarTitleDisplayMode(.inline)
+            .toolbar {
+                ToolbarItem(placement: .confirmationAction) { Button("Fertig") { dismiss() } }
+                if kind == .lights && !store.lightsOnStates.isEmpty {
+                    ToolbarItem(placement: .topBarLeading) {
+                        Button("Alle aus", role: .destructive) { confirmAll = true }
+                    }
+                }
+            }
+            .confirmationDialog("Alle \(store.lightsOn) Lichter ausschalten?", isPresented: $confirmAll, titleVisibility: .visible) {
+                Button("Alle ausschalten", role: .destructive) { allOff() }
+                Button("Abbrechen", role: .cancel) { }
+            }
+            .refreshable { await store.refreshStates() }
+        }
+        .presentationDetents([.medium, .large])
+    }
+
+    // MARK: Lichter
+
+    @ViewBuilder private var lightsSection: some View {
+        let lights = store.lightsOnStates
+        if lights.isEmpty {
+            Section { Label("Alle Lichter sind aus.", systemImage: "lightbulb").foregroundStyle(.secondary) }
+        } else {
+            Section {
+                ForEach(lights) { l in lightRow(l) }
+            } footer: {
+                Text("Antippen schaltet die Lampe aus. Status-LEDs von Netzwerkgeräten zählen nicht mit.")
+            }
+        }
+    }
+
+    private func lightRow(_ l: HAState) -> some View {
+        let bri: Int? = l.attr("brightness")?.double.map { Int(($0 / 255 * 100).rounded()) }
+        return Button {
+            turnOff([l.entity_id])
+        } label: {
+            HStack(spacing: 12) {
+                Image(systemName: "lightbulb.fill")
+                    .foregroundStyle(lightColor(l))
+                    .frame(width: 28)
+                VStack(alignment: .leading, spacing: 1) {
+                    Text(l.name).foregroundStyle(.primary)
+                    Text(sinceText(l, prefix: "an")).font(.caption).foregroundStyle(.secondary)
+                }
+                Spacer()
+                if busy.contains(l.entity_id) {
+                    ProgressView()
+                } else {
+                    if let bri { Text("\(bri) %").font(.caption.monospacedDigit()).foregroundStyle(.secondary) }
+                    Image(systemName: "power").font(.subheadline.weight(.semibold)).foregroundStyle(Color.accentColor)
+                }
+            }
+        }
+        .accessibilityLabel("\(l.name) ausschalten")
+        .swipeActions { Button("Aus") { turnOff([l.entity_id]) }.tint(.orange) }
+    }
+
+    private func lightColor(_ l: HAState) -> Color {
+        if let rgb = l.attr("rgb_color")?.array?.compactMap(\.double), rgb.count == 3 {
+            return Color(red: rgb[0] / 255, green: rgb[1] / 255, blue: rgb[2] / 255)
+        }
+        return .yellow
+    }
+
+    private func allOff() {
+        turnOff(store.lightsOnStates.map(\.entity_id))
+    }
+
+    private func turnOff(_ ids: [String]) {
+        guard !ids.isEmpty else { return }
+        busy.formUnion(ids)
+        Task {
+            do {
+                try await store.client.call("light", "turn_off", ["entity_id": ids])
+                try? await Task.sleep(for: .milliseconds(800))
+                await store.refreshStates()
+            } catch { store.report(error) }
+            busy.subtract(ids)
+        }
+    }
+
+    // MARK: Türen / Fenster
+
+    @ViewBuilder private func contactsSection(_ list: [HAState], empty: String, symbol: String) -> some View {
+        if list.isEmpty {
+            Section { Label(empty, systemImage: "checkmark.circle.fill").foregroundStyle(.green) }
+        } else {
+            Section {
+                ForEach(list) { s in
+                    HStack(spacing: 12) {
+                        Image(systemName: symbol).foregroundStyle(.orange).frame(width: 28)
+                        VStack(alignment: .leading, spacing: 1) {
+                            Text(s.name)
+                            Text(sinceText(s, prefix: "offen")).font(.caption).foregroundStyle(.secondary)
+                        }
+                    }
+                }
+            }
+        }
+    }
+
+    private func sinceText(_ s: HAState, prefix: String) -> String {
+        guard let d = HADate.parse(s.last_changed) else { return prefix }
+        let f = RelativeDateTimeFormatter()
+        f.locale = Locale(identifier: "de_DE")
+        f.unitsStyle = .full
+        return "\(prefix) seit " + f.localizedString(for: d, relativeTo: Date()).replacingOccurrences(of: "vor ", with: "")
     }
 }
 
