@@ -28,12 +28,18 @@ def call(method, path, body=None):
     req = urllib.request.Request(path if path.startswith("http") else API + path, method=method,
                                  data=json.dumps(body).encode() if body is not None else None,
                                  headers={"Authorization": "Bearer " + token(), "Content-Type": "application/json"})
-    try:
-        with urllib.request.urlopen(req, timeout=60) as r:
-            data = r.read()
-            return json.loads(data) if data else {}
-    except urllib.error.HTTPError as e:
-        sys.exit(f"API-Fehler {e.code} bei {method} {path}: {e.read().decode()[:600]}")
+    # Apple hat ab und zu kurze Aussetzer (Fehler 5xx) – dann bis zu 3× neu versuchen
+    for attempt in range(4):
+        try:
+            with urllib.request.urlopen(req, timeout=60) as r:
+                data = r.read()
+                return json.loads(data) if data else {}
+        except urllib.error.HTTPError as e:
+            if e.code >= 500 and attempt < 3:
+                print(f"Apple meldet {e.code} bei {method} {path} – neuer Versuch in {10 * (attempt + 1)} s", file=sys.stderr)
+                time.sleep(10 * (attempt + 1))
+                continue
+            sys.exit(f"API-Fehler {e.code} bei {method} {path}: {e.read().decode()[:600]}")
 
 
 def all_pages(path):
@@ -95,7 +101,11 @@ if not devices:
 # 4) alte eigene Profile löschen, neues anlegen
 for p in all_pages("/profiles?limit=200"):
     if p["attributes"]["name"].startswith(PREFIX):
-        call("DELETE", f"/profiles/{p['id']}")
+        # Löschen ist nur Aufräumen – wenn Apple dabei hakt (z. B. Fehler 500), trotzdem weiter
+        try:
+            call("DELETE", f"/profiles/{p['id']}")
+        except SystemExit as e:
+            print(f"Altes Profil nicht gelöscht (egal): {e}", file=sys.stderr)
 name = f"{PREFIX} {int(time.time())}"
 prof = call("POST", "/profiles", {"data": {"type": "profiles",
     "attributes": {"name": name, "profileType": "IOS_APP_ADHOC"},
