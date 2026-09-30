@@ -129,6 +129,7 @@ Alle Mitteilungen laufen über `script.familie_mitteilung`. Antippen öffnet die
 - **Morgen-Zusammenfassung** an alle, jeder seine Version (Termine, Klassenarbeiten, Müll, Essen, fällige Eltern-Aufgaben): Schultage 6:45, Wochenende/Ferien/Feiertage 8:30.
 - **Ruhezeit 21:30–6:30:** normale Mitteilungen werden gesammelt und morgens als „Über Nacht“ nachgeliefert. Kritisches und Klingel kommen sofort.
 - **Heimkommen / nicht daheim:** nur an den Elternteil, der gerade nicht zu Hause ist (`an: eltern_unterwegs`).
+- **Aussehen:** Family Hub schickt je Ziel ein Symbol mit Farbe (`PUSH_SYMBOLE`) und – wenn bekannt – den Absender (`von`) mit Profilbild. Die Erweiterung `FamilieMitteilung` zeigt das Symbol rechts und den Absender als „Mitteilung von einer Person“ (Bild links statt App-Symbol, Fähigkeit *Communication Notifications*; der Build schaltet sie über die API ein und nimmt sonst `Familie.entitlements` ohne sie).
 - **Lokale Erinnerungen** plant die App selbst: Klassenarbeit am Vorabend (18 Uhr), Mülltonne am Vorabend (19 Uhr, nur Eltern). Ein- und ausschalten unter Einstellungen → Mitteilungen; dort gibt es auch eine Test-Mitteilung.
 
 Beispiele:

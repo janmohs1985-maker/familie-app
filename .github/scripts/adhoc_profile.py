@@ -55,6 +55,30 @@ else:
         "identifier": BUNDLE, "name": BUNDLE_NAME, "platform": "IOS"}}})["data"]["id"]
     print(f"App-ID {BUNDLE} angelegt", file=sys.stderr)
 
+# 1b) gewünschte Fähigkeiten der App-ID einschalten (z. B. Mitteilungen mit Profilbild) – Fehler brechen nicht ab
+CAPS = [c for c in os.environ.get("ENABLE_CAPS", "").split(",") if c]
+if CAPS:
+    ok = True
+    try:
+        have = {c["attributes"]["capabilityType"] for c in call("GET", f"/bundleIds/{bundle_id}/bundleIdCapabilities").get("data", [])}
+    except SystemExit:
+        have, ok = set(), False
+    for cap in CAPS:
+        if cap in have:
+            continue
+        req = urllib.request.Request(API + "/bundleIdCapabilities", method="POST", data=json.dumps({"data": {
+            "type": "bundleIdCapabilities", "attributes": {"capabilityType": cap},
+            "relationships": {"bundleId": {"data": {"type": "bundleIds", "id": bundle_id}}}}}).encode(),
+            headers={"Authorization": "Bearer " + token(), "Content-Type": "application/json"})
+        try:
+            urllib.request.urlopen(req, timeout=60).read()
+            print(f"Fähigkeit {cap} eingeschaltet", file=sys.stderr)
+        except urllib.error.HTTPError as e:
+            ok = False
+            print(f"Fähigkeit {cap} nicht möglich ({e.code}): {e.read().decode()[:300]}", file=sys.stderr)
+    if ok and os.environ.get("CAPS_OK_FILE"):
+        pathlib.Path(os.environ["CAPS_OK_FILE"]).write_text("ok")
+
 # 2) Zertifikat zur Seriennummer
 certs = all_pages("/certificates?limit=200")
 cert = next((c for c in certs if c["attributes"].get("serialNumber", "").upper().lstrip("0") == SERIAL), None)

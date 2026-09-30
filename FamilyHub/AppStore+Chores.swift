@@ -126,7 +126,9 @@ extension AppStore {
 
     /// Mitteilung über script.familie_mitteilung – Fehler werden ignoriert (Mitteilungen sind nur Zusatz).
     func notify(_ to: String, _ title: String, _ message: String) async {
-        _ = try? await client.call("script", FamilyConfig.notifyScript, ["an": to, "titel": title, "nachricht": message])
+        // „von“: Absender – die Mitteilung zeigt dann sein Profilbild
+        _ = try? await client.call("script", FamilyConfig.notifyScript,
+                                   ["an": to, "titel": title, "nachricht": message, "von": myKey ?? ""])
     }
     private func name(_ kid: String) -> String { FamilyConfig.kid(kid)?.name ?? kid.capitalized }
 

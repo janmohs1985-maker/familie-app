@@ -51,7 +51,11 @@ jobs:
             # 2) Ad-hoc-Profil mit allen eingetragenen iPhones
             python3 -m pip install --quiet --user --break-system-packages pyjwt cryptography 2>/dev/null \
               || python3 -m pip install --quiet --user pyjwt cryptography
-            PROFILE=$(CERT_SERIAL="$CERT_SERIAL" python3 .github/scripts/adhoc_profile.py)
+            PROFILE=$(CERT_SERIAL="$CERT_SERIAL" ENABLE_CAPS=USERNOTIFICATIONS_COMMUNICATION CAPS_OK_FILE="$RUNNER_TEMP/komm_ok" \
+              python3 .github/scripts/adhoc_profile.py)
+            # Mitteilungen mit Profilbild nur, wenn Apple die Fähigkeit freigeschaltet hat
+            if [ -f "$RUNNER_TEMP/komm_ok" ]; then ENT=Familie-Kommunikation.entitlements; else ENT=Familie.entitlements; fi
+            echo "Berechtigungen: $ENT"
             echo "Profil: $PROFILE"
             # Profil für die Mitteilungs-Erweiterung (Bilder in Mitteilungen); App-ID wird bei Bedarf angelegt
             PROFILE_NSE=$(CERT_SERIAL="$CERT_SERIAL" BUNDLE_ID=es.mohs.familie.mitteilung BUNDLE_NAME="Familie Mitteilungen" \
@@ -66,7 +70,7 @@ jobs:
               -project FamilyHub.xcodeproj -scheme FamilyHub -configuration Release \
               -destination generic/platform=iOS -archivePath build/Familie.xcarchive \
               DEVELOPMENT_TEAM="$TEAM_ID" CODE_SIGN_STYLE=Manual \
-              CODE_SIGN_IDENTITY="Apple Distribution" FAMILIE_PROFILE_APP="$PROFILE" FAMILIE_PROFILE_NSE="$PROFILE_NSE" FAMILIE_PROFILE_KLINGEL="$PROFILE_KLINGEL" \
+              CODE_SIGN_IDENTITY="Apple Distribution" FAMILIE_PROFILE_APP="$PROFILE" FAMILIE_ENTITLEMENTS="$ENT" FAMILIE_PROFILE_NSE="$PROFILE_NSE" FAMILIE_PROFILE_KLINGEL="$PROFILE_KLINGEL" \
               OTHER_CODE_SIGN_FLAGS="--keychain $KC" \
               MARKETING_VERSION="$VER" CURRENT_PROJECT_VERSION="$BUILD" > build.log 2>&1 || true
             grep -E "error:|ARCHIVE (SUCCEEDED|FAILED)" build.log | sort -u | head -60 || true
