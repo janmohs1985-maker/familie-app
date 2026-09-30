@@ -225,6 +225,7 @@ struct DoorbellView: View {
     @State private var zoom: DoorbellRing?
     @State private var deleting: DoorbellRing?
     @State private var confirmAll = false
+    @State private var call = false
 
     private var canDelete: Bool { store.isParent && store.activeKid == nil }
 
@@ -241,7 +242,19 @@ struct DoorbellView: View {
                             .aspectRatio(4/3, contentMode: .fit)
                             .clipShape(RoundedRectangle(cornerRadius: 12))
                     }
+                    if canDelete {
+                        Button { call = true } label: {
+                            Label("Live & Sprechen", systemImage: "phone.fill")
+                                .font(.headline)
+                                .frame(maxWidth: .infinity)
+                                .padding(.vertical, 12)
+                                .background(Color.green, in: Capsule())
+                                .foregroundStyle(.white)
+                        }
+                        .buttonStyle(.plain)
+                    }
                 }
+                .fullScreenCover(isPresented: $call) { DoorCallView(autoTalk: false) }
 
                 HStack {
                     Text("Letzte Besucher").font(.headline)

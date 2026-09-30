@@ -93,6 +93,7 @@ struct MainTabs: View {
     @State private var keyboard = KeyboardWatch.shared
     @State private var push = PushState.shared
     @State private var doorConfirm = false
+    @State private var doorCall = false
 
     var body: some View {
         let tabs = specs
@@ -122,6 +123,11 @@ struct MainTabs: View {
         .onChange(of: push.pendingLink, initial: true) { _, link in
             guard let link else { return }
             push.pendingLink = nil
+            if link == "klingel_gespraech" {
+                // „Sprechen“ aus der Klingel-Mitteilung: Gespräch sofort starten
+                if store.isParent && store.activeKid == nil { doorCall = true }
+                return
+            }
             if link == "haustuer_oeffnen" {
                 // aus der Klingel-Mitteilung: nachfragen, dann Face ID, dann öffnen (nur Eltern)
                 if store.isParent && store.activeKid == nil { doorConfirm = true }
@@ -129,6 +135,7 @@ struct MainTabs: View {
             }
             if let url = URL(string: "familie://" + link) { store.openLink(url) }
         }
+        .fullScreenCover(isPresented: $doorCall) { DoorCallView(autoTalk: true) }
         .confirmationDialog("Haustür öffnen?", isPresented: $doorConfirm, titleVisibility: .visible) {
             Button("Haustür öffnen") {
                 Task {

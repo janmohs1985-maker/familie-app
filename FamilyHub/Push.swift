@@ -44,7 +44,8 @@ final class AppDelegate: NSObject, UIApplicationDelegate, UNUserNotificationCent
         // ohne dass die App aufgeht. „App öffnen“ zeigt die Haustür-Seite.
         let open = UNNotificationAction(identifier: "oeffnen", title: "🔓 Öffnen",
                                         options: [.authenticationRequired, .destructive])
-        let klingel = UNNotificationCategory(identifier: "KLINGEL", actions: [open], intentIdentifiers: [], options: [])
+        let talk = UNNotificationAction(identifier: "sprechen", title: "🎙 Sprechen", options: [.foreground])
+        let klingel = UNNotificationCategory(identifier: "KLINGEL", actions: [talk, open], intentIdentifiers: [], options: [])
         UNUserNotificationCenter.current().setNotificationCategories([klingel])
         return true
     }
@@ -76,7 +77,8 @@ final class AppDelegate: NSObject, UIApplicationDelegate, UNUserNotificationCent
             }
             return
         }
-        let link = (response.notification.request.content.userInfo["link"] as? String) ?? "heute"
+        var link = (response.notification.request.content.userInfo["link"] as? String) ?? "heute"
+        if response.actionIdentifier == "sprechen" { link = "klingel_gespraech" }
         Task { @MainActor in PushState.shared.pendingLink = link }
         completionHandler()
     }
