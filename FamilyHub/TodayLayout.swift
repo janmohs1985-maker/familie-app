@@ -15,7 +15,7 @@ enum TodayCardKind: String, CaseIterable, Identifiable {
         case .weather: "Wetter (steht im Kopf)"
         case .mailbox: "Briefkasten"
         case .doorbell: "Klingel (nur nach dem Klingeln)"
-        case .laundry: "Jetzt: Wäsche & Hausakku"
+        case .laundry: "Wäsche & Hausakku (Jetzt wichtig)"
         case .kitchen: "Küchengeräte (nur wenn sie laufen)"
         case .parentTodos: "Unsere Aufgaben"
         case .music: "Musik"
@@ -24,8 +24,8 @@ enum TodayCardKind: String, CaseIterable, Identifiable {
         case .school: "Stundenplan heute"
         case .freizeit: "Freizeit heute"
         case .meal: "Essen heute"
-        case .waste: "Müllabfuhr"
-        case .upcoming: "Nächste Termine"
+        case .waste: "Müll (unter „Jetzt wichtig“)"
+        case .upcoming: "Termine (Abschnitt „Heute“)"
         }
     }
     var symbol: String {

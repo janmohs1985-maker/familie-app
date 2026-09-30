@@ -17,9 +17,30 @@ struct TodayView: View {
                     heroCard
                     ErrorBanner()
                     AppUpdateBanner()
-                    ForEach(visibleCards) { k in
-                        card(k)
+                    // 1. Jetzt wichtig: was gerade läuft, dann was ansteht
+                    let upcoming = store.upcomingItems(includeWaste: show(.waste))
+                    if showNowHeader(upcoming) {
+                        TodaySectionHeader(title: "Jetzt wichtig")
                     }
+                    ForEach(nowCards) { k in card(k) }
+                    if !upcoming.isEmpty {
+                        UpcomingCard(items: upcoming)
+                    }
+
+                    // 2. Heute: Termine als Zeitleiste
+                    if show(.upcoming) {
+                        TodaySectionHeader(title: "Heute", action: store.allows(.kalender) ? "Kalender" : nil) {
+                            store.selectedTab = "kalender"
+                        }
+                        TodayTimeline()
+                    }
+
+                    // 3. Alles andere in der gewohnten Reihenfolge
+                    let rest = restCards
+                    if !rest.isEmpty {
+                        TodaySectionHeader(title: "Außerdem")
+                    }
+                    ForEach(rest) { k in card(k) }
                     if let t = store.lastUpdate {
                         Text("Aktualisiert \(t.formatted(date: .omitted, time: .shortened))")
                             .font(.caption2).foregroundStyle(.tertiary)
@@ -36,7 +57,8 @@ struct TodayView: View {
                 .padding()
             }
             .background(AppBackground())
-            .refreshable { await store.refreshAll() }
+            .refreshable { await store.refreshAll(); await ExamsModel.shared.load(store) }
+            .task { if !ExamsModel.shared.loaded { await ExamsModel.shared.load(store) } }
             .navigationTitle("")
             .navigationBarTitleDisplayMode(.inline)
             .toolbar {
@@ -94,15 +116,27 @@ struct TodayView: View {
         }
     }
 
-    /// Reihenfolge nach Wichtigkeit: Meldungen, die nur bei Bedarf erscheinen (Rauch, Klingel, Post,
-    /// laufende Geräte), stehen immer oben – danach die gewohnte Reihenfolge.
-    /// Wetter und Familie stecken im Kopfbereich.
-    private var visibleCards: [TodayCardKind] {
-        let urgent: [TodayCardKind] = [.safety, .doorbell, .mailbox, .laundry, .kitchen]
-        let all = TodayCardKind.ordered(orderRaw).filter {
-            $0 != .weather && $0 != .people && !hiddenCards.contains($0.rawValue) && store.todayCardAvailable($0)
-        }
-        return urgent.filter { all.contains($0) } + all.filter { !urgent.contains($0) }
+    /// Karte sichtbar? (nicht ausgeblendet und für diese Person erlaubt)
+    private func show(_ k: TodayCardKind) -> Bool {
+        !hiddenCards.contains(k.rawValue) && store.todayCardAvailable(k)
+    }
+
+    /// „Jetzt wichtig“: Meldungen und laufende Geräte – erscheinen nur bei Bedarf
+    private static let nowKinds: [TodayCardKind] = [.safety, .doorbell, .mailbox, .laundry, .kitchen]
+    private var nowCards: [TodayCardKind] { Self.nowKinds.filter { show($0) } }
+
+    /// Rest in der Reihenfolge von „Heute anordnen“ (Wetter/Familie stehen im Kopf, Müll/Termine oben)
+    private var restCards: [TodayCardKind] {
+        let skip: Set<TodayCardKind> = Set(Self.nowKinds + [.weather, .people, .waste, .upcoming])
+        return TodayCardKind.ordered(orderRaw).filter { !skip.contains($0) && show($0) }
+    }
+
+    private func showNowHeader(_ upcoming: [UpcomingItem]) -> Bool {
+        if !upcoming.isEmpty { return true }
+        if store.isParent && store.activeKid == nil && show(.laundry) && store.num(EnergyConfig.soc) != nil { return true }
+        if store.runningAppliances > 0 || store.ringRecently { return true }
+        if store.states[FamilyConfig.mailbox]?.state == "on" { return true }
+        return !store.smokeAlarm.isEmpty || !store.smokeProblems.isEmpty
     }
 
     // MARK: Kopfbereich (Glas): Begrüßung, Wetter, Familie
