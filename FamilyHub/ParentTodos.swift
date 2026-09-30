@@ -451,31 +451,127 @@ struct ParentTodosTodayCard: View {
         if store.canUseParentTodos, store.myParentID != nil {
             let open = store.myOpenTodos
             let me = store.myParentID ?? ""
-            Card(title: open.isEmpty ? "Für dich" : "Für dich (\(open.count))", symbol: "checklist") {
-                VStack(alignment: .leading, spacing: 10) {
-                    if open.isEmpty {
-                        Text("Nichts offen 🎉").foregroundStyle(.secondary)
+            VStack(alignment: .leading, spacing: 0) {
+                header(open.count)
+                if open.isEmpty {
+                    Label("Nichts offen – alles erledigt", systemImage: "checkmark.seal.fill")
+                        .font(.subheadline)
+                        .foregroundStyle(.green)
+                        .padding(.vertical, 12)
+                }
+                ForEach(Array(open.prefix(5).enumerated()), id: \.element.id) { i, t in
+                    Divider().padding(.leading, i == 0 ? 0 : 40)
+                    TodayTodoRow(todo: t, me: me) {
+                        Task { await store.setParentTodo(t, done: true) }
                     }
-                    ForEach(open.prefix(4)) { t in
-                        ParentTodoRow(todo: t, me: me) {
-                            Task { await store.setParentTodo(t, done: true) }
-                        }
-                    }
-                    Button {
-                        store.aufgabenMode = "wir"
-                        store.selectedTab = "aufgaben"
-                    } label: {
-                        HStack {
-                            Spacer()
-                            Text(open.count > 4 ? "Alle \(open.count) anzeigen" : "Zur Liste")
-                                .font(.caption.weight(.semibold))
-                            Image(systemName: "chevron.right").font(.caption2)
-                        }
-                        .foregroundStyle(Color.accentColor)
-                    }
-                    .buttonStyle(.plain)
                 }
             }
+            .padding(.horizontal, 16)
+            .padding(.top, 12)
+            .padding(.bottom, 4)
+            .frame(maxWidth: .infinity, alignment: .leading)
+            .cardSurface()
         }
+    }
+
+    private func header(_ count: Int) -> some View {
+        HStack(spacing: 10) {
+            Image(systemName: "checklist")
+                .font(.system(size: 14, weight: .semibold))
+                .foregroundStyle(.white)
+                .frame(width: 28, height: 28)
+                .background(Color.orange.gradient, in: RoundedRectangle(cornerRadius: 8, style: .continuous))
+            Text("Für dich").font(.headline)
+            if count > 0 {
+                Text("\(count)")
+                    .font(.caption.weight(.bold).monospacedDigit())
+                    .padding(.horizontal, 7).padding(.vertical, 2)
+                    .background(Color.orange.opacity(0.15), in: Capsule())
+                    .foregroundStyle(.orange)
+            }
+            Spacer()
+            Button {
+                store.aufgabenMode = "wir"
+                store.selectedTab = "aufgaben"
+            } label: {
+                HStack(spacing: 3) {
+                    Text(count > 5 ? "Alle \(count)" : "Liste")
+                    Image(systemName: "chevron.right").font(.caption2.weight(.bold))
+                }
+                .font(.subheadline.weight(.semibold))
+            }
+            .buttonStyle(.borderless)
+        }
+        .padding(.bottom, 10)
+    }
+}
+
+/// Kompakte Zeile für „Heute“: Kreis, Titel, darunter Fälligkeit/Absender – Gesichter nur bei „beide“
+struct TodayTodoRow: View {
+    @Environment(AppStore.self) private var store
+    let todo: ParentTodo
+    let me: String
+    let done: () -> Void
+    @State private var ticked = false
+
+    var body: some View {
+        HStack(spacing: 12) {
+            Button {
+                withAnimation(.snappy) { ticked = true }
+                done()
+            } label: {
+                Image(systemName: ticked ? "checkmark.circle.fill" : "circle")
+                    .font(.title3)
+                    .foregroundStyle(ticked ? Color.green : Color.secondary)
+                    .contentTransition(.symbolEffect(.replace))
+                    .frame(width: 28, height: 36)
+            }
+            .buttonStyle(.borderless)
+            .sensoryFeedback(.success, trigger: ticked)
+            .accessibilityLabel("\(todo.title) erledigt")
+
+            VStack(alignment: .leading, spacing: 2) {
+                Text(todo.title)
+                    .font(.subheadline.weight(.semibold))
+                    .strikethrough(ticked)
+                    .lineLimit(2)
+                if !subtitle.isEmpty {
+                    Text(subtitle)
+                        .font(.caption)
+                        .foregroundStyle(dueColor)
+                        .lineLimit(1)
+                }
+            }
+            Spacer(minLength: 6)
+            if todo.assignee == "beide" {
+                HStack(spacing: -7) {
+                    ForEach(FamilyConfig.parents) { f in
+                        Avatar(image: store.pictures[f.person], name: f.name, color: f.color,
+                               initialFont: .system(size: 10, weight: .bold), ring: 1.5)
+                            .frame(width: 24, height: 24)
+                    }
+                }
+                .accessibilityLabel("für beide")
+            }
+        }
+        .padding(.vertical, 8)
+    }
+
+    private var subtitle: String {
+        var parts: [String] = []
+        if let due = todo.due {
+            parts.append(todo.isOverdue ? "überfällig seit \(DayText.label(due))" : DayText.label(due))
+        }
+        if !todo.from.isEmpty, todo.from != me {
+            parts.append("von \(FamilyConfig.parent(todo.from)?.name ?? todo.from)")
+        }
+        if !todo.note.isEmpty { parts.append(todo.note) }
+        return parts.joined(separator: " · ")
+    }
+
+    private var dueColor: Color {
+        if todo.isOverdue { return .red }
+        if todo.isToday { return .orange }
+        return .secondary
     }
 }
