@@ -11,14 +11,19 @@ on:
 
 jobs:
   build:
-    runs-on: macos-15
+    runs-on: macos-26
     timeout-minutes: 40
     steps:
       - name: Code holen
         uses: actions/checkout@v4
 
-      - name: Xcode-Version
-        run: xcodebuild -version
+      - name: Xcode wählen (neuestes Xcode 26 – Pflicht für TestFlight)
+        run: |
+          ls -d /Applications/Xcode*.app || true
+          X=$(ls -d /Applications/Xcode_26*.app 2>/dev/null | sort -V | tail -1)
+          if [ -n "$X" ]; then sudo xcode-select -s "$X/Contents/Developer"; echo "Gewählt: $X"; else echo "::warning::Kein Xcode 26 auf diesem Runner"; fi
+          xcodebuild -version
+          xcodebuild -showsdks | grep -E "iphoneos|watchos" || true
 
       - name: App bauen
         env:
