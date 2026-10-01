@@ -61,7 +61,14 @@ final class AppDelegate: NSObject, UIApplicationDelegate, UNUserNotificationCent
             UNTextInputNotificationAction(identifier: "mb_text", title: "➕ Etwas mitbringen …", options: [],
                                           textInputButtonTitle: "Senden", textInputPlaceholder: "z. B. Milch, Brot"),
         ], intentIdentifiers: [], options: [])
-        UNUserNotificationCenter.current().setNotificationCategories([klingel, aufgabe, mitbringen])
+        // „Essen ist fertig!“ (lange drücken): kurz antworten
+        let rufen = UNNotificationCategory(identifier: "RUFEN", actions: [
+            UNNotificationAction(identifier: "r_komme", title: "👍 Komme!", options: []),
+            UNNotificationAction(identifier: "r_5", title: "⏱ 5 Minuten", options: []),
+            UNTextInputNotificationAction(identifier: "r_text", title: "💬 Antworten …", options: [],
+                                          textInputButtonTitle: "Senden", textInputPlaceholder: "Antwort"),
+        ], intentIdentifiers: [], options: [])
+        UNUserNotificationCenter.current().setNotificationCategories([klingel, aufgabe, mitbringen, rufen])
         return true
     }
 
@@ -90,6 +97,16 @@ final class AppDelegate: NSObject, UIApplicationDelegate, UNUserNotificationCent
             // im Hintergrund öffnen – die App muss dafür nicht aufgehen
             Task {
                 await DoorOpener.openFromNotification()
+                completionHandler()
+            }
+            return
+        }
+        if response.actionIdentifier.hasPrefix("r_") {
+            let link = response.notification.request.content.userInfo["link"] as? String ?? ""
+            let text = (response as? UNTextInputNotificationResponse)?.userText ?? ""
+            let answer = response.actionIdentifier == "r_5" ? "⏱ 5 Minuten" : (response.actionIdentifier == "r_komme" ? "👍 Komme!" : text)
+            Task {
+                await CallBridge.answer(id: String(link.dropFirst("rufen_".count)), text: answer)
                 completionHandler()
             }
             return

@@ -70,6 +70,7 @@ struct TodayView: View {
                 if store.isAdmin {
                     Button { showArrange = true } label: { Image(systemName: "arrow.up.arrow.down") }
                 }
+                if store.isParent && store.activeKid == nil { CallButton() }
                 NotificationHistoryButton()
                 Button { showSettings = true } label: { Image(systemName: "gearshape") }
             }
