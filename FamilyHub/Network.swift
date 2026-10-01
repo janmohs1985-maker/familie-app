@@ -239,6 +239,8 @@ struct NetworkView: View {
     @State private var speedRunning = false
     @State private var confirm: ConfirmAction?
     @State private var routes: [AppStore.NetRoute]?
+    @State private var vpnRoutes: [AppStore.VPNRoute] = []
+    @State private var vpnBusy: String?
     @State private var routeBusy: String?
     @State private var modeError: String?
     @State private var trafficOpen = false
@@ -294,8 +296,10 @@ struct NetworkView: View {
         async let n = store.loadNetStatus()
         async let m = store.loadNetRoutes()
         async let s: Void = store.refreshStates()
+        async let v = store.loadVPNRoutes()
         net = await n
         routes = await m
+        vpnRoutes = await v
         _ = await s
         loading = false
     }
@@ -577,6 +581,36 @@ struct NetworkView: View {
                             .foregroundStyle(connected ? Color.green : Color.red)
                     }
                 }
+                if isParent && !vpnRoutes.isEmpty {
+                    Divider()
+                    Text("Über VPN umleiten").font(.caption.weight(.semibold)).foregroundStyle(.secondary)
+                    ForEach(vpnRoutes) { r in
+                        HStack(spacing: 10) {
+                            Image(systemName: r.on ? "lock.fill" : "lock.open")
+                                .foregroundStyle(r.on ? Color.green : Color.secondary)
+                                .frame(width: 20)
+                            VStack(alignment: .leading, spacing: 1) {
+                                Text(r.name).font(.subheadline.weight(.semibold)).lineLimit(1)
+                                Text((r.target == "alles" ? "gesamter Verkehr" : r.target) + " → " + r.vpn)
+                                    .font(.caption).foregroundStyle(.secondary).lineLimit(1)
+                            }
+                            Spacer()
+                            if vpnBusy == r.id {
+                                ProgressView()
+                            } else {
+                                Toggle(r.name, isOn: Binding(get: { r.on }, set: { want in
+                                    Task {
+                                        vpnBusy = r.id
+                                        if let e = await store.setVPNRoute(r.id, on: want) { modeError = e }
+                                        vpnRoutes = await store.loadVPNRoutes()
+                                        vpnBusy = nil
+                                    }
+                                }))
+                                .labelsHidden()
+                            }
+                        }
+                    }
+                }
                 if n.remoteUserEnabled || !n.vpnConnections.isEmpty {
                     Divider()
                     Text(n.vpnConnections.isEmpty ? "Niemand per VPN von unterwegs verbunden"
@@ -710,5 +744,39 @@ struct NetworkView: View {
                 }
             }
         }
+    }
+}
+
+
+// MARK: - Umleitungen über einen VPN-Client (z. B. Mullvad) an/aus
+
+@MainActor
+extension AppStore {
+    struct VPNRoute: Identifiable, Hashable {
+        let id: String
+        let name: String
+        let vpn: String
+        let target: String
+        var on: Bool
+    }
+
+    func loadVPNRoutes() async -> [VPNRoute] {
+        guard let r = try? await client.callWithResponse("rest_command", "familie_vpn_route_ip",
+                                                         ["daten": ["aktion": "liste"]], timeout: 40) else { return [] }
+        let c = r["content"] ?? r
+        return (c["routen"]?.array ?? []).compactMap { x in
+            guard let id = x["id"]?.string else { return nil }
+            return VPNRoute(id: id, name: x["name"]?.string ?? "Route", vpn: x["vpn"]?.string ?? "VPN",
+                            target: x["ziel"]?.string ?? "", on: x["an"]?.string == "true")
+        }
+    }
+
+    func setVPNRoute(_ id: String, on: Bool) async -> String? {
+        do {
+            let r = try await client.callWithResponse("rest_command", "familie_vpn_route_ip",
+                                                      ["daten": ["aktion": "schalten", "id": id, "an": on]], timeout: 40)
+            let c = r["content"] ?? r
+            return c["ok"]?.string == "true" ? nil : (c["error"]?.string ?? "Umschalten fehlgeschlagen")
+        } catch { return error.localizedDescription }
     }
 }
