@@ -8,6 +8,7 @@ enum WeatherConfig {
     static let stationTemp = "sensor.wetterstation_temperatur"
     static let stationWind = "sensor.wetterstation_windgeschwindigkeit"
     static let stationLux = "sensor.wetterstation_helligkeit_in_lux"
+    static let stationRain = "binary_sensor.wetterstation_regen"      // Regensensor auf dem Dach (KNX 0/0/6)
     static let windRecord = "sensor.windgeschwindigkeit_max_aller_zeiten"
     static let lightningDistance = "sensor.home_lightning_distance"
     static let lightningAzimuth = "sensor.home_lightning_azimuth"
@@ -140,6 +141,21 @@ struct WeatherSheet: View {
                     }
                 }
                 Spacer()
+            }
+            if let r = store.states[WeatherConfig.stationRain], !r.isUnavailable {
+                let wet = r.state == "on"
+                HStack(spacing: 10) {
+                    Image(systemName: wet ? "cloud.rain.fill" : "sun.max.fill")
+                        .symbolRenderingMode(.multicolor).font(.title2)
+                    VStack(alignment: .leading, spacing: 1) {
+                        Text(wet ? "Es regnet gerade" : "Kein Regen").font(.subheadline.weight(.semibold))
+                        Text("Regensensor auf dem Dach" + (HADate.parse(r.last_changed).map { " · seit " + $0.formatted(date: .omitted, time: .shortened) } ?? ""))
+                            .font(.caption).foregroundStyle(.secondary)
+                    }
+                    Spacer()
+                }
+                .padding(12)
+                .background((wet ? Color.blue : Color.green).opacity(0.12), in: RoundedRectangle(cornerRadius: 14))
             }
             Grid(horizontalSpacing: 10, verticalSpacing: 10) {
                 GridRow {
