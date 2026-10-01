@@ -26,6 +26,7 @@ struct GeraetLiveActivity: Widget {
             let s = context.state
             let farbe = geraetFarbe(s)
             let stopp = context.attributes.geraet == "bewaesserung" && !s.fertig
+            if s.isCar { return carIsland(s) }
             return DynamicIsland {
                 DynamicIslandExpandedRegion(.leading) {
                     HStack(spacing: 8) {
@@ -306,37 +307,135 @@ private struct CarDetails: View {
     }
 }
 
+/// Entwurf 1 „Ring“: Ladestand als Ring, Auto-Symbol, Fertig-Uhrzeit, Stromherkunft
+private func carIsland(_ s: GeraetAttributes.ContentState) -> DynamicIsland {
+    DynamicIsland {
+        DynamicIslandExpandedRegion(.leading) {
+            SocRing(state: s, size: 50, line: 6, showText: true, font: 14)
+                .padding(.leading, 4)
+        }
+        DynamicIslandExpandedRegion(.center) {
+            VStack(alignment: .leading, spacing: 2) {
+                HStack(spacing: 5) {
+                    Image(systemName: "car.side.fill").font(.caption).foregroundStyle(.green)
+                    Text("Tesla").font(.headline)
+                }
+                Text(s.fertig ? "fertig geladen" : (s.kw.map { "lädt · \(kwText($0))" } ?? "lädt"))
+                    .font(.caption).foregroundStyle(.secondary)
+            }
+            .frame(maxWidth: .infinity, alignment: .leading)
+            .padding(.leading, 6)
+        }
+        DynamicIslandExpandedRegion(.trailing) {
+            VStack(alignment: .trailing, spacing: 0) {
+                if s.fertig {
+                    Image(systemName: "checkmark.circle.fill").font(.title2).foregroundStyle(.green)
+                } else if s.ende > Date().timeIntervalSince1970 {
+                    Text(Date(timeIntervalSince1970: s.ende), style: .time)
+                        .font(.title3.weight(.bold).monospacedDigit()).foregroundStyle(.green)
+                    Text("fertig").font(.caption2).foregroundStyle(.secondary)
+                } else if let z = s.ziel {
+                    Text("\(Int(z)) %").font(.title3.weight(.bold).monospacedDigit())
+                    Text("Ziel").font(.caption2).foregroundStyle(.secondary)
+                }
+            }
+            .padding(.trailing, 4)
+        }
+        DynamicIslandExpandedRegion(.bottom) {
+            if let pv = s.pv, let akku = s.akku, let netz = s.netz, !s.fertig {
+                SourceBar(pv: pv, akku: akku, netz: netz)
+                    .padding(.horizontal, 6)
+                    .padding(.top, 6)
+            }
+        }
+    } compactLeading: {
+        SocRing(state: s, size: 22, line: 3, symbol: "car.side.fill")
+    } compactTrailing: {
+        Text(s.soc.map { "\(Int($0))%" } ?? "–")
+            .font(.caption.weight(.bold).monospacedDigit())
+            .foregroundStyle(.green)
+    } minimal: {
+        SocRing(state: s, size: 22, line: 3, symbol: "car.side.fill")
+    }
+    .keylineTint(.green)
+}
+
+/// Ring mit Ladestand (grün) und Ziel-Markierung
+private struct SocRing: View {
+    let state: GeraetAttributes.ContentState
+    var size: CGFloat = 64
+    var line: CGFloat = 7
+    var showText = false
+    var font: CGFloat = 17
+    var symbol: String? = nil
+
+    var body: some View {
+        let soc = min(1, max(0, (state.soc ?? 0) / 100))
+        let ziel = min(1, max(0, (state.ziel ?? 100) / 100))
+        ZStack {
+            Circle().stroke(Color.white.opacity(0.15), lineWidth: line)
+            Circle().trim(from: 0, to: soc)
+                .stroke(Color.green, style: StrokeStyle(lineWidth: line, lineCap: .round))
+                .rotationEffect(.degrees(-90))
+            if ziel < 1, !state.fertig {
+                Circle().trim(from: max(0, ziel - 0.004), to: ziel)
+                    .stroke(Color.white.opacity(0.8), style: StrokeStyle(lineWidth: line))
+                    .rotationEffect(.degrees(-90))
+            }
+            if showText, let s = state.soc {
+                HStack(alignment: .firstTextBaseline, spacing: 0) {
+                    Text("\(Int(s))").font(.system(size: font, weight: .bold, design: .rounded).monospacedDigit())
+                    Text("%").font(.system(size: font * 0.6, weight: .semibold))
+                }
+                .foregroundStyle(.white)
+            } else if let symbol {
+                Image(systemName: symbol).font(.system(size: size * 0.38, weight: .semibold)).foregroundStyle(.green)
+            }
+        }
+        .frame(width: size, height: size)
+        .padding(line / 2)
+    }
+}
+
 private struct CarLockScreen: View {
     let state: GeraetAttributes.ContentState
 
     var body: some View {
-        VStack(alignment: .leading, spacing: 10) {
-            HStack(alignment: .center, spacing: 12) {
-                SymbolBadge(state: state, size: 40)
-                VStack(alignment: .leading, spacing: 1) {
-                    Text(state.titel).font(.headline).foregroundStyle(.white)
-                    Group {
-                        if state.fertig {
-                            Text("fertig geladen")
-                        } else if state.ende > Date().timeIntervalSince1970 {
-                            Text("lädt · fertig \(Date(timeIntervalSince1970: state.ende).formatted(date: .omitted, time: .shortened))")
-                        } else {
-                            Text("lädt")
+        VStack(alignment: .leading, spacing: 12) {
+            HStack(spacing: 14) {
+                SocRing(state: state, size: 62, line: 7, showText: true)
+                VStack(alignment: .leading, spacing: 3) {
+                    HStack(spacing: 6) {
+                        Image(systemName: "car.side.fill").foregroundStyle(.green)
+                        Text(state.fertig ? "Tesla geladen" : "Tesla lädt").font(.headline)
+                    }
+                    .foregroundStyle(.white)
+                    if state.fertig {
+                        Text(state.info.isEmpty ? "Fertig" : state.info).font(.subheadline).foregroundStyle(.green)
+                    } else {
+                        HStack(spacing: 0) {
+                            if let kw = state.kw { Text(kwText(kw) + (state.ende > Date().timeIntervalSince1970 ? " · " : "")) }
+                            if state.ende > Date().timeIntervalSince1970 {
+                                Text("fertig um ") + Text(Date(timeIntervalSince1970: state.ende), style: .time)
+                            }
                         }
+                        .font(.subheadline.weight(.medium)).foregroundStyle(.white.opacity(0.75))
+                        HStack(spacing: 0) {
+                            if let z = state.ziel { Text("Ziel \(Int(z)) %") }
+                            if state.ende > Date().timeIntervalSince1970 {
+                                Text(" · noch ")
+                                Text(timerInterval: Date()...Date(timeIntervalSince1970: state.ende), countsDown: true)
+                                    .frame(maxWidth: 60, alignment: .leading)
+                            }
+                        }
+                        .font(.caption).foregroundStyle(.white.opacity(0.65))
                     }
-                    .font(.caption).foregroundStyle(.white.opacity(0.7))
                 }
-                Spacer()
-                if let soc = state.soc {
-                    HStack(alignment: .firstTextBaseline, spacing: 2) {
-                        Text("\(Int(soc))").font(.system(size: 34, weight: .bold, design: .rounded).monospacedDigit())
-                        Text("%").font(.headline)
-                    }
-                    .foregroundStyle(state.fertig ? .green : .white)
-                }
+                Spacer(minLength: 0)
             }
-            CarBattery(state: state)
-            CarDetails(state: state)
+            if let pv = state.pv, let akku = state.akku, let netz = state.netz, !state.fertig {
+                SourceBar(pv: pv, akku: akku, netz: netz)
+            }
         }
     }
 }
