@@ -186,3 +186,27 @@ jobs:
         with:
           name: build-log
           path: build.log
+
+  testflight:
+    # eigener, günstiger Linux-Job: wartet auf Apples Verarbeitung und verteilt den Build an die TestFlight-Gruppe
+    needs: build
+    runs-on: ubuntu-latest
+    timeout-minutes: 40
+    steps:
+      - name: Code holen
+        uses: actions/checkout@v4
+
+      - name: Neuen Build in TestFlight freigeben
+        continue-on-error: true
+        timeout-minutes: 35
+        env:
+          ASC_KEY_ID: ${{ secrets.ASC_KEY_ID }}
+          ASC_ISSUER_ID: ${{ secrets.ASC_ISSUER_ID }}
+          ASC_KEY_P8: ${{ secrets.ASC_KEY_P8 }}
+          BUILD_NUMBER: ${{ github.run_number }}
+        run: |
+          [ -n "$ASC_KEY_ID" ] || exit 0
+          python3 -m pip install --quiet --user --break-system-packages pyjwt cryptography 2>/dev/null \
+            || python3 -m pip install --quiet --user pyjwt cryptography
+          python3 .github/scripts/testflight_assign.py
+
