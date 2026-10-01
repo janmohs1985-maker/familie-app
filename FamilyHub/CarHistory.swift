@@ -138,6 +138,7 @@ struct TeslaMonth: Identifiable {
     let month: Date
     var km = 0.0, kwh = 0.0, drives = 0
     var charged = 0.0, fast = 0.0, cost = 0.0
+    var homePV = 0.0, homeGrid = 0.0, homeCost = 0.0, homeSaved = 0.0
     var id: Date { month }
     var per100: Double? { km >= 20 && kwh > 0 ? kwh / km * 100 : nil }
 }
@@ -475,11 +476,115 @@ private struct RoutesMap: View {
     }
 }
 
+// MARK: Kosten zu Hause (aus evcc)
+
+/// Ein Ladevorgang an der Wallbox: wie viel aus PV/Hausakku, wie viel aus dem Netz, was es gekostet hat.
+/// PV-Strom zählt 0 € – „gekostet“ ist nur der Netzstrom. evcc bewertet PV mit der Einspeisevergütung,
+/// daraus wird der Netz-Anteil zurückgerechnet.
+struct HomeChargeCost {
+    let kwh: Double
+    let pv: Double
+    let grid: Double
+    let cost: Double
+    let saved: Double
+    let missedFeedIn: Double
+    var pvShare: Double { kwh > 0 ? pv / kwh : 0 }
+
+    static let feedIn = 0.11
+
+    init(_ s: ChargeSession) {
+        let e = s.kwh
+        let share = min(1, max(0, (s.solar ?? 0) / 100))
+        let pvKwh = e * share
+        let gridKwh = e - pvKwh
+        let feed = Self.feedIn
+        let est = s.price.map { max(0, $0 - pvKwh * feed) } ?? gridKwh * EnergyConfig.tariff(at: s.start)
+        // nie teurer als alles zum Tagpreis, nie billiger als alles zum Nachtpreis
+        let c = min(max(est, gridKwh * EnergyConfig.nightPrice), gridKwh * EnergyConfig.dayPrice)
+        let refKwh = s.referencePerKWh ?? 0
+        let ref = refKwh > 0.05 ? refKwh : EnergyConfig.tariff(at: s.start)
+        kwh = e
+        pv = pvKwh
+        grid = gridKwh
+        cost = c
+        saved = max(0, e * ref - c)
+        missedFeedIn = pvKwh * feed
+    }
+
+    static func sum(_ list: [HomeChargeCost]) -> (kwh: Double, pv: Double, grid: Double, cost: Double, saved: Double, missed: Double) {
+        list.reduce((0, 0, 0, 0, 0, 0)) { ($0.0 + $1.kwh, $0.1 + $1.pv, $0.2 + $1.grid, $0.3 + $1.cost, $0.4 + $1.saved, $0.5 + $1.missedFeedIn) }
+    }
+}
+
+enum HomeCharging {
+    /// evcc gibt es ab März 2025
+    static let since = Calendar.current.date(from: DateComponents(year: 2025, month: 3, day: 1))!
+
+    /// Tesla-Ladevorgänge an der Wallbox im Zeitraum
+    @MainActor
+    static func sessions(_ store: AppStore, from: Date, to: Date = Date()) async -> [ChargeSession] {
+        let cal = Calendar.current
+        var months: [(Int, Int)] = []
+        var d = cal.date(from: cal.dateComponents([.year, .month], from: max(from, since)))!
+        while d <= to {
+            let c = cal.dateComponents([.year, .month], from: d)
+            months.append((c.year!, c.month!))
+            d = cal.date(byAdding: .month, value: 1, to: d)!
+        }
+        var out: [ChargeSession] = []
+        for (y, m) in months {
+            out += await store.chargeSessions(year: y, month: m)
+        }
+        return out.filter { ($0.loadpoint.lowercased().contains("openwb") || $0.vehicle.lowercased().contains("tesla")) && $0.kwh > 0.1 }
+    }
+
+    /// passende evcc-Session zu einem TeslaLogger-Ladevorgang (größte zeitliche Überschneidung)
+    static func match(_ c: TeslaCharge, in sessions: [ChargeSession]) -> ChargeSession? {
+        let a0 = c.start, a1 = c.end ?? c.start.addingTimeInterval(3600)
+        var best: (ChargeSession, Double)?
+        for s in sessions {
+            let b0 = s.start, b1 = s.end ?? s.start.addingTimeInterval(max(s.duration, 3600))
+            let overlap = min(a1, b1).timeIntervalSince(max(a0, b0))
+            let near = abs(s.start.timeIntervalSince(a0)) < 3 * 3600
+            let score = overlap > 0 ? overlap : (near ? 0.5 : -1)
+            if score > 0, score > (best?.1 ?? 0) { best = (s, score) }
+        }
+        return best?.0
+    }
+}
+
+private struct HomeCostLine: View {
+    let cost: HomeChargeCost
+    var body: some View {
+        VStack(alignment: .leading, spacing: 4) {
+            GeometryReader { g in
+                HStack(spacing: 0) {
+                    Rectangle().fill(.yellow).frame(width: g.size.width * cost.pvShare)
+                    Rectangle().fill(.blue.opacity(0.6))
+                }
+            }
+            .frame(height: 5)
+            .clipShape(Capsule())
+            HStack(spacing: 8) {
+                Text("☀️ \(TeslaHistoryAPI.dec(cost.pv)) kWh")
+                Text("🔌 \(TeslaHistoryAPI.dec(cost.grid)) kWh")
+                Spacer(minLength: 0)
+                Text(Fmt.euro(cost.cost)).fontWeight(.semibold).foregroundStyle(.primary)
+                if cost.saved >= 0.05 { Text("−\(Fmt.euro(cost.saved))").foregroundStyle(.green) }
+            }
+            .font(.caption2.monospacedDigit())
+            .foregroundStyle(.secondary)
+        }
+    }
+}
+
 // MARK: Laden
 
 private struct ChargesList: View {
     let range: HistoryRange
+    @Environment(AppStore.self) private var store
     @State private var charges: [TeslaCharge] = []
+    @State private var costs: [Date: HomeChargeCost] = [:]
     @State private var loading = true
     @State private var error: String?
 
@@ -493,7 +598,7 @@ private struct ChargesList: View {
                     VStack(spacing: 0) {
                         ForEach(Array(charges.enumerated()), id: \.element.id) { i, c in
                             if i > 0 { Divider().padding(.leading, 52) }
-                            ChargeRow(charge: c)
+                            ChargeRow(charge: c, home: costs[c.start])
                         }
                     }
                     .cardSurface()
@@ -516,6 +621,20 @@ private struct ChargesList: View {
                 StatBlock(value: Fmt.kwh(total - fast), label: "zu Hause u. a.", color: .blue)
                 StatBlock(value: Fmt.kwh(fast), label: "Schnelllader", color: .red)
             }
+            if !costs.isEmpty {
+                let h = HomeChargeCost.sum(Array(costs.values))
+                Divider()
+                VStack(alignment: .leading, spacing: 8) {
+                    Text("Zu Hause (Wallbox)").font(.caption.weight(.semibold)).foregroundStyle(.secondary)
+                    HStack {
+                        StatBlock(value: "\(Int((h.kwh > 0 ? h.pv / h.kwh : 0) * 100)) %", label: "☀️ PV/Hausakku", color: .orange)
+                        StatBlock(value: Fmt.kwh(h.grid), label: "🔌 aus dem Netz", color: .blue)
+                        StatBlock(value: Fmt.euro(h.cost), label: "gekostet", color: .primary)
+                    }
+                    Text("\(Fmt.euro(h.saved)) gespart gegenüber nur Netzstrom · dafür \(Fmt.euro(h.missed)) weniger Einspeisevergütung")
+                        .font(.caption2).foregroundStyle(.secondary)
+                }
+            }
             if cost > 0 {
                 Text("Schnelllader-Kosten laut TeslaLogger: \(Fmt.euro(cost))").font(.caption).foregroundStyle(.secondary)
             }
@@ -533,6 +652,15 @@ private struct ChargesList: View {
             let c = try await TeslaHistoryAPI.send(p)
             charges = (c["laden"]?.array ?? []).compactMap(TeslaCharge.init)
             error = nil
+            let home = charges.filter { !$0.fast && $0.start >= HomeCharging.since }
+            if let first = home.map(\.start).min() {
+                let sessions = await HomeCharging.sessions(store, from: first)
+                var m: [Date: HomeChargeCost] = [:]
+                for ch in home { if let s = HomeCharging.match(ch, in: sessions) { m[ch.start] = HomeChargeCost(s) } }
+                costs = m
+            } else {
+                costs = [:]
+            }
         } catch {
             self.error = error.localizedDescription
         }
@@ -541,7 +669,17 @@ private struct ChargesList: View {
 
 private struct ChargeRow: View {
     let charge: TeslaCharge
+    var home: HomeChargeCost? = nil
     var body: some View {
+        VStack(alignment: .leading, spacing: 6) {
+            row
+            if let home { HomeCostLine(cost: home).padding(.leading, 42) }
+        }
+        .padding(.horizontal, 12)
+        .padding(.vertical, 10)
+    }
+
+    private var row: some View {
         HStack(spacing: 12) {
             Image(systemName: charge.fast ? "bolt.fill" : "ev.charger.fill")
                 .font(.body.weight(.semibold))
@@ -570,14 +708,13 @@ private struct ChargeRow: View {
                 }
             }
         }
-        .padding(.horizontal, 12)
-        .padding(.vertical, 10)
     }
 }
 
 // MARK: Statistik
 
 private struct CarStatsView: View {
+    @Environment(AppStore.self) private var store
     @State private var stats: TeslaStats?
     @State private var loading = true
     @State private var error: String?
@@ -627,6 +764,8 @@ private struct CarStatsView: View {
                             }
                         }
                     }
+                    let home = s.months.filter { $0.homePV + $0.homeGrid > 0 }.suffix(13)
+                    if !home.isEmpty { homeCard(Array(home)) }
                     if s.range100.count > 2 { battery(s) }
                     if !s.places.isEmpty { places(s) }
                 }
@@ -655,6 +794,33 @@ private struct CarStatsView: View {
                     Text("Aufgezeichnet seit \(since.formatted(.dateTime.month(.wide).year())) – Lücken, wenn TeslaLogger nicht lief.")
                         .font(.caption).foregroundStyle(.secondary).frame(maxWidth: .infinity, alignment: .leading)
                 }
+            }
+        }
+    }
+
+    private func homeCard(_ months: [TeslaMonth]) -> some View {
+        let pv = months.reduce(0) { $0 + $1.homePV }, grid = months.reduce(0) { $0 + $1.homeGrid }
+        let cost = months.reduce(0) { $0 + $1.homeCost }, saved = months.reduce(0) { $0 + $1.homeSaved }
+        return Card(title: "Laden zu Hause – Sonne oder Netz", symbol: "sun.max.fill") {
+            Chart {
+                ForEach(months) { m in
+                    BarMark(x: .value("Monat", m.month, unit: .month), y: .value("kWh", m.homePV))
+                        .foregroundStyle(by: .value("Quelle", "PV/Hausakku"))
+                    BarMark(x: .value("Monat", m.month, unit: .month), y: .value("kWh", m.homeGrid))
+                        .foregroundStyle(by: .value("Quelle", "Netz"))
+                }
+            }
+            .chartForegroundStyleScale(["PV/Hausakku": Color.yellow, "Netz": Color.blue.opacity(0.7)])
+            .chartXAxis { AxisMarks(values: .stride(by: .month, count: 2)) { _ in AxisValueLabel(format: .dateTime.month(.narrow)) } }
+            .frame(height: 170)
+            HStack {
+                StatBlock(value: "\(Int(pv + grid > 0 ? pv / (pv + grid) * 100 : 0)) %", label: "aus PV/Akku", color: .orange)
+                StatBlock(value: Fmt.euro(cost), label: "gekostet", color: .primary)
+                StatBlock(value: Fmt.euro(saved), label: "gespart", color: .green)
+            }
+            if let last = months.last {
+                Text("\(last.month.formatted(.dateTime.month(.wide))): \(Fmt.euro(last.homeCost)) für \(Fmt.kwh(last.homePV + last.homeGrid)) – davon \(Int(last.homePV / max(0.01, last.homePV + last.homeGrid) * 100)) % Sonne")
+                    .font(.caption).foregroundStyle(.secondary)
             }
         }
     }
@@ -728,6 +894,22 @@ private struct CarStatsView: View {
             s.odometer = c["gesamt"]?["km"]?.double
             s.drives = Int(c["gesamt"]?["n"]?.double ?? 0)
             s.since = TeslaHistoryAPI.date(c["gesamt"]?["seit"])
+            // evcc: Laden zu Hause nach Quelle und Kosten (ab März 2025, letzte 13 Monate)
+            let from = Calendar.current.date(byAdding: .month, value: -12, to: Date())!
+            let startMonth = Calendar.current.date(from: Calendar.current.dateComponents([.year, .month], from: from))!
+            for sess in await HomeCharging.sessions(store, from: startMonth) {
+                let m = Calendar.current.date(from: Calendar.current.dateComponents([.year, .month], from: sess.start))!
+                let c = HomeChargeCost(sess)
+                if let i = s.months.firstIndex(where: { $0.month == m }) {
+                    s.months[i].homePV += c.pv; s.months[i].homeGrid += c.grid
+                    s.months[i].homeCost += c.cost; s.months[i].homeSaved += c.saved
+                } else {
+                    var x = TeslaMonth(month: m)
+                    x.homePV = c.pv; x.homeGrid = c.grid; x.homeCost = c.cost; x.homeSaved = c.saved
+                    s.months.append(x)
+                    s.months.sort { $0.month < $1.month }
+                }
+            }
             stats = s
             error = nil
         } catch {
