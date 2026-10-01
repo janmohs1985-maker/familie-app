@@ -60,6 +60,7 @@ private func geraetFarbe(_ s: GeraetAttributes.ContentState) -> Color {
     if y.contains("dishwasher") { return .teal }
     if y.contains("dryer") || y.contains("oven") { return .orange }
     if y.contains("cloud") { return .cyan }
+    if y.contains("bolt") { return .green }
     if y.contains("sprinkler") || y.contains("drop") || y.contains("tree") || y.contains("spigot") { return .green }
     return .blue
 }

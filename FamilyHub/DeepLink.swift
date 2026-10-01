@@ -10,7 +10,7 @@ enum DeepLink {
     static let zuhausePages: [String: KidFeature?] = [
         "essen": .essensplan, "sauger": .saugroboter, "pool": .pool, "strom": .strom, "heizung": .heizung,
         "bewaesserung": .bewaesserung, "internet": .internet, "rauchmelder": .rauchmelder, "geraete": nil, "beschattung": .beschattung, "waesche": .waesche, "haushalt": .waesche, "vitrinen": nil, "haustuer": .haustuer, "musik": .musik, "schule": .schulmappe,
-        "stundenplan": .stundenplan, "scanner": nil, "gaeste": nil, "auto": nil,
+        "stundenplan": .stundenplan, "scanner": nil, "gaeste": nil, "auto": nil, "laden": nil,
     ]
 }
 
@@ -70,7 +70,7 @@ struct DeepLinkDestination: View {
         case "musik": MusicView()
         case "schule": SchoolDocsView(kid: store.activeKid)
         case "stundenplan": TimetableView(kid: store.activeKid)
-        case "auto": CarPage()
+        case "auto", "laden": CarPage()
         case "scanner": DocumentsView()
         case "gaeste": GuestWifiView()
         default: Text("Seite nicht gefunden").foregroundStyle(.secondary)

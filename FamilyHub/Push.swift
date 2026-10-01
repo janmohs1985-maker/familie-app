@@ -68,7 +68,13 @@ final class AppDelegate: NSObject, UIApplicationDelegate, UNUserNotificationCent
             UNTextInputNotificationAction(identifier: "r_text", title: "💬 Antworten …", options: [],
                                           textInputButtonTitle: "Senden", textInputPlaceholder: "Antwort"),
         ], intentIdentifiers: [], options: [])
-        UNUserNotificationCenter.current().setNotificationCategories([klingel, aufgabe, mitbringen, rufen])
+        // Tesla eingesteckt (lange drücken): wie laden?
+        let laden = UNNotificationCategory(identifier: "LADEN", actions: [
+            UNNotificationAction(identifier: "l_nacht", title: "🌙 Ab 0 Uhr (Nachtstrom)", options: []),
+            UNNotificationAction(identifier: "l_sonne", title: "☀️ Nur mit Sonne", options: []),
+            UNNotificationAction(identifier: "l_sofort", title: "⚡ Sofort laden", options: []),
+        ], intentIdentifiers: [], options: [])
+        UNUserNotificationCenter.current().setNotificationCategories([klingel, aufgabe, mitbringen, rufen, laden])
         return true
     }
 
@@ -107,6 +113,15 @@ final class AppDelegate: NSObject, UIApplicationDelegate, UNUserNotificationCent
             let answer = response.actionIdentifier == "r_5" ? "⏱ 5 Minuten" : (response.actionIdentifier == "r_komme" ? "👍 Komme!" : text)
             Task {
                 await CallBridge.answer(id: String(link.dropFirst("rufen_".count)), text: answer)
+                completionHandler()
+            }
+            return
+        }
+        if response.actionIdentifier.hasPrefix("l_") {
+            let wahl = String(response.actionIdentifier.dropFirst(2))
+            Task {
+                _ = try? await CallBridge.client().callWithResponse("rest_command", "familie_laden",
+                    ["daten": ["wahl": wahl, "token": CallBridge.token]], timeout: 30)
                 completionHandler()
             }
             return
