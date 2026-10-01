@@ -114,6 +114,17 @@ jobs:
             grep -E "error:" build.log | sort -u | head -25 | sed 's/^/::error::/' || true
             test -f export/Familie.ipa
             cp export/Familie.ipa Familie.ipa
+            # Watch-App prüfen (Einträge, Architekturen, Signatur) – als Hinweise am Lauf
+            W=build/Familie.xcarchive/Products/Applications/Familie.app/Watch/FamilieWatch.app
+            if [ -d "$W" ]; then
+              plutil -convert json -o - "$W/Info.plist" | python3 -c "import json,sys;d=json.load(sys.stdin);print('::notice::Watch Info: '+json.dumps({k:d.get(k) for k in ('CFBundleIdentifier','WKApplication','WKCompanionAppBundleIdentifier','WKRunsIndependentlyOfCompanionApp','MinimumOSVersion','UIDeviceFamily','CFBundleSupportedPlatforms','CFBundleExecutable','CFBundleIcons','DTPlatformName','CFBundleShortVersionString','CFBundleVersion')}))" || true
+              echo "::notice::Watch Arch: $(lipo -info "$W/FamilieWatch" 2>&1 | tail -c 200)"
+              echo "::notice::Watch Dateien: $(ls "$W" | tr '\n' ' ')"
+              echo "::notice::App Version: $(plutil -extract CFBundleShortVersionString raw build/Familie.xcarchive/Products/Applications/Familie.app/Info.plist) / $(plutil -extract CFBundleVersion raw build/Familie.xcarchive/Products/Applications/Familie.app/Info.plist)"
+              codesign -d --entitlements :- "$W" 2>/dev/null | plutil -convert json -o - - 2>/dev/null | head -c 600 | sed 's/^/::notice::Watch Rechte: /' || true
+            else
+              echo "::warning::Keine Watch-App im Archiv"
+            fi
             # 4) Zusätzlich zu TestFlight hochladen (mit Watch-App) – Fehler hier lassen den Build nicht scheitern
             if [ -n "$AS_APP" ] && [ -n "$AS_WATCH" ]; then
               mkdir -p "$RUNNER_TEMP/keys"
