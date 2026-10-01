@@ -176,6 +176,7 @@ struct CarPage: View {
     @State private var planOn = false
     @State private var planSoc = 80
     @State private var planTime = CarPage.defaultPlanTime()
+    @State private var carCamera: MapCameraPosition = .automatic
 
     static func defaultPlanTime() -> Date {
         let cal = Calendar.current
@@ -361,13 +362,26 @@ struct CarPage: View {
     }
 
     @ViewBuilder private var mapCard: some View {
-        if let s = store.states[CarConfig.tracker], let lat = s.attr("latitude")?.double, let lon = s.attr("longitude")?.double {
-            let c = CLLocationCoordinate2D(latitude: lat, longitude: lon)
-            Map(initialPosition: .region(MKCoordinateRegion(center: c, latitudinalMeters: 800, longitudinalMeters: 800))) {
+        if let c = carCoord {
+            Map(position: $carCamera) {
                 Marker("Tesla", systemImage: "car.fill", coordinate: c).tint(.red)
             }
             .frame(height: 200)
             .clipShape(RoundedRectangle(cornerRadius: DS.cardRadius, style: .continuous))
+            .onAppear { follow(c, animated: false) }
+            .onChange(of: "\(c.latitude),\(c.longitude)") { _, _ in follow(c, animated: true) }
         }
+    }
+
+    private var carCoord: CLLocationCoordinate2D? {
+        guard let s = store.states[CarConfig.tracker], let lat = s.attr("latitude")?.double,
+              let lon = s.attr("longitude")?.double else { return nil }
+        return CLLocationCoordinate2D(latitude: lat, longitude: lon)
+    }
+
+    /// Karte läuft mit dem Auto mit
+    private func follow(_ c: CLLocationCoordinate2D, animated: Bool) {
+        let r = MKCoordinateRegion(center: c, latitudinalMeters: 800, longitudinalMeters: 800)
+        if animated { withAnimation(.easeInOut(duration: 0.8)) { carCamera = .region(r) } } else { carCamera = .region(r) }
     }
 }

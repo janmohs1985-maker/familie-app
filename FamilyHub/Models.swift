@@ -58,6 +58,7 @@ struct HAState: Decodable, Identifiable {
     let state: String
     let attributes: [String: JSONValue]
     let last_changed: String?
+    var last_updated: String? = nil
 
     var id: String { entity_id }
     var name: String { attributes["friendly_name"]?.string ?? entity_id }

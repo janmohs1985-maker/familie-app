@@ -45,6 +45,37 @@ extension AppStore {
 
     var homeCoordinate: CLLocationCoordinate2D? { coordinate(of: "zone.home") }
 
+    /// Wann das iPhone der Person zuletzt einen Standort gemeldet hat
+    func locationAge(of personID: String) -> Date? {
+        guard let s = states[personID] else { return nil }
+        let src = s.attr("source")?.string.flatMap { states[$0] }
+        return HADate.parse(src?.last_updated ?? s.last_updated ?? s.last_changed)
+    }
+
+    /// Home-Assistant-App auf den iPhones um einen frischen Standort bitten (höchstens alle 60 s)
+    static let locationNotify: [String: String] = [
+        "person.mohs": "mobile_app_iphone_jan", "person.vanessa": "mobile_app_iphone16pro_vany",
+        "person.emma": "mobile_app_iphone_emma", "person.leoni": "mobile_app_iphone_leoni",
+    ]
+    private static var lastLocationRequest = Date.distantPast
+
+    func requestFreshLocations(_ people: [String]? = nil) {
+        guard Date().timeIntervalSince(Self.lastLocationRequest) > 60 || people != nil else { return }
+        if people == nil { Self.lastLocationRequest = Date() }
+        let targets = (people ?? Array(Self.locationNotify.keys)).compactMap { Self.locationNotify[$0] }
+        Task {
+            await withTaskGroup(of: Void.self) { g in
+                for svc in targets {
+                    g.addTask { _ = try? await self.client.call("notify", svc, ["message": "request_location_update"]) }
+                }
+            }
+            for wait in [5, 10, 15] {
+                try? await Task.sleep(for: .seconds(wait))
+                await refreshStates()
+            }
+        }
+    }
+
     /// Akku des Geräts, über das die Person geortet wird
     func battery(of personID: String) -> Int? {
         guard let src = states[personID]?.attr("source")?.string else { return nil }

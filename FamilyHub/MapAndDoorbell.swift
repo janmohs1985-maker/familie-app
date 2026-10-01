@@ -86,6 +86,9 @@ struct PersonMapView: View {
                                 .foregroundStyle(b <= 15 ? Color.red : Color.primary)
                         }
                     }
+                    if let t = store.locationAge(of: person.id) {
+                        LabeledContent("Standort von", value: LocationAge.long(t))
+                    }
                     if let acc = state?.attr("gps_accuracy")?.int {
                         LabeledContent("Genauigkeit", value: "± \(acc) m")
                     }
@@ -110,6 +113,13 @@ struct PersonMapView: View {
             .navigationTitle(person.name)
             .navigationBarTitleDisplayMode(.inline)
             .toolbar { Button("Fertig") { dismiss() } }
+            .onAppear { store.requestFreshLocations([person.id]) }
+            .onChange(of: coord?.latitude) { _, _ in
+                guard let c = coord, track.count <= 1 else { return }
+                withAnimation(.easeInOut(duration: 0.8)) {
+                    position = .region(MKCoordinateRegion(center: c, latitudinalMeters: 800, longitudinalMeters: 800))
+                }
+            }
             .task {
                 guard let coord else { return }
                 position = .region(MKCoordinateRegion(center: coord, latitudinalMeters: 800, longitudinalMeters: 800))
@@ -170,9 +180,34 @@ struct FamilyMapView: View {
                 }
             }
             .ignoresSafeArea(edges: .bottom)
+            .safeAreaInset(edge: .bottom) {
+                HStack(spacing: 8) {
+                    ForEach(FamilyConfig.people) { p in
+                        if let t = store.locationAge(of: p.id) {
+                            HStack(spacing: 4) {
+                                Circle().fill(p.color).frame(width: 7, height: 7)
+                                Text(p.name + " " + LocationAge.short(t)).lineLimit(1)
+                            }
+                        }
+                    }
+                }
+                .font(.caption2.weight(.medium))
+                .padding(.horizontal, 12).padding(.vertical, 8)
+                .background(.ultraThinMaterial, in: Capsule())
+                .padding(.bottom, 8)
+            }
             .navigationTitle("Familie")
             .navigationBarTitleDisplayMode(.inline)
-            .toolbar { Button("Fertig") { dismiss() } }
+            .toolbar {
+                ToolbarItem(placement: .topBarLeading) {
+                    Button { store.requestFreshLocations(FamilyConfig.people.map(\.id)) } label: {
+                        Image(systemName: "location.circle")
+                    }
+                    .accessibilityLabel("Standorte jetzt abfragen")
+                }
+                ToolbarItem(placement: .topBarTrailing) { Button("Fertig") { dismiss() } }
+            }
+            .onAppear { store.requestFreshLocations() }
             .sheet(item: $selected) { p in PersonMapView(person: p) }
         }
     }
@@ -344,5 +379,21 @@ struct DoorbellView: View {
         } message: {
             Text("Einträge und Bilder werden endgültig entfernt.")
         }
+    }
+}
+
+
+enum LocationAge {
+    static func short(_ t: Date) -> String {
+        let m = Int(Date().timeIntervalSince(t) / 60)
+        if m < 1 { return "jetzt" }
+        if m < 60 { return "\(m) Min." }
+        if m < 24 * 60 { return "\(m / 60) Std." }
+        return "\(m / 1440) T."
+    }
+    static func long(_ t: Date) -> String {
+        let m = Int(Date().timeIntervalSince(t) / 60)
+        if m < 1 { return "gerade eben" }
+        return "vor " + short(t) + " (" + t.formatted(date: .omitted, time: .shortened) + ")"
     }
 }
