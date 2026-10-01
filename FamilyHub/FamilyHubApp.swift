@@ -103,6 +103,9 @@ struct MainTabs: View {
                 if visited.contains(t.id) || t.id == store.selectedTab {
                     let on = t.id == store.selectedTab
                     content(t.id)
+                        // Platz unter jeder Liste für die schwebende Menüleiste – gilt auch für Unterseiten
+                        // (z. B. Zuhause → Raum), damit die untersten Schalter erreichbar bleiben
+                        .contentMargins(.bottom, keyboard.visible ? 0 : DS.tabBarSpace, for: .scrollContent)
                         .opacity(on ? 1 : 0)
                         .allowsHitTesting(on)
                         .accessibilityHidden(!on)
@@ -110,7 +113,7 @@ struct MainTabs: View {
                 }
             }
         }
-        .safeAreaInset(edge: .bottom, spacing: 0) {
+        .overlay(alignment: .bottom) {
             if !keyboard.visible {
                 GlassTabBar(tabs: tabs, selection: Bindable(store).selectedTab)
                     .transition(.move(edge: .bottom).combined(with: .opacity))

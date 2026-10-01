@@ -7,6 +7,8 @@ import UIKit
 // Inhalte auf ruhigen, klaren Karten. Hell/Dunkel folgt dem iPhone.
 
 enum DS {
+    /// Platz, den die schwebende Menüleiste unten braucht (Listen scrollen bis darüber)
+    static let tabBarSpace: CGFloat = 84
     static let cardRadius: CGFloat = 22
     static let glassRadius: CGFloat = 28
     static let tileRadius: CGFloat = 18
