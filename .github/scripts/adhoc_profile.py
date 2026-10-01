@@ -92,11 +92,14 @@ cert = next((c for c in certs if c["attributes"].get("serialNumber", "").upper()
 if not cert:
     sys.exit("Das Zertifikat aus DIST_P12 wurde im Entwicklerkonto nicht gefunden (Seriennummer " + SERIAL + ").")
 
-# 3) Geräte
-devices = [d for d in all_pages("/devices?limit=200")
-           if d["attributes"].get("status") == "ENABLED" and d["attributes"].get("platform") in ("IOS", "UNIVERSAL")]
-if not devices:
-    sys.exit("Im Entwicklerkonto sind keine iPhones eingetragen.")
+# 3) Geräte (nicht für App-Store/TestFlight-Profile)
+PTYPE = os.environ.get("PROFILE_TYPE", "IOS_APP_ADHOC")
+devices = []
+if PTYPE == "IOS_APP_ADHOC":
+    devices = [d for d in all_pages("/devices?limit=200")
+               if d["attributes"].get("status") == "ENABLED" and d["attributes"].get("platform") in ("IOS", "UNIVERSAL")]
+    if not devices:
+        sys.exit("Im Entwicklerkonto sind keine iPhones eingetragen.")
 
 # 4) alte eigene Profile löschen, neues anlegen
 for p in all_pages("/profiles?limit=200"):
@@ -108,11 +111,11 @@ for p in all_pages("/profiles?limit=200"):
             print(f"Altes Profil nicht gelöscht (egal): {e}", file=sys.stderr)
 name = f"{PREFIX} {int(time.time())}"
 prof = call("POST", "/profiles", {"data": {"type": "profiles",
-    "attributes": {"name": name, "profileType": "IOS_APP_ADHOC"},
-    "relationships": {
+    "attributes": {"name": name, "profileType": PTYPE},
+    "relationships": dict({
         "bundleId": {"data": {"type": "bundleIds", "id": bundle_id}},
-        "certificates": {"data": [{"type": "certificates", "id": cert["id"]}]},
-        "devices": {"data": [{"type": "devices", "id": d["id"]} for d in devices]}}}})["data"]
+        "certificates": {"data": [{"type": "certificates", "id": cert["id"]}]}},
+        **({"devices": {"data": [{"type": "devices", "id": d["id"]} for d in devices]}} if devices else {}))}})["data"]
 
 content = base64.b64decode(prof["attributes"]["profileContent"])
 start, end = content.find(b"<?xml"), content.find(b"</plist>") + len(b"</plist>")

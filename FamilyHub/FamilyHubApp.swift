@@ -19,6 +19,7 @@ struct FamilyHubApp: App {
             AppLock.shared.sceneChanged(phase)
             if phase == .active, store.isLoggedIn {
                 store.startPolling()
+                WatchBridge.shared.start()
                 Task {
                     await store.refreshAll()
                     await store.reportDevice()
@@ -126,7 +127,10 @@ struct MainTabs: View {
             if parent { LiveActivityBridge.start() }
         }
         // für Siri merken, wer dieses iPhone benutzt (Eltern/Kind)
-        .onChange(of: "\(store.isParent)|\(store.activeKid ?? "")|\(store.myKey ?? "")", initial: true) { _, _ in SiriHA.remember(store) }
+        .onChange(of: "\(store.isParent)|\(store.activeKid ?? "")|\(store.myKey ?? "")", initial: true) { _, _ in
+            SiriHA.remember(store)
+            WatchBridge.shared.start()
+        }
         // neues Push-Token → sofort an Family Hub melden
         .onChange(of: push.token) { _, _ in Task { await store.reportDevice(force: true) } }
         // Mitteilung angetippt → passende Seite öffnen

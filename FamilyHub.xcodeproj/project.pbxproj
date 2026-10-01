@@ -11,12 +11,14 @@
 		F0A1000000000000000000D1 /* FamilieMitteilung.appex */ = {isa = PBXFileReference; explicitFileType = "wrapper.app-extension"; includeInIndex = 0; path = FamilieMitteilung.appex; sourceTree = BUILT_PRODUCTS_DIR; };
 		F0A1000000000000000000E1 /* FamilieKlingel.appex */ = {isa = PBXFileReference; explicitFileType = "wrapper.app-extension"; includeInIndex = 0; path = FamilieKlingel.appex; sourceTree = BUILT_PRODUCTS_DIR; };
 		F0A1000000000000000000F1 /* FamilieLive.appex */ = {isa = PBXFileReference; explicitFileType = "wrapper.app-extension"; includeInIndex = 0; path = FamilieLive.appex; sourceTree = BUILT_PRODUCTS_DIR; };
+		F0A100000000000000000101 /* FamilieWatch.app */ = {isa = PBXFileReference; explicitFileType = wrapper.application; includeInIndex = 0; path = FamilieWatch.app; sourceTree = BUILT_PRODUCTS_DIR; };
 /* End PBXFileReference section */
 
 /* Begin PBXBuildFile section */
 		F0A1000000000000000000D9 /* FamilieMitteilung.appex in Embed Foundation Extensions */ = {isa = PBXBuildFile; fileRef = F0A1000000000000000000D1 /* FamilieMitteilung.appex */; settings = {ATTRIBUTES = (RemoveHeadersOnCopy, ); }; };
 		F0A1000000000000000000E9 /* FamilieKlingel.appex in Embed Foundation Extensions */ = {isa = PBXBuildFile; fileRef = F0A1000000000000000000E1 /* FamilieKlingel.appex */; settings = {ATTRIBUTES = (RemoveHeadersOnCopy, ); }; };
 		F0A1000000000000000000F9 /* FamilieLive.appex in Embed Foundation Extensions */ = {isa = PBXBuildFile; fileRef = F0A1000000000000000000F1 /* FamilieLive.appex */; settings = {ATTRIBUTES = (RemoveHeadersOnCopy, ); }; };
+		F0A100000000000000000109 /* FamilieWatch.app in Embed Watch Content */ = {isa = PBXBuildFile; fileRef = F0A100000000000000000101 /* FamilieWatch.app */; settings = {ATTRIBUTES = (RemoveHeadersOnCopy, ); }; };
 /* End PBXBuildFile section */
 
 /* Begin PBXContainerItemProxy section */
@@ -41,6 +43,13 @@
 			remoteGlobalIDString = F0A1000000000000000000F5;
 			remoteInfo = FamilieLive;
 		};
+		F0A10000000000000000010A /* PBXContainerItemProxy */ = {
+			isa = PBXContainerItemProxy;
+			containerPortal = F0A1000000000000000000A9 /* Project object */;
+			proxyType = 1;
+			remoteGlobalIDString = F0A100000000000000000105;
+			remoteInfo = FamilieWatch;
+		};
 /* End PBXContainerItemProxy section */
 
 /* Begin PBXCopyFilesBuildPhase section */
@@ -55,6 +64,17 @@
 				F0A1000000000000000000F9 /* FamilieLive.appex in Embed Foundation Extensions */,
 			);
 			name = "Embed Foundation Extensions";
+			runOnlyForDeploymentPostprocessing = 0;
+		};
+		F0A10000000000000000010C /* Embed Watch Content */ = {
+			isa = PBXCopyFilesBuildPhase;
+			buildActionMask = 2147483647;
+			dstPath = "$(CONTENTS_FOLDER_PATH)/Watch";
+			dstSubfolderSpec = 16;
+			files = (
+				F0A100000000000000000109 /* FamilieWatch.app in Embed Watch Content */,
+			);
+			name = "Embed Watch Content";
 			runOnlyForDeploymentPostprocessing = 0;
 		};
 /* End PBXCopyFilesBuildPhase section */
@@ -78,6 +98,11 @@
 		F0A1000000000000000000F2 /* FamilieLive */ = {
 			isa = PBXFileSystemSynchronizedRootGroup;
 			path = FamilieLive;
+			sourceTree = "<group>";
+		};
+		F0A100000000000000000102 /* FamilieWatch */ = {
+			isa = PBXFileSystemSynchronizedRootGroup;
+			path = FamilieWatch;
 			sourceTree = "<group>";
 		};
 /* End PBXFileSystemSynchronizedRootGroup section */
@@ -111,6 +136,13 @@
 			);
 			runOnlyForDeploymentPostprocessing = 0;
 		};
+		F0A100000000000000000103 /* Frameworks */ = {
+			isa = PBXFrameworksBuildPhase;
+			buildActionMask = 2147483647;
+			files = (
+			);
+			runOnlyForDeploymentPostprocessing = 0;
+		};
 /* End PBXFrameworksBuildPhase section */
 
 /* Begin PBXGroup section */
@@ -121,6 +153,7 @@
 				F0A1000000000000000000D2 /* FamilieMitteilung */,
 				F0A1000000000000000000E2 /* FamilieKlingel */,
 				F0A1000000000000000000F2 /* FamilieLive */,
+				F0A100000000000000000102 /* FamilieWatch */,
 				F0A1000000000000000000A5 /* Products */,
 			);
 			sourceTree = "<group>";
@@ -132,6 +165,7 @@
 				F0A1000000000000000000D1 /* FamilieMitteilung.appex */,
 				F0A1000000000000000000E1 /* FamilieKlingel.appex */,
 				F0A1000000000000000000F1 /* FamilieLive.appex */,
+				F0A100000000000000000101 /* FamilieWatch.app */,
 			);
 			name = Products;
 			sourceTree = "<group>";
@@ -147,6 +181,7 @@
 				F0A1000000000000000000A3 /* Frameworks */,
 				F0A1000000000000000000A8 /* Resources */,
 				F0A1000000000000000000DC /* Embed Foundation Extensions */,
+				F0A10000000000000000010C /* Embed Watch Content */,
 			);
 			buildRules = (
 			);
@@ -154,6 +189,7 @@
 				F0A1000000000000000000DB /* PBXTargetDependency */,
 				F0A1000000000000000000EB /* PBXTargetDependency */,
 				F0A1000000000000000000FB /* PBXTargetDependency */,
+				F0A10000000000000000010B /* PBXTargetDependency */,
 			);
 			fileSystemSynchronizedGroups = (
 				F0A1000000000000000000A2 /* FamilyHub */,
@@ -231,6 +267,28 @@
 			productReference = F0A1000000000000000000F1 /* FamilieLive.appex */;
 			productType = "com.apple.product-type.app-extension";
 		};
+		F0A100000000000000000105 /* FamilieWatch */ = {
+			isa = PBXNativeTarget;
+			buildConfigurationList = F0A100000000000000000106 /* Build configuration list for PBXNativeTarget "FamilieWatch" */;
+			buildPhases = (
+				F0A100000000000000000104 /* Sources */,
+				F0A100000000000000000103 /* Frameworks */,
+				F0A10000000000000000010D /* Resources */,
+			);
+			buildRules = (
+			);
+			dependencies = (
+			);
+			fileSystemSynchronizedGroups = (
+				F0A100000000000000000102 /* FamilieWatch */,
+			);
+			name = FamilieWatch;
+			packageProductDependencies = (
+			);
+			productName = FamilieWatch;
+			productReference = F0A100000000000000000101 /* FamilieWatch.app */;
+			productType = "com.apple.product-type.application";
+		};
 /* End PBXNativeTarget section */
 
 /* Begin PBXProject section */
@@ -253,6 +311,9 @@
 					F0A1000000000000000000F5 = {
 						CreatedOnToolsVersion = 16.0;
 					};
+					F0A100000000000000000105 = {
+						CreatedOnToolsVersion = 16.0;
+					};
 				};
 			};
 			buildConfigurationList = F0A1000000000000000000B0 /* Build configuration list for PBXProject "FamilyHub" */;
@@ -273,6 +334,7 @@
 				F0A1000000000000000000D5 /* FamilieMitteilung */,
 				F0A1000000000000000000E5 /* FamilieKlingel */,
 				F0A1000000000000000000F5 /* FamilieLive */,
+				F0A100000000000000000105 /* FamilieWatch */,
 			);
 		};
 /* End PBXProject section */
@@ -300,6 +362,13 @@
 			runOnlyForDeploymentPostprocessing = 0;
 		};
 		F0A1000000000000000000FD /* Resources */ = {
+			isa = PBXResourcesBuildPhase;
+			buildActionMask = 2147483647;
+			files = (
+			);
+			runOnlyForDeploymentPostprocessing = 0;
+		};
+		F0A10000000000000000010D /* Resources */ = {
 			isa = PBXResourcesBuildPhase;
 			buildActionMask = 2147483647;
 			files = (
@@ -337,6 +406,13 @@
 			);
 			runOnlyForDeploymentPostprocessing = 0;
 		};
+		F0A100000000000000000104 /* Sources */ = {
+			isa = PBXSourcesBuildPhase;
+			buildActionMask = 2147483647;
+			files = (
+			);
+			runOnlyForDeploymentPostprocessing = 0;
+		};
 /* End PBXSourcesBuildPhase section */
 
 /* Begin PBXTargetDependency section */
@@ -354,6 +430,11 @@
 			isa = PBXTargetDependency;
 			target = F0A1000000000000000000F5 /* FamilieLive */;
 			targetProxy = F0A1000000000000000000FA /* PBXContainerItemProxy */;
+		};
+		F0A10000000000000000010B /* PBXTargetDependency */ = {
+			isa = PBXTargetDependency;
+			target = F0A100000000000000000105 /* FamilieWatch */;
+			targetProxy = F0A10000000000000000010A /* PBXContainerItemProxy */;
 		};
 /* End PBXTargetDependency section */
 
@@ -666,6 +747,66 @@
 			};
 			name = Release;
 		};
+		F0A100000000000000000107 /* Debug */ = {
+			isa = XCBuildConfiguration;
+			buildSettings = {
+				ASSETCATALOG_COMPILER_APPICON_NAME = AppIcon;
+				CODE_SIGN_STYLE = Automatic;
+				CURRENT_PROJECT_VERSION = 1;
+				DEVELOPMENT_TEAM = "";
+				GENERATE_INFOPLIST_FILE = YES;
+				INFOPLIST_KEY_CFBundleDisplayName = Familie;
+				INFOPLIST_KEY_UISupportedInterfaceOrientations = "UIInterfaceOrientationPortrait UIInterfaceOrientationPortraitUpsideDown";
+				INFOPLIST_KEY_WKApplication = YES;
+				INFOPLIST_KEY_WKCompanionAppBundleIdentifier = es.mohs.familie;
+				INFOPLIST_KEY_WKRunsIndependentlyOfCompanionApp = NO;
+				LD_RUNPATH_SEARCH_PATHS = (
+					"$(inherited)",
+					"@executable_path/Frameworks",
+				);
+				MARKETING_VERSION = 1.0;
+				PRODUCT_BUNDLE_IDENTIFIER = es.mohs.familie.watchkitapp;
+				PRODUCT_NAME = "$(TARGET_NAME)";
+				PROVISIONING_PROFILE_SPECIFIER = "$(FAMILIE_PROFILE_WATCH)";
+				SDKROOT = watchos;
+				SKIP_INSTALL = YES;
+				SUPPORTED_PLATFORMS = "watchos watchsimulator";
+				SWIFT_VERSION = 5.0;
+				TARGETED_DEVICE_FAMILY = 4;
+				WATCHOS_DEPLOYMENT_TARGET = 10.0;
+			};
+			name = Debug;
+		};
+		F0A100000000000000000108 /* Release */ = {
+			isa = XCBuildConfiguration;
+			buildSettings = {
+				ASSETCATALOG_COMPILER_APPICON_NAME = AppIcon;
+				CODE_SIGN_STYLE = Automatic;
+				CURRENT_PROJECT_VERSION = 1;
+				DEVELOPMENT_TEAM = "";
+				GENERATE_INFOPLIST_FILE = YES;
+				INFOPLIST_KEY_CFBundleDisplayName = Familie;
+				INFOPLIST_KEY_UISupportedInterfaceOrientations = "UIInterfaceOrientationPortrait UIInterfaceOrientationPortraitUpsideDown";
+				INFOPLIST_KEY_WKApplication = YES;
+				INFOPLIST_KEY_WKCompanionAppBundleIdentifier = es.mohs.familie;
+				INFOPLIST_KEY_WKRunsIndependentlyOfCompanionApp = NO;
+				LD_RUNPATH_SEARCH_PATHS = (
+					"$(inherited)",
+					"@executable_path/Frameworks",
+				);
+				MARKETING_VERSION = 1.0;
+				PRODUCT_BUNDLE_IDENTIFIER = es.mohs.familie.watchkitapp;
+				PRODUCT_NAME = "$(TARGET_NAME)";
+				PROVISIONING_PROFILE_SPECIFIER = "$(FAMILIE_PROFILE_WATCH)";
+				SDKROOT = watchos;
+				SKIP_INSTALL = YES;
+				SUPPORTED_PLATFORMS = "watchos watchsimulator";
+				SWIFT_VERSION = 5.0;
+				TARGETED_DEVICE_FAMILY = 4;
+				WATCHOS_DEPLOYMENT_TARGET = 10.0;
+			};
+			name = Release;
+		};
 /* End XCBuildConfiguration section */
 
 /* Begin XCConfigurationList section */
@@ -710,6 +851,15 @@
 			buildConfigurations = (
 				F0A1000000000000000000F7 /* Debug */,
 				F0A1000000000000000000F8 /* Release */,
+			);
+			defaultConfigurationIsVisible = 0;
+			defaultConfigurationName = Release;
+		};
+		F0A100000000000000000106 /* Build configuration list for PBXNativeTarget "FamilieWatch" */ = {
+			isa = XCConfigurationList;
+			buildConfigurations = (
+				F0A100000000000000000107 /* Debug */,
+				F0A100000000000000000108 /* Release */,
 			);
 			defaultConfigurationIsVisible = 0;
 			defaultConfigurationName = Release;
