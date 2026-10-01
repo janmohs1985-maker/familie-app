@@ -191,6 +191,7 @@ struct CarPage: View {
                 if store.states[CarConfig.lpConnected]?.state == "on" || store.states[CarConfig.lpCharging]?.state == "on" {
                     wallboxCard
                 }
+                CarHistoryLink()
                 planCard
                 infoCard
                 mapCard
