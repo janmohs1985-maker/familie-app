@@ -78,6 +78,8 @@ jobs:
               OTHER_CODE_SIGN_FLAGS="--keychain $KC" \
               MARKETING_VERSION="$VER" CURRENT_PROJECT_VERSION="$BUILD" > build.log 2>&1 || true
             grep -E "error:|ARCHIVE (SUCCEEDED|FAILED)" build.log | sort -u | head -60 || true
+            # Fehler zusätzlich als Hinweise am Lauf (lesbar ohne Anmeldung)
+            grep -E "error:" build.log | sort -u | head -25 | sed 's/^/::error::/' || true
             cat > export.plist <<PLIST
           <?xml version="1.0" encoding="UTF-8"?>
           <!DOCTYPE plist PUBLIC "-//Apple//DTD PLIST 1.0//EN" "http://www.apple.com/DTDs/PropertyList-1.0.dtd">
@@ -93,6 +95,7 @@ jobs:
             xcodebuild -exportArchive -archivePath build/Familie.xcarchive \
               -exportPath export -exportOptionsPlist export.plist >> build.log 2>&1 || true
             grep -E "error:|EXPORT (SUCCEEDED|FAILED)" build.log | sort -u | head -40 || true
+            grep -E "error:" build.log | sort -u | head -25 | sed 's/^/::error::/' || true
             security delete-keychain "$KC" || true
             test -f export/Familie.ipa
             cp export/Familie.ipa Familie.ipa
