@@ -185,6 +185,11 @@ actor HAClient {
         try JSONDecoder().decode([HAState].self, from: try await api("api/states"))
     }
 
+    /// Zustand einer einzelnen Entität (z. B. für Siri, ohne alles zu laden)
+    func state(_ entity: String) async throws -> HAState {
+        try JSONDecoder().decode(HAState.self, from: try await api("api/states/\(entity)"))
+    }
+
     func calendars() async throws -> [HACalendar] {
         try JSONDecoder().decode([HACalendar].self, from: try await api("api/calendars"))
     }
