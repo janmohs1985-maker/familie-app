@@ -8,6 +8,7 @@ struct EnergyDay: Identifiable {
     var pv: Double?
     var bought: Double?
     var sold: Double?
+    var boughtCost: Double?          // nach Tageszeit-Tarif
     var id: Date { date }
 
     var valid: Bool { pv != nil && bought != nil && sold != nil }
@@ -66,7 +67,13 @@ extension AppStore {
                 days[ms] = d
             }
         }
-        return days.values.filter(\.valid).sorted { $0.date < $1.date }
+        let costs = await boughtCostByDay(since: start)
+        let cal = Calendar.current
+        return days.values.filter(\.valid).map { d in
+            var d = d
+            d.boughtCost = costs[cal.startOfDay(for: d.date)]
+            return d
+        }.sorted { $0.date < $1.date }
     }
 
     func chargeSessions(year: Int, month: Int) async -> [ChargeSession] {
@@ -103,7 +110,7 @@ struct EnergyHistoryView: View {
     /// Richtung der Blätter-Animation
     @State private var forward = true
 
-    private var price: Double { store.num(EnergyConfig.price) ?? 0.29 }
+    private var price: Double { EnergyConfig.dayPrice }
     private var feed: Double { store.num(EnergyConfig.feedIn) ?? 0.11 }
     private var unit: Calendar.Component { mode == "tage" ? .day : .month }
 
@@ -133,12 +140,14 @@ struct EnergyHistoryView: View {
         var pv: Double = 0
         var bought: Double = 0
         var sold: Double = 0
+        var cost: Double = 0
         for d in list {
             pv += d.pv ?? 0
             bought += d.bought ?? 0
             sold += d.sold ?? 0
+            cost += d.boughtCost ?? (d.bought ?? 0) * EnergyConfig.dayPrice
         }
-        return EnergyDay(date: date, pv: pv, bought: bought, sold: sold)
+        return EnergyDay(date: date, pv: pv, bought: bought, sold: sold, boughtCost: cost)
     }
 
     private var selectedEntry: EnergyDay? { selectedIndex.map { all[$0] } }
@@ -161,7 +170,7 @@ struct EnergyHistoryView: View {
                     chartCard
                     sumCard
                 }
-                Text("Kosten gerechnet mit dem aktuellen Tarif (\(Int((price * 100).rounded())) ct Bezug, \(Int((feed * 100).rounded())) ct Einspeisung).")
+                Text("Kosten nach Tageszeit: \(EnergyConfig.tariffNote.replacingOccurrences(of: "Tarif: ", with: "")), Einspeisung \(Int((feed * 100).rounded())) ct.")
                     .font(.caption2).foregroundStyle(.secondary)
             }
             .padding()
@@ -344,7 +353,7 @@ struct EnergySummaryBlock: View {
     let feed: Double
 
     var body: some View {
-        let cost = (e.bought ?? 0) * price
+        let cost = e.boughtCost ?? (e.bought ?? 0) * price
         let income = (e.sold ?? 0) * feed
         let saved = e.own * price
         VStack(spacing: 12) {
@@ -487,7 +496,7 @@ struct ChargeSessionsView: View {
 
     private var monthSummary: some View {
         let list = sessions(month)
-        let t = SessionTotals(list, fallbackPrice: store.num(EnergyConfig.price) ?? 0.29)
+        let t = SessionTotals(list, fallbackPrice: EnergyConfig.dayPrice)
         let kwh: Double = t.kwh
         let cost: Double = t.cost
         let solar: Double = t.solarShare

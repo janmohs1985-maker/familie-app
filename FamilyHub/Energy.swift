@@ -18,6 +18,15 @@ enum EnergyConfig {
     static let voltages = ["sensor.solaredge_i1_m1_ac_voltage_an", "sensor.solaredge_i1_m1_ac_voltage_bn", "sensor.solaredge_i1_m1_ac_voltage_cn"]
     static let phasePower = ["sensor.solaredge_i1_m1_ac_power_a", "sensor.solaredge_i1_m1_ac_power_b", "sensor.solaredge_i1_m1_ac_power_c"]
     static let price = "sensor.evcc_tariff_grid"
+
+    // Euer Stromtarif (Zeitzonen): 0–5 Uhr Nachtstrom, sonst Tagstrom
+    static let nightPrice = 0.1735
+    static let dayPrice = 0.2936
+    static let nightUntilHour = 5
+    static func tariff(at d: Date) -> Double {
+        Calendar.current.component(.hour, from: d) < nightUntilHour ? nightPrice : dayPrice
+    }
+    static var tariffNote: String { "Tarif: 17,35 ct (0–5 Uhr) · 29,36 ct (5–24 Uhr)" }
     static let feedIn = "sensor.evcc_tariff_feed_in"
     static let co2 = "sensor.evcc_tariff_co2"
     static let solarShareTotal = "sensor.evcc_stat_total_solar_percentage"
@@ -59,6 +68,7 @@ struct EnergyToday {
     var bought: Double?
     var sold: Double?
     var water: Double?
+    var boughtCost: Double?           // Bezug × Tarif der jeweiligen Stunde
     /// Verbrauch ≈ Erzeugung + Bezug − Einspeisung (Akku gleicht sich über den Tag weitgehend aus)
     var usage: Double? {
         guard let pv, let bought, let sold else { return nil }
@@ -103,7 +113,26 @@ extension AppStore {
         async let b = todayChange(EnergyConfig.importEnergy)
         async let s = todayChange(EnergyConfig.exportEnergy)
         async let w = todayChange(EnergyConfig.water)
-        return await EnergyToday(pv: pv, bought: b, sold: s, water: w)
+        async let cost = boughtCostByDay(since: Calendar.current.startOfDay(for: Date()))
+        var t = await EnergyToday(pv: pv, bought: b, sold: s, water: w)
+        t.boughtCost = await cost.values.first
+        return t
+    }
+
+    /// Bezugskosten je Tag – stündlicher Bezug × Tarif der Stunde (Nachtstrom 0–5 Uhr)
+    func boughtCostByDay(since start: Date) async -> [Date: Double] {
+        guard let r = try? await client.websocket([
+            "type": "recorder/statistics_during_period", "start_time": HADate.iso.string(from: start),
+            "statistic_ids": [EnergyConfig.importEnergy], "period": "hour", "types": ["change"],
+        ]), let list = r[EnergyConfig.importEnergy]?.array else { return [:] }
+        let cal = Calendar.current
+        var out: [Date: Double] = [:]
+        for p in list {
+            guard let ms = p["start"]?.double, let c = p["change"]?.double, c >= 0, c < 50 else { continue }
+            let t = Date(timeIntervalSince1970: ms / 1000)
+            out[cal.startOfDay(for: t), default: 0] += c * EnergyConfig.tariff(at: t)
+        }
+        return out
     }
 
     func setSwitch(_ entity: String, _ on: Bool) async {
@@ -227,7 +256,7 @@ struct EnergyView: View {
                 HStack {
                     VStack(alignment: .leading, spacing: 2) {
                         Label("Gekauft \(Fmt.kwh(today.bought))", systemImage: "arrow.down.circle.fill").foregroundStyle(.red)
-                        if let b = today.bought, price > 0 { Text("ca. \(Fmt.euro(b * price))").font(.caption).foregroundStyle(.secondary) }
+                        if let c = today.boughtCost ?? today.bought.map({ $0 * price }), c > 0 { Text("ca. \(Fmt.euro(c))").font(.caption).foregroundStyle(.secondary) }
                     }
                     Spacer()
                     VStack(alignment: .trailing, spacing: 2) {
@@ -305,11 +334,17 @@ struct EnergyView: View {
     // MARK: Preis
 
     private var priceCard: some View {
-        Card(title: "Strompreis", symbol: "eurosign.circle.fill") {
+        let now = EnergyConfig.tariff(at: Date())
+        let night = now == EnergyConfig.nightPrice
+        return Card(title: "Strompreis", symbol: "eurosign.circle.fill") {
+            VStack(spacing: 8) {
             HStack {
-                StatBlock(value: store.num(EnergyConfig.price).map { "\(Int(($0 * 100).rounded())) ct" } ?? "–", label: "Bezug / kWh", color: .red)
+                StatBlock(value: String(format: "%.1f ct", now * 100).replacingOccurrences(of: ".", with: ","),
+                          label: night ? "jetzt · Nachtstrom" : "jetzt · Tagstrom", color: night ? .indigo : .red)
                 StatBlock(value: store.num(EnergyConfig.feedIn).map { "\(Int(($0 * 100).rounded())) ct" } ?? "–", label: "Einspeisung", color: .green)
                 StatBlock(value: store.num(EnergyConfig.co2).map { "\(Int($0)) g" } ?? "–", label: "CO₂ / kWh", color: .gray)
+            }
+            Text(EnergyConfig.tariffNote).font(.caption2).foregroundStyle(.secondary)
             }
         }
     }

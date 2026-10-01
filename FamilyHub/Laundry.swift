@@ -103,7 +103,7 @@ struct LaundryView: View {
     @State private var months: [String: [PoolPoint]] = [:]
     @State private var showAll = false
 
-    private var price: Double { store.num(EnergyConfig.price) ?? 0.29 }
+    private var price: Double { EnergyConfig.dayPrice }
 
     var body: some View {
         ScrollView {
