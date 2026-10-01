@@ -27,18 +27,18 @@ enum LiveActivityBridge {
         started = true
         if #available(iOS 17.2, *) {
             Task {
-                for await data in Activity<GeraetAttributes>.pushToStartTokenUpdates {
+                for await data in ActivityKit.Activity<GeraetAttributes>.pushToStartTokenUpdates {
                     await report(["la_start": hex(data)])
                 }
             }
         }
         Task {
-            for await activity in Activity<GeraetAttributes>.activityUpdates { observe(activity) }
+            for await activity in ActivityKit.Activity<GeraetAttributes>.activityUpdates { observe(activity) }
         }
-        for activity in Activity<GeraetAttributes>.activities { observe(activity) }
+        for activity in ActivityKit.Activity<GeraetAttributes>.activities { observe(activity) }
     }
 
-    private static func observe(_ activity: Activity<GeraetAttributes>) {
+    private static func observe(_ activity: ActivityKit.Activity<GeraetAttributes>) {
         Task {
             for await data in activity.pushTokenUpdates {
                 await report(["la_token": activity.attributes.geraet + ":" + hex(data)])
