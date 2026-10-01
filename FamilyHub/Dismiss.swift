@@ -18,6 +18,13 @@ final class Dismissed {
 
     func isHidden(_ key: String) -> Bool { keys.contains(key) }
 
+    var count: Int { keys.count }
+
+    func restoreAll() {
+        keys = []
+        UserDefaults.standard.set(keys, forKey: Self.storeKey)
+    }
+
     func hide(_ key: String) {
         guard !keys.contains(key) else { return }
         keys.append(key)

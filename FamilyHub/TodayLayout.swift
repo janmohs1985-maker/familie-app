@@ -157,6 +157,16 @@ struct TodayArrangeView: View {
                     Text("Mit ≡ rechts ziehen zum Sortieren, mit dem Auge ein- oder ausblenden. Gilt für alle Handys – die Kinder sehen davon nur ihre Karten.")
                 }
                 Section {
+                    Button {
+                        Dismissed.shared.restoreAll()
+                    } label: {
+                        Label("Weggewischte Einträge wieder zeigen", systemImage: "arrow.uturn.backward")
+                    }
+                    .disabled(Dismissed.shared.count == 0)
+                } footer: {
+                    Text("Unter „Aktuell“ kann man Einträge (z. B. Müll, Geräte) zur Seite wischen – hier holst du sie zurück.")
+                }
+                Section {
                     Button("Standard wiederherstellen", role: .destructive) {
                         order = TodayCardKind.ordered("")
                         hidden = []
