@@ -33,6 +33,110 @@ enum W {
     static let teslaCharging = "binary_sensor.evcc_openwb_charging"
     static let pv = "sensor.evcc_pv_power"
     static let grid = "sensor.evcc_grid_power"
+    static let mode = "select.evcc_openwb_mode"
+    static let costLimit = "number.evcc_openwb_smart_cost_limit"
+    static let nightLimit = 0.18
+}
+
+// MARK: Lademodus (wie am iPhone)
+
+enum ChargeMode: String, CaseIterable, Identifiable {
+    case sunNight, sun, now, off
+    var id: String { rawValue }
+    var title: String {
+        switch self {
+        case .sunNight: return "Sonne + Nachtstrom"
+        case .sun: return "Nur Sonne"
+        case .now: return "Sofort"
+        case .off: return "Aus"
+        }
+    }
+    var symbol: String {
+        switch self {
+        case .sunNight: return "moon.stars.fill"
+        case .sun: return "sun.max.fill"
+        case .now: return "bolt.fill"
+        case .off: return "pause.fill"
+        }
+    }
+    var color: Color {
+        switch self {
+        case .sunNight: return .indigo
+        case .sun: return .yellow
+        case .now: return .green
+        case .off: return .gray
+        }
+    }
+
+    static func current() async -> ChargeMode? {
+        guard let m = await WatchHA.shared.state(W.mode)?.state else { return nil }
+        switch m {
+        case "now": return .now
+        case "off": return .off
+        default:
+            let limit = Double(await WatchHA.shared.state(W.costLimit)?.state ?? "") ?? 0
+            return limit >= 0.17 ? .sunNight : .sun
+        }
+    }
+
+    func apply() async throws {
+        switch self {
+        case .sunNight:
+            try await WatchHA.shared.call("select", "select_option", ["entity_id": W.mode, "option": "smart"])
+            try await WatchHA.shared.call("number", "set_value", ["entity_id": W.costLimit, "value": W.nightLimit])
+        case .sun:
+            try await WatchHA.shared.call("select", "select_option", ["entity_id": W.mode, "option": "smart"])
+            try await WatchHA.shared.call("number", "set_value", ["entity_id": W.costLimit, "value": 0])
+        case .now:
+            try await WatchHA.shared.call("select", "select_option", ["entity_id": W.mode, "option": "now"])
+        case .off:
+            try await WatchHA.shared.call("select", "select_option", ["entity_id": W.mode, "option": "off"])
+        }
+    }
+}
+
+struct ChargeModeView: View {
+    @Binding var mode: ChargeMode?
+    @State private var busy: ChargeMode?
+    @State private var error: String?
+
+    var body: some View {
+        List {
+            ForEach(ChargeMode.allCases) { m in
+                Button {
+                    Task { await pick(m) }
+                } label: {
+                    HStack {
+                        Label(m.title, systemImage: m.symbol).foregroundStyle(m.color)
+                        Spacer()
+                        if busy == m {
+                            ProgressView().frame(width: 20)
+                        } else if mode == m {
+                            Image(systemName: "checkmark").foregroundStyle(.green)
+                        }
+                    }
+                }
+                .disabled(busy != nil)
+            }
+            if let error { Text(error).font(.footnote).foregroundStyle(.red) }
+        }
+        .navigationTitle("Laden")
+        .task { mode = await ChargeMode.current() ?? mode }
+    }
+
+    private func pick(_ m: ChargeMode) async {
+        busy = m
+        do {
+            try await m.apply()
+            mode = m
+            error = nil
+            WKInterfaceDevice.current().play(.success)
+        } catch {
+            self.error = error.localizedDescription
+            WKInterfaceDevice.current().play(.failure)
+        }
+        busy = nil
+    }
 }
 
 // MARK: Start
@@ -41,6 +145,7 @@ struct HomeView: View {
     let parent: Bool
     @State private var soc: Double?
     @State private var charging = false
+    @State private var mode: ChargeMode?
     @State private var pv: Double?
     @State private var grid: Double?
     @State private var gate: String?
@@ -72,6 +177,19 @@ struct HomeView: View {
                                 .font(.caption2).foregroundStyle(.yellow)
                         }
                     }
+                }
+            }
+
+            if parent {
+                NavigationLink {
+                    ChargeModeView(mode: $mode)
+                } label: {
+                    Label {
+                        VStack(alignment: .leading) {
+                            Text("Lademodus")
+                            Text(mode?.title ?? "…").font(.caption2).foregroundStyle(.secondary)
+                        }
+                    } icon: { Image(systemName: mode?.symbol ?? "ev.charger.fill").foregroundStyle(mode?.color ?? .green) }
                 }
             }
 
@@ -130,11 +248,13 @@ struct HomeView: View {
         async let p = WatchHA.shared.state(W.pv)
         async let g = WatchHA.shared.state(W.gateStatus)
         async let items = ShoppingView.openItems()
+        async let m = ChargeMode.current()
         soc = Double(await s?.state ?? "")
         charging = await c?.state == "on"
         pv = Double(await p?.state ?? "")
         gate = await g?.state
         openCount = await items?.count
+        mode = await m
     }
 
     private func run(_ what: Pending?) async {
