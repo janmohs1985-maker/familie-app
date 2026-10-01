@@ -57,3 +57,30 @@ enum LiveActivityBridge {
         _ = try? await client.call("rest_command", "familie_geraet_set", ["daten": data])
     }
 }
+
+
+// MARK: - Bewässerung: Live-Aktivität startet die App selbst (nur bei dem, der startet), mit Stopp-Knopf
+
+enum IrrigationLive {
+    static let key = "bewaesserung"
+
+    static func start(zone: String, symbol: String, minutes: Int) async {
+        guard ActivityAuthorizationInfo().areActivitiesEnabled else { return }
+        await endAll()
+        let now = Date().timeIntervalSince1970
+        let state = GeraetAttributes.ContentState(titel: zone, symbol: symbol, start: now, ende: now + Double(minutes * 60),
+                                                  fertig: false, info: "Bewässerung · \(minutes) Min.")
+        let content = ActivityContent(state: state, staleDate: Date(timeIntervalSince1970: state.ende + 60))
+        _ = try? ActivityKit.Activity<GeraetAttributes>.request(attributes: GeraetAttributes(geraet: key),
+                                                               content: content, pushType: .token)
+    }
+
+    static func endAll() async {
+        for a in ActivityKit.Activity<GeraetAttributes>.activities where a.attributes.geraet == key {
+            var s = a.content.state
+            s.fertig = true
+            s.info = "Gestoppt"
+            await a.end(ActivityContent(state: s, staleDate: nil), dismissalPolicy: .immediate)
+        }
+    }
+}

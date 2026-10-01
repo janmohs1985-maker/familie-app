@@ -12,12 +12,13 @@ struct FamilieLiveBundle: WidgetBundle {
 struct GeraetLiveActivity: Widget {
     var body: some WidgetConfiguration {
         ActivityConfiguration(for: GeraetAttributes.self) { context in
-            LockScreenView(state: context.state)
+            LockScreenView(state: context.state, geraet: context.attributes.geraet)
                 .padding(16)
                 .activityBackgroundTint(Color(.systemBackground).opacity(0.85))
                 .activitySystemActionForegroundColor(.primary)
         } dynamicIsland: { context in
             let s = context.state
+            let stopp = context.attributes.geraet == "bewaesserung" && !s.fertig
             return DynamicIsland {
                 DynamicIslandExpandedRegion(.leading) {
                     Image(systemName: s.fertig ? "checkmark.circle.fill" : s.symbol)
@@ -36,6 +37,7 @@ struct GeraetLiveActivity: Widget {
                     VStack(alignment: .leading, spacing: 6) {
                         if !s.info.isEmpty { Text(s.info).font(.caption).foregroundStyle(.secondary).lineLimit(1) }
                         Progress(state: s)
+                        if stopp { StopButton() }
                     }
                     .padding(.horizontal, 4)
                 }
@@ -54,11 +56,28 @@ struct GeraetLiveActivity: Widget {
 }
 
 private func geraetFarbe(_ s: GeraetAttributes.ContentState) -> Color {
-    s.symbol.contains("dishwasher") ? .teal : (s.symbol.contains("dryer") ? .orange : .blue)
+    let y = s.symbol
+    if y.contains("dishwasher") { return .teal }
+    if y.contains("dryer") || y.contains("oven") { return .orange }
+    if y.contains("cloud") { return .cyan }
+    if y.contains("sprinkler") || y.contains("drop") || y.contains("tree") || y.contains("spigot") { return .green }
+    return .blue
+}
+
+private struct StopButton: View {
+    var body: some View {
+        Button(intent: StopIrrigationIntent()) {
+            Label("Stopp", systemImage: "stop.fill")
+                .font(.subheadline.weight(.semibold))
+                .frame(maxWidth: .infinity)
+        }
+        .tint(.red)
+    }
 }
 
 private struct LockScreenView: View {
     let state: GeraetAttributes.ContentState
+    var geraet: String = ""
 
     var body: some View {
         HStack(spacing: 14) {
@@ -77,6 +96,7 @@ private struct LockScreenView: View {
                     Text(state.info).font(.caption).foregroundStyle(.secondary).lineLimit(1)
                 }
                 Progress(state: state)
+                if geraet == "bewaesserung" && !state.fertig { StopButton() }
             }
         }
     }

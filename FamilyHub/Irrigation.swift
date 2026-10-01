@@ -61,13 +61,16 @@ extension AppStore {
     }
 
     func startZone(_ z: IrrigationConfig.Zone, minutes: Int) async {
+        await IrrigationLive.start(zone: z.name, symbol: z.symbol, minutes: minutes)
         await sprinkler("run", ["entity_id": z.enabled, "run_seconds": minutes * 60])
     }
     func stopZone(_ z: IrrigationConfig.Zone) async {
         await sprinkler("stop", ["entity_id": z.enabled])
+        await IrrigationLive.endAll()
     }
     func stopAllZones() async {
         await sprinkler("stop", ["entity_id": IrrigationConfig.controller])
+        await IrrigationLive.endAll()
     }
     func setRainDelay(hours: Int) async {
         await sprinkler("set_rain_delay", ["entity_id": IrrigationConfig.controller, "rain_delay": hours])
