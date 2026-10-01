@@ -10,6 +10,13 @@ struct GeraetAttributes: ActivityAttributes {
         var ende: Double
         var fertig: Bool
         var info: String
+        // nur beim Auto-Laden (alte Aktivitäten haben die Felder nicht → nil)
+        var soc: Double? = nil
+        var ziel: Double? = nil
+        var kw: Double? = nil
+        var pv: Double? = nil
+        var akku: Double? = nil
+        var netz: Double? = nil
     }
     var geraet: String
 }
