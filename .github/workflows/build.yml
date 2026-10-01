@@ -65,12 +65,16 @@ jobs:
             PROFILE_KLINGEL=$(CERT_SERIAL="$CERT_SERIAL" BUNDLE_ID=es.mohs.familie.klingel BUNDLE_NAME="Familie Klingel" \
               PROFILE_PREFIX="Familie Klingel AdHoc CI" python3 .github/scripts/adhoc_profile.py)
             echo "Profil Klingel: $PROFILE_KLINGEL"
+            # Profil für die Live-Aktivität (Wäsche/Spülmaschine auf dem Sperrbildschirm)
+            PROFILE_LIVE=$(CERT_SERIAL="$CERT_SERIAL" BUNDLE_ID=es.mohs.familie.live BUNDLE_NAME="Familie Live" \
+              PROFILE_PREFIX="Familie Live AdHoc CI" python3 .github/scripts/adhoc_profile.py)
+            echo "Profil Live: $PROFILE_LIVE"
             # 3) Archiv bauen (manuell signiert, es entstehen keine neuen Zertifikate)
             xcodebuild archive \
               -project FamilyHub.xcodeproj -scheme FamilyHub -configuration Release \
               -destination generic/platform=iOS -archivePath build/Familie.xcarchive \
               DEVELOPMENT_TEAM="$TEAM_ID" CODE_SIGN_STYLE=Manual \
-              CODE_SIGN_IDENTITY="Apple Distribution" FAMILIE_PROFILE_APP="$PROFILE" FAMILIE_ENTITLEMENTS="$ENT" FAMILIE_PROFILE_NSE="$PROFILE_NSE" FAMILIE_PROFILE_KLINGEL="$PROFILE_KLINGEL" \
+              CODE_SIGN_IDENTITY="Apple Distribution" FAMILIE_PROFILE_APP="$PROFILE" FAMILIE_ENTITLEMENTS="$ENT" FAMILIE_PROFILE_NSE="$PROFILE_NSE" FAMILIE_PROFILE_KLINGEL="$PROFILE_KLINGEL" FAMILIE_PROFILE_LIVE="$PROFILE_LIVE" \
               OTHER_CODE_SIGN_FLAGS="--keychain $KC" \
               MARKETING_VERSION="$VER" CURRENT_PROJECT_VERSION="$BUILD" > build.log 2>&1 || true
             grep -E "error:|ARCHIVE (SUCCEEDED|FAILED)" build.log | sort -u | head -60 || true
@@ -82,7 +86,7 @@ jobs:
             <key>teamID</key><string>$TEAM_ID</string>
             <key>signingStyle</key><string>manual</string>
             <key>signingCertificate</key><string>Apple Distribution</string>
-            <key>provisioningProfiles</key><dict><key>es.mohs.familie</key><string>$PROFILE</string><key>es.mohs.familie.mitteilung</key><string>$PROFILE_NSE</string><key>es.mohs.familie.klingel</key><string>$PROFILE_KLINGEL</string></dict>
+            <key>provisioningProfiles</key><dict><key>es.mohs.familie</key><string>$PROFILE</string><key>es.mohs.familie.mitteilung</key><string>$PROFILE_NSE</string><key>es.mohs.familie.klingel</key><string>$PROFILE_KLINGEL</string><key>es.mohs.familie.live</key><string>$PROFILE_LIVE</string></dict>
             <key>thinning</key><string>&lt;none&gt;</string>
           </dict></plist>
           PLIST

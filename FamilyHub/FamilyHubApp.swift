@@ -121,6 +121,10 @@ struct MainTabs: View {
         }
         .animation(.easeOut(duration: 0.2), value: keyboard.visible)
         .onChange(of: store.selectedTab, initial: true) { _, t in visited.insert(t) }
+        // Live-Aktivitäten (Wäsche/Spülmaschine): Schlüssel an Family Hub melden – nur Eltern
+        .onChange(of: store.isParent && store.activeKid == nil, initial: true) { _, parent in
+            if parent { LiveActivityBridge.start() }
+        }
         // für Siri merken, wer dieses iPhone benutzt (Eltern/Kind)
         .onChange(of: "\(store.isParent)|\(store.activeKid ?? "")|\(store.myKey ?? "")", initial: true) { _, _ in SiriHA.remember(store) }
         // neues Push-Token → sofort an Family Hub melden
