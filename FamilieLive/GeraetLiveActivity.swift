@@ -22,7 +22,7 @@ struct GeraetLiveActivity: Widget {
                 DynamicIslandExpandedRegion(.leading) {
                     Image(systemName: s.fertig ? "checkmark.circle.fill" : s.symbol)
                         .font(.title2)
-                        .foregroundStyle(s.fertig ? .green : tint(s))
+                        .foregroundStyle(s.fertig ? .green : geraetFarbe(s))
                         .padding(.leading, 4)
                 }
                 DynamicIslandExpandedRegion(.trailing) {
@@ -41,19 +41,19 @@ struct GeraetLiveActivity: Widget {
                 }
             } compactLeading: {
                 Image(systemName: s.fertig ? "checkmark.circle.fill" : s.symbol)
-                    .foregroundStyle(s.fertig ? .green : tint(s))
+                    .foregroundStyle(s.fertig ? .green : geraetFarbe(s))
             } compactTrailing: {
                 TimeText(state: s, short: true).font(.caption.monospacedDigit().weight(.semibold))
                     .frame(maxWidth: 52)
             } minimal: {
                 Image(systemName: s.fertig ? "checkmark" : s.symbol)
-                    .foregroundStyle(s.fertig ? .green : tint(s))
+                    .foregroundStyle(s.fertig ? .green : geraetFarbe(s))
             }
         }
     }
 }
 
-private func tint(_ s: GeraetAttributes.ContentState) -> Color {
+private func geraetFarbe(_ s: GeraetAttributes.ContentState) -> Color {
     s.symbol.contains("dishwasher") ? .teal : (s.symbol.contains("dryer") ? .orange : .blue)
 }
 
@@ -64,9 +64,9 @@ private struct LockScreenView: View {
         HStack(spacing: 14) {
             Image(systemName: state.fertig ? "checkmark.circle.fill" : state.symbol)
                 .font(.system(size: 26, weight: .semibold))
-                .foregroundStyle(state.fertig ? .green : tint(state))
+                .foregroundStyle(state.fertig ? .green : geraetFarbe(state))
                 .frame(width: 48, height: 48)
-                .background((state.fertig ? Color.green : tint(state)).opacity(0.15), in: RoundedRectangle(cornerRadius: 14))
+                .background((state.fertig ? Color.green : geraetFarbe(state)).opacity(0.15), in: RoundedRectangle(cornerRadius: 14))
             VStack(alignment: .leading, spacing: 5) {
                 HStack(alignment: .firstTextBaseline) {
                     Text(state.titel).font(.headline)
@@ -109,7 +109,7 @@ private struct Progress: View {
         } else if state.ende > state.start, state.ende > Date().timeIntervalSince1970 {
             ProgressView(timerInterval: Date(timeIntervalSince1970: state.start)...Date(timeIntervalSince1970: state.ende),
                          countsDown: false) { EmptyView() } currentValueLabel: { EmptyView() }
-                .tint(tint(state))
+                .tint(geraetFarbe(state))
         } else {
             Text("läuft …").font(.caption).foregroundStyle(.secondary)
         }
