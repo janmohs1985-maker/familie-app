@@ -318,6 +318,7 @@ struct HomeAreasOverview: View {
     var body: some View {
         VStack(alignment: .leading, spacing: 12) {
             if store.allows(.raeume) { roomsCard }
+            if store.isParent && store.activeKid == nil && store.hasCar { CarCard() }
             LazyVGrid(columns: columns, spacing: 12) {
                 ForEach(HomeArea.allCases.filter { store.allowsArea($0) }) { a in
                     NavigationLink { HomeAreaPage(area: a) } label: { areaCard(a) }
