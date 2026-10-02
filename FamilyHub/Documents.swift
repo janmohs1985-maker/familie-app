@@ -608,6 +608,7 @@ struct ScanDetailView: View {
         }
         .controlSize(.large)
         .padding()
+        .padding(.bottom, DS.tabBarSpace - 10)   // Platz für die schwebende Tab-Leiste
         .background(.bar)
     }
 
