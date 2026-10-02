@@ -22,6 +22,7 @@ struct IPTVStatus {
         let vpn: Bool
         let route: Bool
         let blockiert: Bool
+        var ort: String = ""
         var viaVPN: Bool { vpn || route }
     }
     struct Sample: Identifiable {
@@ -43,6 +44,28 @@ struct IPTVStatus {
     var routen: [Route] = []
     var conns: [Conn] = []
     var verlauf: [Sample] = []
+    struct Ruckler: Identifiable, Hashable {
+        var id: Date { start }
+        let start: Date
+        let ende: Date
+        let von: Double
+        let auf: Double
+        var dauer: Int { max(10, Int(ende.timeIntervalSince(start))) }
+    }
+    struct Session: Identifiable, Hashable {
+        var id: Date { start }
+        let start: Date
+        let ende: Date
+        let mbit: Double
+        let ruckler: Int
+    }
+    var sessionStart: Date?
+    var sessionRuckler = 0
+    var ruckler: [Ruckler] = []
+    var sessions: [Session] = []
+    var melden = false
+    /// gerade etwas am Laufen?
+    var streaming: Bool { sessionStart != nil || rx > 1_000_000 }
 
     init() {}
 
@@ -66,8 +89,21 @@ struct IPTVStatus {
                  anzahl: v["anzahl"]?.int ?? 0, bytes: v["bytes"]?.int ?? 0,
                  erst: ms(v["erst"]), zuletzt: ms(v["zuletzt"]),
                  vpn: v["vpn"]?.string == "true", route: v["route"]?.string == "true",
-                 blockiert: (v["aktion"]?.string ?? "").lowercased().contains("block"))
+                 blockiert: (v["aktion"]?.string ?? "").lowercased().contains("block"),
+                 ort: v["ort"]?.string ?? "")
         }
+        func sec(_ v: JSONValue?) -> Date { Date(timeIntervalSince1970: v?.double ?? 0) }
+        if let st = c["sitzung"], st.object != nil {
+            sessionStart = sec(st["start"])
+            sessionRuckler = st["ruckler"]?.int ?? 0
+        }
+        ruckler = (c["ruckler"]?.array ?? []).map { r in
+            Ruckler(start: sec(r["start"]), ende: sec(r["ende"]), von: r["von"]?.double ?? 0, auf: r["auf"]?.double ?? 0)
+        }
+        sessions = (c["sitzungen"]?.array ?? []).map { r in
+            Session(start: sec(r["start"]), ende: sec(r["ende"]), mbit: r["mbit"]?.double ?? 0, ruckler: r["ruckler"]?.int ?? 0)
+        }
+        melden = c["melden"]?.string == "true"
         verlauf = (c["verlauf"]?.array ?? []).map { s in
             var g: [String: Double] = [:]
             for (k, v) in s["g"]?.object ?? [:] { g[k] = v.double ?? 0 }
@@ -87,6 +123,11 @@ struct IPTVStatus {
 
 @MainActor
 extension AppStore {
+    func setIPTVAlert(_ on: Bool) async {
+        _ = try? await client.callWithResponse("rest_command", "familie_iptv",
+                                               ["daten": ["aktion": "melden", "an": on]], timeout: 30)
+    }
+
     func loadIPTV(setup: Bool = false) async throws -> IPTVStatus {
         var d: [String: Any] = ["minuten": 180]
         if setup { d["aktion"] = "einrichten" }
@@ -107,230 +148,7 @@ enum Rate {
     static func full(_ bps: Double) -> String { text(bps) + " " + unit(bps) }
 }
 
-struct IPTVView: View {
-    @Environment(AppStore.self) private var store
-    @State private var st: IPTVStatus?
-    @State private var error: String?
-    @State private var routeBusy: String?
-    @State private var setupBusy = false
-
-    private var live: [IPTVStatus.Conn] { (st?.conns ?? []).filter { st?.isLive($0) ?? false } }
-    private var older: [IPTVStatus.Conn] { (st?.conns ?? []).filter { !(st?.isLive($0) ?? false) } }
-
-    var body: some View {
-        ScrollView {
-            VStack(spacing: 16) {
-                if let error { errorCard(error) }
-                if let st {
-                    hero(st)
-                    if !st.routen.isEmpty { routeCard(st) }
-                    devicesSection(st)
-                    if !st.log || (st.logTreffer == 0 && st.conns.isEmpty) { logHint(st) }
-                } else if error == nil {
-                    ProgressView("Frage UniFi …").frame(maxWidth: .infinity, minHeight: 220)
-                }
-            }
-            .padding()
-        }
-        .background(Color(.systemGroupedBackground))
-        .navigationTitle("Streaming")
-        .navigationBarTitleDisplayMode(.large)
-        .refreshable { await load() }
-        .task {
-            while !Task.isCancelled {
-                await load()
-                try? await Task.sleep(for: .seconds(5))
-            }
-        }
-    }
-
-    private func load(setup: Bool = false) async {
-        do {
-            let s = try await store.loadIPTV(setup: setup)
-            withAnimation(.easeInOut(duration: 0.35)) { st = s; error = nil }
-        } catch {
-            if st == nil { self.error = error.localizedDescription }
-        }
-    }
-
-    // MARK: Kopf mit Live-Durchsatz und Graph
-
-    private func hero(_ s: IPTVStatus) -> some View {
-        let live = !self.live.isEmpty || s.rx > 1_000_000
-        return VStack(alignment: .leading, spacing: 14) {
-            HStack(spacing: 8) {
-                Circle().fill(s.tunnelUp ? Color.green : Color.red)
-                    .frame(width: 8, height: 8)
-                    .shadow(color: s.tunnelUp ? .green : .red, radius: 4)
-                Text(s.tunnelUp ? "Tunnel verbunden" : "Tunnel getrennt")
-                    .font(.caption.weight(.semibold))
-                Text("· " + s.tunnelName).font(.caption).foregroundStyle(.white.opacity(0.6)).lineLimit(1)
-                Spacer()
-                if live {
-                    Label("LIVE", systemImage: "dot.radiowaves.left.and.right")
-                        .font(.caption2.weight(.heavy))
-                        .padding(.horizontal, 8).padding(.vertical, 4)
-                        .background(Color.red.gradient, in: Capsule())
-                        .symbolEffect(.variableColor.iterative, options: .repeating)
-                }
-            }
-            HStack(alignment: .firstTextBaseline, spacing: 6) {
-                Text(Rate.text(s.rx))
-                    .font(.system(size: 52, weight: .bold, design: .rounded))
-                    .contentTransition(.numericText())
-                    .monospacedDigit()
-                Text(Rate.unit(s.rx)).font(.title3.weight(.semibold)).foregroundStyle(.white.opacity(0.7))
-                Spacer()
-                VStack(alignment: .trailing, spacing: 2) {
-                    Label(Rate.full(s.rx), systemImage: "arrow.down").foregroundStyle(Color.cyan)
-                    Label(Rate.full(s.tx), systemImage: "arrow.up").foregroundStyle(Color.purple.opacity(0.9))
-                }
-                .font(.caption.weight(.semibold)).monospacedDigit()
-            }
-            Text("durch den VPN-Tunnel").font(.caption).foregroundStyle(.white.opacity(0.6)).padding(.top, -10)
-            chart(s)
-        }
-        .foregroundStyle(.white)
-        .padding(18)
-        .background(
-            LinearGradient(colors: [Color(red: 0.07, green: 0.09, blue: 0.20), Color(red: 0.16, green: 0.08, blue: 0.30)],
-                           startPoint: .topLeading, endPoint: .bottomTrailing),
-            in: RoundedRectangle(cornerRadius: 26, style: .continuous))
-        .overlay(RoundedRectangle(cornerRadius: 26, style: .continuous).strokeBorder(.white.opacity(0.08)))
-    }
-
-    @ViewBuilder private func chart(_ s: IPTVStatus) -> some View {
-        let pts = s.verlauf
-        if pts.count < 2 {
-            HStack { Spacer(); Text("Verlauf wird aufgezeichnet …").font(.caption).foregroundStyle(.white.opacity(0.5)); Spacer() }
-                .frame(height: 130)
-        } else {
-            Chart {
-                ForEach(pts) { p in
-                    AreaMark(x: .value("Zeit", p.t), y: .value("Mbit/s", p.rx / 1_000_000), series: .value("R", "rx"))
-                        .interpolationMethod(.catmullRom)
-                        .foregroundStyle(LinearGradient(colors: [Color.cyan.opacity(0.55), Color.cyan.opacity(0.02)],
-                                                        startPoint: .top, endPoint: .bottom))
-                    LineMark(x: .value("Zeit", p.t), y: .value("Mbit/s", p.rx / 1_000_000), series: .value("R", "rx"))
-                        .interpolationMethod(.catmullRom)
-                        .foregroundStyle(Color.cyan)
-                        .lineStyle(StrokeStyle(lineWidth: 2.5, lineCap: .round))
-                    LineMark(x: .value("Zeit", p.t), y: .value("Mbit/s", p.tx / 1_000_000), series: .value("R", "tx"))
-                        .interpolationMethod(.catmullRom)
-                        .foregroundStyle(Color.purple.opacity(0.9))
-                        .lineStyle(StrokeStyle(lineWidth: 1.5, lineCap: .round, dash: [3, 3]))
-                }
-                if let l = pts.last {
-                    PointMark(x: .value("Zeit", l.t), y: .value("Mbit/s", l.rx / 1_000_000))
-                        .foregroundStyle(.white).symbolSize(40)
-                }
-            }
-            .chartXAxis {
-                AxisMarks(values: .automatic(desiredCount: 4)) { _ in
-                    AxisValueLabel(format: .dateTime.hour().minute()).foregroundStyle(.white.opacity(0.5))
-                }
-            }
-            .chartYAxis {
-                AxisMarks(position: .trailing, values: .automatic(desiredCount: 3)) { v in
-                    AxisGridLine().foregroundStyle(.white.opacity(0.08))
-                    AxisValueLabel { if let d = v.as(Double.self) { Text("\(d, specifier: "%.0f")") } }
-                        .foregroundStyle(.white.opacity(0.5))
-                }
-            }
-            .frame(height: 130)
-        }
-    }
-
-    // MARK: Route-Schalter
-
-    private func routeCard(_ s: IPTVStatus) -> some View {
-        VStack(alignment: .leading, spacing: 10) {
-            Label("Port \(String(s.port)) über VPN", systemImage: "lock.shield.fill")
-                .font(.headline)
-            ForEach(s.routen) { r in
-                HStack {
-                    VStack(alignment: .leading, spacing: 2) {
-                        Text(r.name).font(.subheadline.weight(.semibold))
-                        Text(r.an ? "Streams gehen durch den Tunnel" : "Streams gehen direkt raus")
-                            .font(.caption).foregroundStyle(.secondary)
-                    }
-                    Spacer()
-                    if routeBusy == r.id { ProgressView() }
-                    Toggle("", isOn: Binding(get: { r.an }, set: { want in
-                        routeBusy = r.id
-                        Task {
-                            if let e = await store.setVPNRoute(r.id, on: want) { error = e }
-                            await load()
-                            routeBusy = nil
-                        }
-                    }))
-                    .labelsHidden().disabled(routeBusy != nil)
-                }
-            }
-        }
-        .padding(16)
-        .frame(maxWidth: .infinity, alignment: .leading)
-        .cardSurface()
-    }
-
-    // MARK: Geräte
-
-    @ViewBuilder private func devicesSection(_ s: IPTVStatus) -> some View {
-        VStack(alignment: .leading, spacing: 10) {
-            HStack {
-                Text("Gerade aktiv").font(.title3.weight(.bold))
-                Spacer()
-                Text("\(live.count)").font(.subheadline.weight(.bold)).monospacedDigit()
-                    .padding(.horizontal, 10).padding(.vertical, 3)
-                    .background(Color.accentColor.opacity(0.15), in: Capsule())
-            }
-            if live.isEmpty {
-                HStack(spacing: 12) {
-                    Image(systemName: "tv.slash").font(.title2).foregroundStyle(.secondary)
-                    Text(s.rx > 1_000_000
-                         ? "Im Tunnel fließen Daten – die Verbindung ist aber älter als das Protokoll."
-                         : "Gerade schaut niemand über Port \(String(s.port)).")
-                        .font(.subheadline).foregroundStyle(.secondary)
-                }
-                .padding(16).frame(maxWidth: .infinity, alignment: .leading).cardSurface()
-            }
-            ForEach(live) { c in ConnCard(c: c, st: s, live: true) }
-            if !older.isEmpty {
-                Text("Vorhin").font(.headline).foregroundStyle(.secondary).padding(.top, 6)
-                ForEach(older.prefix(10)) { c in ConnCard(c: c, st: s, live: false) }
-            }
-        }
-    }
-
-    private func logHint(_ s: IPTVStatus) -> some View {
-        VStack(alignment: .leading, spacing: 8) {
-            Label("Protokoll noch ohne Treffer", systemImage: "info.circle.fill").font(.headline)
-            if s.log {
-                Text("Die Regel „Familie-App: IPTV-Log“ ist angelegt. Damit UniFi sie zählt, muss sie in UniFi unter Einstellungen › Richtlinien-Engine › Zonen Intern › Extern **ganz oben** stehen (vor „Internet Out Log“).")
-                    .font(.subheadline).foregroundStyle(.secondary)
-            } else {
-                Text("Damit sichtbar wird, welches Gerät über Port \(String(s.port)) streamt, legt die App in UniFi eine Erlauben-und-Protokollieren-Regel an. Am Verkehr ändert sie nichts.")
-                    .font(.subheadline).foregroundStyle(.secondary)
-                Button {
-                    setupBusy = true
-                    Task { await load(setup: true); setupBusy = false }
-                } label: {
-                    HStack { if setupBusy { ProgressView() }; Text("Protokoll-Regel anlegen") }.frame(maxWidth: .infinity)
-                }
-                .buttonStyle(.borderedProminent).disabled(setupBusy)
-            }
-        }
-        .padding(16).frame(maxWidth: .infinity, alignment: .leading).cardSurface()
-    }
-
-    private func errorCard(_ e: String) -> some View {
-        Label(e, systemImage: "exclamationmark.triangle.fill")
-            .font(.subheadline).foregroundStyle(.orange)
-            .padding(14).frame(maxWidth: .infinity, alignment: .leading).cardSurface()
-    }
-}
-
-private struct ConnCard: View {
+struct ConnCard: View {
     let c: IPTVStatus.Conn
     let st: IPTVStatus
     let live: Bool
@@ -379,7 +197,7 @@ private struct ConnCard: View {
                 pathLine
                 VStack(alignment: .trailing, spacing: 1) {
                     Text(c.ziel).font(.subheadline.weight(.semibold)).monospacedDigit()
-                    Text(c.domain.isEmpty ? ":" + String(st.port) : c.domain + " :" + String(st.port))
+                    Text([c.ort, c.domain, ":" + String(st.port)].filter { !$0.isEmpty }.joined(separator: " "))
                         .font(.caption2).foregroundStyle(.secondary).lineLimit(1)
                 }
             }

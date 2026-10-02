@@ -9,7 +9,7 @@ enum DeepLink {
     /// Ziele, die als Seite unter „Zuhause“ geöffnet werden
     static let zuhausePages: [String: KidFeature?] = [
         "essen": .essensplan, "sauger": .saugroboter, "pool": .pool, "strom": .strom, "heizung": .heizung,
-        "bewaesserung": .bewaesserung, "internet": .internet, "rauchmelder": .rauchmelder, "geraete": nil, "beschattung": .beschattung, "waesche": .waesche, "haushalt": .waesche, "vitrinen": nil, "haustuer": .haustuer, "musik": .musik, "schule": .schulmappe,
+        "bewaesserung": .bewaesserung, "internet": .internet, "netzwerk": .internet, "streaming": nil, "weltkarte": nil, "rauchmelder": .rauchmelder, "geraete": nil, "beschattung": .beschattung, "waesche": .waesche, "haushalt": .waesche, "vitrinen": nil, "haustuer": .haustuer, "musik": .musik, "schule": .schulmappe,
         "stundenplan": .stundenplan, "scanner": nil, "gaeste": nil, "auto": nil, "laden": nil,
     ]
 }
@@ -59,7 +59,9 @@ struct DeepLinkDestination: View {
         case "strom": EnergyView()
         case "heizung": HeatingView()
         case "bewaesserung": IrrigationView()
-        case "internet": NetworkView()
+        case "internet", "netzwerk": NetworkView()
+        case "streaming": IPTVView()
+        case "weltkarte": WorldTrafficView()
         case "rauchmelder": SmokeView()
         case "geraete": DevicesView()
         case "beschattung": ShadingView()

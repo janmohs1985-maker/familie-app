@@ -244,6 +244,12 @@ struct NetworkView: View {
     @State private var routeBusy: String?
     @State private var modeError: String?
     @State private var trafficOpen = false
+    @State private var tab: NetTab = .overview
+    @State private var live = WorldTraffic()
+    @State private var liveStamp = Date()
+    @State private var iptv: IPTVStatus?
+    @State private var worldVP = TronViewport()
+    @State private var worldFull = false
 
     struct ConfirmAction: Identifiable {
         let id = UUID()
@@ -258,47 +264,45 @@ struct NetworkView: View {
         ScrollView {
             VStack(spacing: 16) {
                 ErrorBanner()
-                if loading && net == nil {
-                    ProgressView("Frage UniFi …").frame(maxWidth: .infinity, minHeight: 160)
+                if isParent {
+                    NetTabStrip(tab: $tab, live: live, stamp: liveStamp, iptv: iptv,
+                                vpnUp: vpnUp, vpnTotal: net?.vpnSites.count ?? 0, home: homePair)
                 }
-                if let net {
-                    headerCard(net)
-                    if isParent {
-                        NavigationLink { WorldTrafficView() } label: {
-                            HStack(spacing: 10) {
-                                Image(systemName: "globe.americas.fill")
-                                    .font(.subheadline.weight(.semibold)).foregroundStyle(.white)
-                                    .frame(width: 30, height: 30)
-                                    .background(Color.teal.gradient, in: Circle())
-                                VStack(alignment: .leading, spacing: 2) {
-                                    Text("Live-Weltkarte").font(.subheadline.weight(.semibold)).foregroundStyle(.primary)
-                                    Text("Wohin gerade Verbindungen gehen · Auslastung").font(.caption).foregroundStyle(.secondary)
-                                }
-                                Spacer()
-                                Image(systemName: "chevron.right").font(.caption.weight(.bold)).foregroundStyle(.secondary)
-                            }
-                            .padding(14).cardSurface()
-                        }
-                        .buttonStyle(.plain)
-                    }
-                    trafficCard
-                    guestCard
-                    ForEach(net.wans) { w in wanCard(w, net: net) }
-                    speedCard(net)
-                    vpnCard(net)
-                }
-                starlinkCard
-                if let net { udmCard(net) }
-                if net == nil && !loading {
-                    Label("UniFi-Daten gerade nicht verfügbar", systemImage: "wifi.exclamationmark").foregroundStyle(.secondary)
+                switch isParent ? tab : .overview {
+                case .overview: overview
+                case .world: worldTab
+                case .streaming:
+                    IPTVContent(st: iptv, error: nil, reload: { setup in
+                        if let s = try? await store.loadIPTV(setup: setup) { iptv = s }
+                    })
+                case .vpn:
+                    if let net { vpnCard(net) } else { ProgressView().frame(maxWidth: .infinity, minHeight: 120) }
                 }
             }
             .padding()
         }
-        .background(Color(.systemGroupedBackground))
-        .navigationTitle("Internet")
+        .background(Color.black.ignoresSafeArea())
+        .environment(\.colorScheme, .dark)
+        .toolbarBackground(Color.black, for: .navigationBar)
+        .toolbarBackground(.visible, for: .navigationBar)
+        .toolbarColorScheme(.dark, for: .navigationBar)
+        .navigationTitle("Netzwerk")
         .refreshable { await load() }
         .task { await load() }
+        .task {
+            var n = 0
+            while !Task.isCancelled {
+                if let d = try? await store.loadWorldTraffic(seconds: 14, devices: true) {
+                    live = d; liveStamp = .now
+                }
+                if isParent, n % 2 == 0, let s = try? await store.loadIPTV() { iptv = s }
+                n += 1
+                try? await Task.sleep(for: .seconds(tab == .world ? 2 : 3))
+            }
+        }
+        .fullScreenCover(isPresented: $worldFull) {
+            TronFullscreen(initial: live, home: homePair, lifetime: 12, focus: nil)
+        }
         .alert(confirm?.title ?? "", isPresented: Binding(get: { confirm != nil }, set: { if !$0 { confirm = nil } })) {
             Button("Abbrechen", role: .cancel) { confirm = nil }
             Button("Ja", role: .destructive) {
@@ -307,6 +311,110 @@ struct NetworkView: View {
                 Task { await c?.run() }
             }
         } message: { Text(confirm?.message ?? "") }
+    }
+
+    private var homePair: (lat: Double, lon: Double) {
+        let h = store.homeCoordinate
+        return (h?.latitude ?? 51.2, h?.longitude ?? 10.4)
+    }
+    private var vpnUp: Int { (net?.vpnSites ?? []).filter { $0.connected ?? false }.count }
+
+    @ViewBuilder private var overview: some View {
+        if loading && net == nil && live.wans.isEmpty {
+            ProgressView("Frage UniFi …").frame(maxWidth: .infinity, minHeight: 160)
+        }
+        if !live.wans.isEmpty {
+            NetHeroCard(live: live)
+            LazyVGrid(columns: [GridItem(.flexible(), spacing: 10), GridItem(.flexible(), spacing: 10)], spacing: 10) {
+                ForEach(live.wans) { w in
+                    WanTile(wan: w, history: live.history, subtitle: wanSubtitle(w))
+                }
+            }
+            if live.wans.contains(where: { $0.key == "wan2" }) {
+                FamilyWifiCard(devices: live.starlinkDevices)
+            }
+        }
+        if let net {
+            HStack(spacing: 10) {
+                KPITile(title: "Ping", value: net.latency.map { "\(Int($0))" } ?? "–", unit: "ms")
+                let act = net.wans.first { $0.group == net.activeWan } ?? net.wans.first
+                KPITile(title: "Verfügbar", value: act?.availability.map { String(format: "%.1f", $0).replacingOccurrences(of: ".", with: ",") } ?? "–", unit: "%")
+                KPITile(title: "Geräte", value: net.clients.map { "\($0)" } ?? "–", unit: "online")
+            }
+            trafficCard
+            guestCard
+            ForEach(net.wans) { w in wanCard(w, net: net) }
+            speedCard(net)
+            if !isParent { vpnCard(net) }
+        }
+        starlinkCard
+        if let net { udmCard(net) }
+        if net == nil && !loading {
+            Label("UniFi-Daten gerade nicht verfügbar", systemImage: "wifi.exclamationmark").foregroundStyle(.secondary)
+        }
+    }
+
+    private func wanSubtitle(_ w: WorldTraffic.WAN) -> String {
+        let ping = net?.wans.first { ($0.group == "WAN" ? "wan1" : $0.group.lowercased()) == w.key }?.latency
+        let p = ping.map { " · Ping \(Int($0)) ms" } ?? ""
+        if w.key == "wan2" { return "Family-WLAN · Reserve" + p }
+        return "Haus" + p
+    }
+
+    @ViewBuilder private var worldTab: some View {
+        ZStack(alignment: .topLeading) {
+            TronWorldMap(places: live.places, home: homePair, lifetime: 12, stamp: liveStamp,
+                         interactive: false, viewport: $worldVP)
+                .aspectRatio(WorldShapes.w0 / WorldShapes.h0, contentMode: .fit)
+                .onTapGesture { worldFull = true }
+            HUDFrame().stroke(Tron.cyan.opacity(0.6), lineWidth: 1.2).padding(6).allowsHitTesting(false)
+            HStack {
+                Text("NETZ-RADAR · \(live.places.filter { $0.alter < 12 }.count) ZIELE")
+                Spacer()
+                Image(systemName: "arrow.up.left.and.arrow.down.right")
+            }
+            .font(.system(size: 10, weight: .bold, design: .monospaced))
+            .foregroundStyle(Tron.cyan)
+            .padding(.horizontal, 14).padding(.top, 12)
+            .allowsHitTesting(false)
+        }
+        .background(Tron.bg)
+        .clipShape(RoundedRectangle(cornerRadius: 18, style: .continuous))
+        .overlay(RoundedRectangle(cornerRadius: 18, style: .continuous).strokeBorder(Tron.cyan.opacity(0.25)))
+
+        VStack(alignment: .leading, spacing: 0) {
+            Text("Top-Ziele gerade").font(.headline).padding(.bottom, 8)
+            if live.targets.isEmpty {
+                Text("Gerade keine neuen Verbindungen.").font(.footnote).foregroundStyle(.secondary)
+            }
+            ForEach(live.targets.prefix(8)) { z in
+                HStack(spacing: 12) {
+                    Text(z.land.isEmpty ? "–" : Flag.emoji(z.land)).font(.title3)
+                    VStack(alignment: .leading, spacing: 2) {
+                        Text(z.ort.isEmpty ? z.ip : z.ort).font(.subheadline.weight(.semibold)).lineLimit(1)
+                        Text([z.ip, z.dienst, z.geraet].filter { !$0.isEmpty }.joined(separator: " · "))
+                            .font(.caption).foregroundStyle(.secondary).lineLimit(1)
+                    }
+                    Spacer()
+                    Text("\(z.n)").font(.subheadline.weight(.bold)).monospacedDigit()
+                }
+                .padding(.vertical, 7)
+            }
+        }
+        .padding(16)
+        .frame(maxWidth: .infinity, alignment: .leading)
+        .background(Tron.bg, in: RoundedRectangle(cornerRadius: 18, style: .continuous))
+        .overlay(RoundedRectangle(cornerRadius: 18, style: .continuous).strokeBorder(Tron.cyan.opacity(0.2)))
+
+        NavigationLink { WorldTrafficView() } label: {
+            Label("Ganze Weltkarte · Geblockt von außen", systemImage: "globe.americas.fill")
+                .font(.subheadline.weight(.semibold)).frame(maxWidth: .infinity)
+                .padding(14)
+                .background(Tron.bg, in: RoundedRectangle(cornerRadius: 16, style: .continuous))
+                .overlay(RoundedRectangle(cornerRadius: 16, style: .continuous).strokeBorder(Tron.cyan.opacity(0.35)))
+                .foregroundStyle(Tron.cyan)
+        }
+        .buttonStyle(.plain)
     }
 
     private func load() async {

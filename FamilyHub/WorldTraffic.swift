@@ -63,6 +63,8 @@ struct WorldTraffic {
     var ports: [PortStat] = []
     var wans: [WAN] = []
     var history: [Sample] = []
+    struct Device: Identifiable, Hashable { var id: String { name }; let name: String; let rate: Double }
+    var starlinkDevices: [Device] = []
 
     init() {}
 
@@ -105,15 +107,19 @@ struct WorldTraffic {
                 h.append(Sample(t: t, key: k, rx: v.array?.first?.double ?? 0))
             }
         }
+        starlinkDevices = (c["starlink_geraete"]?.array ?? []).map { d in
+            Device(name: d["name"]?.string ?? "?", rate: d["rate"]?.double ?? 0)
+        }
         history = h.sorted { ($0.t, $0.key) < ($1.t, $1.key) }
     }
 }
 
 @MainActor
 extension AppStore {
-    func loadWorldTraffic(seconds: Int, blocked: Bool = false) async throws -> WorldTraffic {
+    func loadWorldTraffic(seconds: Int, blocked: Bool = false, devices: Bool = false) async throws -> WorldTraffic {
         let r = try await client.callWithResponse("rest_command", "familie_weltkarte",
-                                                  ["daten": ["sekunden": seconds, "modus": blocked ? "block" : "aus"]], timeout: 25)
+                                                  ["daten": ["sekunden": seconds, "modus": blocked ? "block" : "aus",
+                                                             "geraete": devices]], timeout: 25)
         let c = r["content"] ?? r
         if c["ok"]?.string != "true" { throw HAError.unexpected(c["error"]?.string ?? "Family Hub nicht erreichbar") }
         return WorldTraffic(c)
