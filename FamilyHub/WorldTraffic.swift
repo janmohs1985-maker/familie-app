@@ -142,6 +142,8 @@ struct WorldTrafficView: View {
     @State private var loaded = false
     @State private var error: String?
     @State private var viewport = TronViewport()
+    @State private var globeCam = GlobeCam()
+    @AppStorage("weltStil") private var style = WorldStyle.karte.rawValue
     @State private var stamp = Date()
     @State private var lines = true
     @State private var fullscreen = false
@@ -291,10 +293,19 @@ struct WorldTrafficView: View {
 
     private var mapCard: some View {
         ZStack(alignment: .topLeading) {
-            TronWorldMap(places: data.places, home: homePair, lifetime: lifetime, stamp: stamp,
-                         showLines: lines, interactive: false, inbound: blocked, viewport: $viewport)
-                .aspectRatio(WorldShapes.w0 / WorldShapes.h0, contentMode: .fit)
-                .onTapGesture { focus = nil; fullscreen = true }
+            Group {
+                if style == WorldStyle.globus.rawValue {
+                    TronGlobe(places: data.places, home: homePair, lifetime: lifetime, stamp: stamp,
+                              showLines: lines, interactive: false, inbound: blocked, cam: $globeCam)
+                        .frame(height: 340)
+                        .background(Tron.bg)
+                } else {
+                    TronWorldMap(places: data.places, home: homePair, lifetime: lifetime, stamp: stamp,
+                                 showLines: lines, interactive: false, inbound: blocked, viewport: $viewport)
+                        .aspectRatio(WorldShapes.w0 / WorldShapes.h0, contentMode: .fit)
+                }
+            }
+            .onTapGesture { focus = nil; fullscreen = true }
             HUDFrame().stroke(Tron.cyan.opacity(0.6), lineWidth: 1.2).padding(6).allowsHitTesting(false)
             HStack(spacing: 8) {
                 Circle().fill(data.syslogActive ? Tron.cyan : Tron.amber).frame(width: 6, height: 6)
@@ -302,6 +313,10 @@ struct WorldTrafficView: View {
                 Text(data.syslogActive ? (blocked ? "ABWEHR · \(data.connections) GEBLOCKT · \(livePlaces.count) QUELLEN" : "NETZ-RADAR · \(livePlaces.count) ZIELE")
                                        : (blocked ? "KEINE GEBLOCKTEN DATEN" : "WARTE AUF DATEN"))
                 Spacer()
+                Button { withAnimation(.snappy) { style = style == WorldStyle.globus.rawValue ? WorldStyle.karte.rawValue : WorldStyle.globus.rawValue } } label: {
+                    Image(systemName: style == WorldStyle.globus.rawValue ? "map" : "globe.europe.africa")
+                }
+                .accessibilityLabel(style == WorldStyle.globus.rawValue ? "Als Karte zeigen" : "Als Globus zeigen")
                 Button { withAnimation { lines.toggle() } } label: {
                     Image(systemName: lines ? "point.topleft.down.to.point.bottomright.curvepath.fill" : "point.topleft.down.to.point.bottomright.curvepath")
                 }
@@ -467,6 +482,8 @@ struct TronFullscreen: View {
     @State private var data = WorldTraffic()
     @State private var stamp = Date()
     @State private var viewport = TronViewport()
+    @State private var globeCam = GlobeCam()
+    @AppStorage("weltStil") private var style = WorldStyle.karte.rawValue
     @State private var landscape = true
     @State private var lines = true
     @State private var started = false
@@ -486,7 +503,9 @@ struct TronFullscreen: View {
                 guard !started else { return }
                 started = true
                 data = initial
-                if let f = focus {
+                if let f = focus, style == WorldStyle.globus.rawValue {
+                    globeCam = GlobeCam(lat0: f.lat, lon0: f.lon, zoom: 1.6, touched: Date.now.timeIntervalSinceReferenceDate + 5)
+                } else if let f = focus {
                     let s = TronViewport(zoom: 4).scale(in: inner)
                     let u = WorldShapes.project(lat: f.lat, lon: f.lon)
                     viewport = TronViewport(zoom: 4, pan: CGSize(width: (WorldShapes.w0 / 2 - u.x) * s,
@@ -506,8 +525,14 @@ struct TronFullscreen: View {
 
     private func content(_ size: CGSize) -> some View {
         ZStack {
-            TronWorldMap(places: data.places, home: home, lifetime: lifetime, stamp: stamp,
-                         showLines: lines, rotated: landscape, inbound: blocked, viewport: $viewport)
+            if style == WorldStyle.globus.rawValue {
+                TronGlobe(places: data.places, home: home, lifetime: lifetime, stamp: stamp,
+                          showLines: lines, rotated: landscape, inbound: blocked, cam: $globeCam)
+                    .background(Tron.bg)
+            } else {
+                TronWorldMap(places: data.places, home: home, lifetime: lifetime, stamp: stamp,
+                             showLines: lines, rotated: landscape, inbound: blocked, viewport: $viewport)
+            }
             HUDFrame().stroke(Tron.cyan.opacity(0.7), lineWidth: 1.5).padding(landscape ? 18 : 10).allowsHitTesting(false)
             hud(size)
         }
@@ -521,13 +546,16 @@ struct TronFullscreen: View {
             HStack(alignment: .top) {
                 VStack(alignment: .leading, spacing: 3) {
                     Text(blocked ? "ABWEHR // MOHS" : "NETZ-RADAR // MOHS").font(.system(size: 13, weight: .heavy, design: .monospaced))
-                    Text("\(blocked ? "GEBLOCKT" : "LINKS") \(data.connections) · \(blocked ? "QUELLEN" : "ZIELE") \(live.count) · ZOOM \(String(format: "%.1f", viewport.zoom))×")
+                    Text("\(blocked ? "GEBLOCKT" : "LINKS") \(data.connections) · \(blocked ? "QUELLEN" : "ZIELE") \(live.count) · ZOOM \(String(format: "%.1f", style == WorldStyle.globus.rawValue ? globeCam.zoom : viewport.zoom))×")
                         .font(.system(size: 10, weight: .semibold, design: .monospaced)).opacity(0.75)
                 }
                 Spacer()
                 HStack(spacing: 14) {
+                    hudButton(style == WorldStyle.globus.rawValue ? "map" : "globe.europe.africa") {
+                        style = style == WorldStyle.globus.rawValue ? WorldStyle.karte.rawValue : WorldStyle.globus.rawValue
+                    }
                     hudButton(lines ? "point.topleft.down.to.point.bottomright.curvepath.fill" : "point.topleft.down.to.point.bottomright.curvepath") { lines.toggle() }
-                    hudButton("arrow.counterclockwise") { withAnimation(.spring) { viewport = TronViewport() } }
+                    hudButton("arrow.counterclockwise") { withAnimation(.spring) { viewport = TronViewport(); globeCam = GlobeCam() } }
                     hudButton(landscape ? "rectangle.portrait.rotate" : "rectangle.landscape.rotate") {
                         viewport = TronViewport(); landscape.toggle()
                     }

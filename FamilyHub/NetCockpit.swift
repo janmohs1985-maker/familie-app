@@ -28,6 +28,8 @@ struct NetTabStrip: View {
     let vpnTotal: Int
     let home: (lat: Double, lon: Double)
     @State private var miniVP = TronViewport()
+    @State private var miniCam = GlobeCam()
+    @AppStorage("weltStil") private var worldStyle = WorldStyle.karte.rawValue
 
     var body: some View {
         ScrollView(.horizontal, showsIndicators: false) {
@@ -39,8 +41,15 @@ struct NetTabStrip: View {
                     MiniWanChart(history: live.history).frame(height: 30)
                 }
                 tile(.world, color: Tron.cyan, padding: 6) {
-                    TronWorldMap(places: live.places, home: home, lifetime: 12, stamp: stamp,
-                                 showLines: true, showLabels: false, interactive: false, viewport: $miniVP)
+                    Group {
+                        if worldStyle == WorldStyle.globus.rawValue {
+                            TronGlobe(places: live.places, home: home, lifetime: 12, stamp: stamp,
+                                      showLines: true, interactive: false, cam: $miniCam)
+                        } else {
+                            TronWorldMap(places: live.places, home: home, lifetime: 12, stamp: stamp,
+                                         showLines: true, showLabels: false, interactive: false, viewport: $miniVP)
+                        }
+                    }
                         .frame(height: 58)
                         .clipShape(RoundedRectangle(cornerRadius: 10))
                         .allowsHitTesting(false)

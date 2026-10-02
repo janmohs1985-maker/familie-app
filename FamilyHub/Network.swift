@@ -249,6 +249,8 @@ struct NetworkView: View {
     @State private var liveStamp = Date()
     @State private var iptv: IPTVStatus?
     @State private var worldVP = TronViewport()
+    @State private var globeCam = GlobeCam()
+    @AppStorage("weltStil") private var worldStyle = WorldStyle.karte.rawValue
     @State private var worldFull = false
 
     struct ConfirmAction: Identifiable {
@@ -363,20 +365,36 @@ struct NetworkView: View {
 
     @ViewBuilder private var worldTab: some View {
         ZStack(alignment: .topLeading) {
-            TronWorldMap(places: live.places, home: homePair, lifetime: 12, stamp: liveStamp,
-                         interactive: false, viewport: $worldVP)
-                .aspectRatio(WorldShapes.w0 / WorldShapes.h0, contentMode: .fit)
-                .onTapGesture { worldFull = true }
+            Group {
+                if worldStyle == WorldStyle.globus.rawValue {
+                    TronGlobe(places: live.places, home: homePair, lifetime: 12, stamp: liveStamp,
+                              interactive: false, cam: $globeCam)
+                        .frame(height: 340)
+                } else {
+                    TronWorldMap(places: live.places, home: homePair, lifetime: 12, stamp: liveStamp,
+                                 interactive: false, viewport: $worldVP)
+                        .aspectRatio(WorldShapes.w0 / WorldShapes.h0, contentMode: .fit)
+                }
+            }
+            .onTapGesture { worldFull = true }
             HUDFrame().stroke(Tron.cyan.opacity(0.6), lineWidth: 1.2).padding(6).allowsHitTesting(false)
             HStack {
                 Text("NETZ-RADAR · \(live.places.filter { $0.alter < 12 }.count) ZIELE")
                 Spacer()
+                Button {
+                    withAnimation(.snappy) {
+                        worldStyle = worldStyle == WorldStyle.globus.rawValue ? WorldStyle.karte.rawValue : WorldStyle.globus.rawValue
+                    }
+                } label: {
+                    Image(systemName: worldStyle == WorldStyle.globus.rawValue ? "map" : "globe.europe.africa")
+                        .frame(width: 32, height: 32)
+                }
+                .accessibilityLabel(worldStyle == WorldStyle.globus.rawValue ? "Als Karte zeigen" : "Als Globus zeigen")
                 Image(systemName: "arrow.up.left.and.arrow.down.right")
             }
             .font(.system(size: 10, weight: .bold, design: .monospaced))
             .foregroundStyle(Tron.cyan)
-            .padding(.horizontal, 14).padding(.top, 12)
-            .allowsHitTesting(false)
+            .padding(.horizontal, 14).padding(.top, 6)
         }
         .background(Tron.bg)
         .clipShape(RoundedRectangle(cornerRadius: 18, style: .continuous))
