@@ -604,6 +604,7 @@ struct HomeAreaTiles: View {
         }
         if parent && store.allows(.internet) {
             NavigationLink { IPTVView() } label: { HubTile(title: "Streaming", symbol: "play.tv.fill", color: .pink) }
+            NavigationLink { WorldTrafficView() } label: { HubTile(title: "Weltkarte", symbol: "globe.americas.fill", color: .teal) }
         }
         if parent {
             NavigationLink { DevicesView() } label: { HubTile(title: "Zigbee-Geräte", symbol: "dot.radiowaves.left.and.right", color: .purple) }

@@ -263,6 +263,24 @@ struct NetworkView: View {
                 }
                 if let net {
                     headerCard(net)
+                    if isParent {
+                        NavigationLink { WorldTrafficView() } label: {
+                            HStack(spacing: 10) {
+                                Image(systemName: "globe.americas.fill")
+                                    .font(.subheadline.weight(.semibold)).foregroundStyle(.white)
+                                    .frame(width: 30, height: 30)
+                                    .background(Color.teal.gradient, in: Circle())
+                                VStack(alignment: .leading, spacing: 2) {
+                                    Text("Live-Weltkarte").font(.subheadline.weight(.semibold)).foregroundStyle(.primary)
+                                    Text("Wohin gerade Verbindungen gehen · Auslastung").font(.caption).foregroundStyle(.secondary)
+                                }
+                                Spacer()
+                                Image(systemName: "chevron.right").font(.caption.weight(.bold)).foregroundStyle(.secondary)
+                            }
+                            .padding(14).cardSurface()
+                        }
+                        .buttonStyle(.plain)
+                    }
                     trafficCard
                     guestCard
                     ForEach(net.wans) { w in wanCard(w, net: net) }
