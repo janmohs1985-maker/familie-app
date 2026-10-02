@@ -194,7 +194,6 @@ struct CarPage: View {
                 }
                 CarHistoryLink()
                 planCard
-                infoCard
                 mapCard
             }
             .padding()
@@ -351,16 +350,6 @@ struct CarPage: View {
                         }
                     } label: { Label("Plan löschen", systemImage: "trash") }
                 }
-            }
-        }
-    }
-
-    private var infoCard: some View {
-        Card(title: "Fahrzeug", symbol: "car.fill") {
-            VStack(spacing: 8) {
-                InfoRow("Innen", store.num(CarConfig.inside).map { String(format: "%.0f °C", $0) })
-                InfoRow("Außen", store.num(CarConfig.outside).map { String(format: "%.0f °C", $0) })
-                InfoRow("Zuletzt geladen", store.num(CarConfig.added).flatMap { $0 > 0 ? String(format: "%.1f kWh", $0) : nil })
             }
         }
     }
