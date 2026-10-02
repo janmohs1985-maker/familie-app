@@ -97,6 +97,8 @@ struct TronWorldMap: View {
     var rotated = false
     /// false = Vorschau ohne Gesten (z. B. in einer ScrollView)
     var interactive = true
+    /// geblockter Verkehr von außen: rote Farben, Impulse laufen zum Haus
+    var inbound = false
     @Binding var viewport: TronViewport
 
     @State private var base: TronViewport?
@@ -195,8 +197,10 @@ struct TronWorldMap: View {
                     let c = colorOf(p)
                     ctx.stroke(arc, with: .color(c.opacity(0.22 * fade)), lineWidth: 1)
                     // Lichtimpuls, der zum Ziel läuft
-                    let ph = (time * 0.55 + Double(i) * 0.137).truncatingRemainder(dividingBy: 1)
-                    let seg = arc.trimmedPath(from: max(0, ph - 0.18), to: ph)
+                    let ph0 = (time * 0.55 + Double(i) * 0.137).truncatingRemainder(dividingBy: 1)
+                    let ph = inbound ? 1 - ph0 : ph0
+                    let seg = inbound ? arc.trimmedPath(from: ph, to: min(1, ph + 0.18))
+                                      : arc.trimmedPath(from: max(0, ph - 0.18), to: ph)
                     ctx.drawLayer { g in
                         g.addFilter(.blur(radius: 3))
                         g.stroke(seg, with: .color(c.opacity(0.9 * fade)), style: StrokeStyle(lineWidth: 3, lineCap: .round))
@@ -253,11 +257,11 @@ struct TronWorldMap: View {
                     a.move(to: CGPoint(x: h.x + rad * cos(b), y: h.y + rad * sin(b)))
                     a.addArc(center: h, radius: rad, startAngle: .radians(b), endAngle: .radians(b + 1.3), clockwise: false)
                 }
-                ctx.stroke(a, with: .color(Tron.amber.opacity(0.9)), lineWidth: 1.4)
+                ctx.stroke(a, with: .color((inbound ? Tron.cyan : Tron.amber).opacity(0.9)), lineWidth: 1.4)
             }
             ctx.drawLayer { g in
                 g.addFilter(.blur(radius: 4))
-                g.fill(Path(ellipseIn: CGRect(x: h.x - 6, y: h.y - 6, width: 12, height: 12)), with: .color(Tron.amber))
+                g.fill(Path(ellipseIn: CGRect(x: h.x - 6, y: h.y - 6, width: 12, height: 12)), with: .color(inbound ? Tron.cyan : Tron.amber))
             }
             ctx.fill(Path(ellipseIn: CGRect(x: h.x - 3, y: h.y - 3, width: 6, height: 6)), with: .color(.white))
         }
@@ -275,6 +279,7 @@ struct TronWorldMap: View {
     private func weightOf(_ p: WorldTraffic.Place) -> Double { sqrt(Double(p.n) / Double(maxN)) }
     private func colorOf(_ p: WorldTraffic.Place) -> Color {
         let w = weightOf(p)
+        if inbound { return w > 0.7 ? Color(red: 1, green: 0.1, blue: 0.2) : (w > 0.35 ? Tron.hot : Tron.amber) }
         return w > 0.7 ? Tron.hot : (w > 0.35 ? Tron.amber : Tron.cyan)
     }
 }

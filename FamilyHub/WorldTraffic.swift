@@ -59,6 +59,8 @@ struct WorldTraffic {
     var targets: [Target] = []
     struct Country: Identifiable, Hashable { var id: String { iso }; let iso: String; let n: Int }
     var countries: [Country] = []
+    struct PortStat: Identifiable, Hashable { var id: Int { port }; let port: Int; let dienst: String; let n: Int }
+    var ports: [PortStat] = []
     var wans: [WAN] = []
     var history: [Sample] = []
 
@@ -89,6 +91,9 @@ struct WorldTraffic {
             guard let a = p.array, a.count == 2, let k = a[0].string else { return nil }
             return Country(iso: k, n: a[1].int ?? 0)
         }
+        ports = (c["ports"]?.array ?? []).map { p in
+            PortStat(port: p["port"]?.int ?? 0, dienst: p["dienst"]?.string ?? "", n: p["n"]?.int ?? 0)
+        }
         wans = (c["wan"]?.array ?? []).map { w in
             WAN(key: w["k"]?.string ?? "", name: w["name"]?.string ?? "WAN", rx: w["rx"]?.double ?? 0,
                 tx: w["tx"]?.double ?? 0, up: w["up"]?.string == "true", speed: w["speed"]?.double ?? 1000)
@@ -106,9 +111,9 @@ struct WorldTraffic {
 
 @MainActor
 extension AppStore {
-    func loadWorldTraffic(seconds: Int) async throws -> WorldTraffic {
+    func loadWorldTraffic(seconds: Int, blocked: Bool = false) async throws -> WorldTraffic {
         let r = try await client.callWithResponse("rest_command", "familie_weltkarte",
-                                                  ["daten": ["sekunden": seconds]], timeout: 25)
+                                                  ["daten": ["sekunden": seconds, "modus": blocked ? "block" : "aus"]], timeout: 25)
         let c = r["content"] ?? r
         if c["ok"]?.string != "true" { throw HAError.unexpected(c["error"]?.string ?? "Family Hub nicht erreichbar") }
         return WorldTraffic(c)
@@ -135,9 +140,10 @@ struct WorldTrafficView: View {
     @State private var lines = true
     @State private var fullscreen = false
     @State private var focus: (lat: Double, lon: Double)?
+    @State private var blocked = false
 
-    /// Punkte leben 12 s nach der letzten Verbindung und verblassen dabei
-    private let lifetime = 12.0
+    /// Punkte leben 12 s (geblockt: 30 s) nach der letzten Verbindung und verblassen dabei
+    private var lifetime: Double { blocked ? 30 : 12 }
 
     private var home: CLLocationCoordinate2D {
         store.homeCoordinate ?? .init(latitude: 51.2, longitude: 10.4)
@@ -149,9 +155,16 @@ struct WorldTrafficView: View {
     var body: some View {
         ScrollView {
             VStack(spacing: 16) {
-                bandwidthCard
+                Picker("Richtung", selection: $blocked) {
+                    Text("Ausgehend").tag(false)
+                    Text("Geblockt von außen").tag(true)
+                }
+                .pickerStyle(.segmented)
+                .onChange(of: blocked) { data = WorldTraffic(); Task { await load() } }
+                if !blocked { bandwidthCard }
                 mapCard
-                if !data.syslogActive && loaded { setupCard }
+                if blocked && !data.ports.isEmpty { portStrip }
+                if !data.syslogActive && loaded { if blocked { blockSetupCard } else { setupCard } }
                 if !data.countries.isEmpty { countryStrip }
                 if !data.targets.isEmpty { targetList }
                 Text("IP-Standorte: DB-IP.com (CC BY 4.0) · Ortsangaben sind ungefähr – oft der Standort des Rechenzentrums.")
@@ -167,7 +180,7 @@ struct WorldTrafficView: View {
         .navigationTitle("Weltkarte")
         .navigationBarTitleDisplayMode(.inline)
         .fullScreenCover(isPresented: $fullscreen) {
-            TronFullscreen(initial: data, home: homePair, lifetime: lifetime, focus: focus)
+            TronFullscreen(initial: data, home: homePair, lifetime: lifetime, focus: focus, blocked: blocked)
         }
         .task {
             while !Task.isCancelled {
@@ -179,7 +192,7 @@ struct WorldTrafficView: View {
 
     private func load() async {
         do {
-            let d = try await store.loadWorldTraffic(seconds: Int(lifetime) + 3)
+            let d = try await store.loadWorldTraffic(seconds: Int(lifetime) + 3, blocked: blocked)
             data = d; stamp = .now; loaded = true; error = nil
         } catch {
             self.error = error.localizedDescription
@@ -271,14 +284,15 @@ struct WorldTrafficView: View {
     private var mapCard: some View {
         ZStack(alignment: .topLeading) {
             TronWorldMap(places: data.places, home: homePair, lifetime: lifetime, stamp: stamp,
-                         showLines: lines, interactive: false, viewport: $viewport)
+                         showLines: lines, interactive: false, inbound: blocked, viewport: $viewport)
                 .aspectRatio(WorldShapes.w0 / WorldShapes.h0, contentMode: .fit)
                 .onTapGesture { focus = nil; fullscreen = true }
             HUDFrame().stroke(Tron.cyan.opacity(0.6), lineWidth: 1.2).padding(6).allowsHitTesting(false)
             HStack(spacing: 8) {
                 Circle().fill(data.syslogActive ? Tron.cyan : Tron.amber).frame(width: 6, height: 6)
                     .shadow(color: Tron.cyan, radius: 4)
-                Text(data.syslogActive ? "NETZ-RADAR · \(livePlaces.count) ZIELE" : "WARTE AUF DATEN")
+                Text(data.syslogActive ? (blocked ? "ABWEHR · \(data.connections) GEBLOCKT · \(livePlaces.count) QUELLEN" : "NETZ-RADAR · \(livePlaces.count) ZIELE")
+                                       : (blocked ? "KEINE GEBLOCKTEN DATEN" : "WARTE AUF DATEN"))
                 Spacer()
                 Button { withAnimation { lines.toggle() } } label: {
                     Image(systemName: lines ? "point.topleft.down.to.point.bottomright.curvepath.fill" : "point.topleft.down.to.point.bottomright.curvepath")
@@ -323,7 +337,7 @@ struct WorldTrafficView: View {
 
     private var targetList: some View {
         VStack(alignment: .leading, spacing: 0) {
-            Text("Top-Ziele gerade").font(.headline).padding(.bottom, 8)
+            Text(blocked ? "Wer klopft gerade an?" : "Top-Ziele gerade").font(.headline).padding(.bottom, 8)
             ForEach(data.targets.prefix(12)) { z in
                 Button {
                     if let la = z.lat, let lo = z.lon {
@@ -353,6 +367,37 @@ struct WorldTrafficView: View {
         .padding(16)
         .background(Tron.bg, in: RoundedRectangle(cornerRadius: 18, style: .continuous))
         .overlay(RoundedRectangle(cornerRadius: 18, style: .continuous).strokeBorder(Tron.cyan.opacity(0.2)))
+    }
+
+    private var portStrip: some View {
+        VStack(alignment: .leading, spacing: 8) {
+            Text("Angefragte Dienste").font(.headline)
+            let mx = max(1, data.ports.map(\.n).max() ?? 1)
+            ForEach(data.ports) { p in
+                HStack(spacing: 10) {
+                    Text(p.dienst).font(.system(size: 12, weight: .semibold, design: .monospaced)).frame(width: 120, alignment: .leading).lineLimit(1)
+                    GeometryReader { g in
+                        Capsule().fill(LinearGradient(colors: [Tron.amber, Tron.hot], startPoint: .leading, endPoint: .trailing))
+                            .frame(width: max(4, g.size.width * CGFloat(p.n) / CGFloat(mx)))
+                    }
+                    .frame(height: 6)
+                    Text("\(p.n)").font(.system(size: 12, weight: .bold, design: .monospaced)).frame(width: 40, alignment: .trailing)
+                }
+            }
+        }
+        .foregroundStyle(Tron.hot)
+        .padding(16)
+        .background(Tron.bg, in: RoundedRectangle(cornerRadius: 18, style: .continuous))
+        .overlay(RoundedRectangle(cornerRadius: 18, style: .continuous).strokeBorder(Tron.hot.opacity(0.3)))
+    }
+
+    private var blockSetupCard: some View {
+        VStack(alignment: .leading, spacing: 8) {
+            Label("Noch keine geblockten Verbindungen", systemImage: "shield.lefthalf.filled").font(.headline)
+            Text("Die UDM protokolliert geblockte Zugriffe von außen erst, wenn bei den Standard-Regeln **„Block All Traffic“** für **External → Gateway** und **External → Internal** das Protokollieren (Syslog) an ist.")
+                .font(.subheadline).foregroundStyle(.secondary)
+        }
+        .padding(16).frame(maxWidth: .infinity, alignment: .leading).cardSurface()
     }
 
     private var setupCard: some View {
@@ -407,6 +452,7 @@ struct TronFullscreen: View {
     let home: (lat: Double, lon: Double)
     let lifetime: Double
     var focus: (lat: Double, lon: Double)?
+    var blocked = false
 
     @Environment(AppStore.self) private var store
     @Environment(\.dismiss) private var dismiss
@@ -444,7 +490,7 @@ struct TronFullscreen: View {
         .statusBarHidden()
         .task {
             while !Task.isCancelled {
-                if let d = try? await store.loadWorldTraffic(seconds: Int(lifetime) + 3) { data = d; stamp = .now }
+                if let d = try? await store.loadWorldTraffic(seconds: Int(lifetime) + 3, blocked: blocked) { data = d; stamp = .now }
                 try? await Task.sleep(for: .seconds(2))
             }
         }
@@ -453,7 +499,7 @@ struct TronFullscreen: View {
     private func content(_ size: CGSize) -> some View {
         ZStack {
             TronWorldMap(places: data.places, home: home, lifetime: lifetime, stamp: stamp,
-                         showLines: lines, rotated: landscape, viewport: $viewport)
+                         showLines: lines, rotated: landscape, inbound: blocked, viewport: $viewport)
             HUDFrame().stroke(Tron.cyan.opacity(0.7), lineWidth: 1.5).padding(landscape ? 18 : 10).allowsHitTesting(false)
             hud(size)
         }
@@ -466,8 +512,8 @@ struct TronFullscreen: View {
         return VStack {
             HStack(alignment: .top) {
                 VStack(alignment: .leading, spacing: 3) {
-                    Text("NETZ-RADAR // MOHS").font(.system(size: 13, weight: .heavy, design: .monospaced))
-                    Text("LINKS \(data.connections) · ZIELE \(live.count) · ZOOM \(String(format: "%.1f", viewport.zoom))×")
+                    Text(blocked ? "ABWEHR // MOHS" : "NETZ-RADAR // MOHS").font(.system(size: 13, weight: .heavy, design: .monospaced))
+                    Text("\(blocked ? "GEBLOCKT" : "LINKS") \(data.connections) · \(blocked ? "QUELLEN" : "ZIELE") \(live.count) · ZOOM \(String(format: "%.1f", viewport.zoom))×")
                         .font(.system(size: 10, weight: .semibold, design: .monospaced)).opacity(0.75)
                 }
                 Spacer()
@@ -506,8 +552,8 @@ struct TronFullscreen: View {
                 .padding(.top, 4)
             }
         }
-        .foregroundStyle(Tron.cyan)
-        .shadow(color: Tron.cyan.opacity(0.6), radius: 6)
+        .foregroundStyle(blocked ? Tron.hot : Tron.cyan)
+        .shadow(color: (blocked ? Tron.hot : Tron.cyan).opacity(0.6), radius: 6)
         .padding(.horizontal, landscape ? 34 : 22)
         .padding(.vertical, landscape ? 28 : 60)
     }
