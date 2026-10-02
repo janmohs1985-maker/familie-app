@@ -451,7 +451,7 @@ struct HomeAreasOverview: View {
         case .familie:
             return Facts(big: "Familie", small: store.isParent && store.activeKid == nil ? "Karte · Schule · Dokumente" : "Stundenplan · Mappe")
         case .technik:
-            return Facts(big: "Netz", small: "Internet · VPN · Zigbee")
+            return Facts(big: "Netz", small: "Internet · VPN · Streaming")
         }
     }
 }
@@ -601,6 +601,9 @@ struct HomeAreaTiles: View {
     @ViewBuilder private var technik: some View {
         if store.allows(.internet) {
             NavigationLink { NetworkView() } label: { HubTile(title: "Internet & VPN", symbol: "globe.europe.africa.fill", color: .indigo) }
+        }
+        if parent && store.allows(.internet) {
+            NavigationLink { IPTVView() } label: { HubTile(title: "Streaming", symbol: "play.tv.fill", color: .pink) }
         }
         if parent {
             NavigationLink { DevicesView() } label: { HubTile(title: "Zigbee-Geräte", symbol: "dot.radiowaves.left.and.right", color: .purple) }
