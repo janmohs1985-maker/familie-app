@@ -41,6 +41,7 @@ struct RailPass: Identifiable, Hashable {
 /// Ein Zugabschnitt zwischen zwei Halten mit Fahrweg (für die Karte)
 struct RailSegment: Identifiable {
     let id: String
+    let trip: String
     let name: String
     let isLong: Bool
     let dep: Date
@@ -64,6 +65,14 @@ struct RailSegment: Identifiable {
             return (c, atan2(dx, dy) * 180 / .pi)
         }
         return nil
+    }
+
+    /// Endpunkt (Halt) mit der Fahrtrichtung des letzten Stücks
+    var endPosition: (coord: CLLocationCoordinate2D, heading: Double)? {
+        guard coords.count > 1, let b = coords.last else { return nil }
+        let a = coords[coords.count - 2]
+        let dx = (b.longitude - a.longitude) * cos(a.latitude * .pi / 180)
+        return (b, atan2(dx, b.latitude - a.latitude) * 180 / .pi)
     }
 }
 
@@ -96,6 +105,27 @@ final class RailModel {
     /// Der nächste Zug, der noch kommt (oder gerade am Übergang ist)
     var nextPass: RailPass? { passes.first { $0.closeTo > .now } }
     func closed(at d: Date) -> RailPass? { passes.first { $0.closeFrom <= d && $0.closeTo >= d } }
+
+    /// Züge auf der Karte – fahrend oder gerade am Bahnsteig (zwischen Ankunft und Weiterfahrt)
+    func liveTrains(at d: Date) -> [LiveTrain] {
+        var out: [LiveTrain] = []
+        var moving = Set<String>()
+        for s in segments {
+            if let p = s.position(at: d) {
+                out.append(LiveTrain(id: s.id, name: s.name, isLong: s.isLong, coord: p.coord, heading: p.heading, halt: false))
+                moving.insert(s.trip)
+            }
+        }
+        for s in segments where s.arr <= d && !moving.contains(s.trip) {
+            // weiter geht es mit dem nächsten Abschnitt desselben Zugs – bis dahin steht er am Halt
+            let weiter = segments.filter { $0.trip == s.trip && $0.dep >= s.arr }.map(\.dep).min()
+            let bis = weiter ?? s.arr.addingTimeInterval(90)
+            guard d <= bis, d.timeIntervalSince(s.arr) < 10 * 60, let p = s.endPosition else { continue }
+            out.append(LiveTrain(id: s.id, name: s.name, isLong: s.isLong, coord: p.coord, heading: p.heading, halt: true))
+            moving.insert(s.trip)
+        }
+        return out
+    }
     var closedNow: RailPass? { closed(at: .now) }
 
     func refreshIfStale(maxAge: TimeInterval) async {
@@ -167,16 +197,17 @@ final class RailModel {
 
             let name = trainName(s.trips.first?.routeShortName, mode: s.mode)
             let isLong = RailConfig.longModes.contains(s.mode)
+            let tripID = s.trips.first?.tripId ?? UUID().uuidString
 
             if best <= RailConfig.mapDistance {
                 let key = "\(name)|\(Int(dep.timeIntervalSince1970 / 60))"
                 if seenSegments.insert(key).inserted {
-                    segments.append(RailSegment(id: key, name: name, isLong: isLong, dep: dep, arr: arr, coords: coords, cum: cum))
+                    segments.append(RailSegment(id: key, trip: tripID, name: name, isLong: isLong, dep: dep, arr: arr,
+                                                coords: coords, cum: cum))
                 }
             }
 
             guard best <= RailConfig.passDistance else { continue }
-            let tripID = s.trips.first?.tripId ?? UUID().uuidString
             guard seenTrips.insert(tripID).inserted else { continue }
 
             let pass = dep.addingTimeInterval(arr.timeIntervalSince(dep) * bestAlong / total)
@@ -387,10 +418,7 @@ struct RailCrossingView: View {
     // MARK: Live-Karte
 
     private func mapCard(_ now: Date) -> some View {
-        let live = model.segments.compactMap { s -> LiveTrain? in
-            guard let p = s.position(at: now) else { return nil }
-            return LiveTrain(id: s.id, name: s.name, isLong: s.isLong, coord: p.coord, heading: p.heading)
-        }
+        let live = model.liveTrains(at: now)
         let closed = model.closed(at: now) != nil
         return ZStack(alignment: .topLeading) {
             Map(initialPosition: .camera(MapCamera(centerCoordinate: RailConfig.crossing, distance: 3200, heading: 0, pitch: 0)),
@@ -407,7 +435,7 @@ struct RailCrossingView: View {
                 .annotationTitles(.hidden)
                 ForEach(live) { t in
                     Annotation(t.name, coordinate: t.coord, anchor: .center) {
-                        TrainMarker(name: t.name, isLong: t.isLong, heading: t.heading)
+                        TrainMarker(name: t.halt ? t.name + " · hält" : t.name, isLong: t.isLong, heading: t.heading)
                     }
                     .annotationTitles(.hidden)
                 }
@@ -482,6 +510,7 @@ struct LiveTrain: Identifiable {
     let isLong: Bool
     let coord: CLLocationCoordinate2D
     let heading: Double
+    let halt: Bool      // steht gerade am Bahnsteig
 }
 
 struct TrainBadge: View {
@@ -517,9 +546,10 @@ struct TrainMarker: View {
                 .padding(.horizontal, 7).padding(.vertical, 3)
                 .background(.background, in: Capsule())
                 .shadow(color: .black.opacity(0.15), radius: 3, y: 1)
+                .fixedSize()
                 .offset(y: -22)
         }
-        .frame(width: 60, height: 60)
+        .frame(width: 90, height: 60)
     }
 }
 
