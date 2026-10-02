@@ -215,7 +215,12 @@ struct CarPage: View {
                 ProgressRing(progress: soc.map { $0 / 100 }, color: socColor(soc),
                              label: soc.map { "\(Int($0)) %" } ?? "–", size: 96, lineWidth: 10)
                 VStack(alignment: .leading, spacing: 6) {
-                    Text("Tesla").font(.title2.weight(.bold))
+                    HStack(alignment: .firstTextBaseline, spacing: 8) {
+                        Text("Tesla").font(.title2.weight(.bold))
+                        if let km = store.num(CarConfig.odometer) {
+                            Text("\(Int(km).formatted()) km").font(.subheadline.monospacedDigit()).foregroundStyle(.secondary)
+                        }
+                    }
                     if let r = store.num(CarConfig.range) {
                         Label("\(Int(r)) km Reichweite", systemImage: "road.lanes").font(.subheadline)
                     }
@@ -353,7 +358,6 @@ struct CarPage: View {
     private var infoCard: some View {
         Card(title: "Fahrzeug", symbol: "car.fill") {
             VStack(spacing: 8) {
-                InfoRow("Kilometerstand", store.num(CarConfig.odometer).map { "\(Int($0).formatted()) km" })
                 InfoRow("Innen", store.num(CarConfig.inside).map { String(format: "%.0f °C", $0) })
                 InfoRow("Außen", store.num(CarConfig.outside).map { String(format: "%.0f °C", $0) })
                 InfoRow("Zuletzt geladen", store.num(CarConfig.added).flatMap { $0 > 0 ? String(format: "%.1f kWh", $0) : nil })
