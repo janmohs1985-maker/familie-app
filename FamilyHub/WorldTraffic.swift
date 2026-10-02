@@ -105,7 +105,7 @@ struct WorldTraffic {
                 h.append(Sample(t: t, key: k, rx: v.array?.first?.double ?? 0))
             }
         }
-        history = h
+        history = h.sorted { ($0.t, $0.key) < ($1.t, $1.key) }
     }
 }
 
@@ -230,7 +230,9 @@ struct WorldTrafficView: View {
                         .foregroundStyle(by: .value("Leitung", name(s.key)))
                         .interpolationMethod(.catmullRom)
                 }
-                .chartForegroundStyleScale(range: [Color.cyan.opacity(0.75), Color.orange.opacity(0.75), Color.green.opacity(0.75)])
+                .chartForegroundStyleScale(domain: data.wans.map(\.name),
+                                           range: Array([Color.cyan.opacity(0.75), Color.orange.opacity(0.75), Color.green.opacity(0.75)]
+                                               .prefix(max(1, data.wans.count))))
                 .chartLegend(.hidden)
                 .chartXAxis {
                     AxisMarks(values: .automatic(desiredCount: 4)) { _ in
