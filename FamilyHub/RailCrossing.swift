@@ -404,14 +404,15 @@ struct RailCrossingView: View {
                             .foregroundStyle(closed ? Color.red : Color.green)
                     }
                 }
+                .annotationTitles(.hidden)
                 ForEach(live) { t in
                     Annotation(t.name, coordinate: t.coord, anchor: .center) {
                         TrainMarker(name: t.name, isLong: t.isLong, heading: t.heading)
                     }
+                    .annotationTitles(.hidden)
                 }
             }
             .mapStyle(.standard(pointsOfInterest: .excludingAll))
-            .annotationTitles(.hidden)
             .frame(height: 340)
 
             HStack(spacing: 6) {
