@@ -6,31 +6,40 @@ import SwiftUI
 // Jeder Bereich zeigt auf der Übersicht ein, zwei Kennzahlen und führt zu seinen Seiten.
 
 enum HomeArea: String, CaseIterable, Identifiable, Hashable {
-    case energie, haushalt, sicherheit, familie
+    case auto, energie, draussen, haushalt, sicherheit, familie, technik
     var id: String { rawValue }
 
     var title: String {
         switch self {
-        case .energie: "Energie & Technik"
+        case .auto: "Auto"
+        case .energie: "Energie"
+        case .draussen: "Garten & Draußen"
         case .haushalt: "Haushalt"
         case .sicherheit: "Sicherheit"
-        case .familie: "Familie & Dokumente"
+        case .familie: "Familie"
+        case .technik: "Technik"
         }
     }
     var symbol: String {
         switch self {
+        case .auto: "car.side.fill"
         case .energie: "bolt.fill"
+        case .draussen: "tree.fill"
         case .haushalt: "washer.fill"
         case .sicherheit: "shield.lefthalf.filled"
         case .familie: "person.2.fill"
+        case .technik: "server.rack"
         }
     }
     var color: Color {
         switch self {
+        case .auto: Color(red: 0.20, green: 0.70, blue: 0.40)
         case .energie: Color(red: 0.91, green: 0.64, blue: 0.09)
+        case .draussen: Color(red: 0.25, green: 0.62, blue: 0.85)
         case .haushalt: Color(red: 0.08, green: 0.64, blue: 0.72)
         case .sicherheit: Color(red: 0.90, green: 0.28, blue: 0.30)
         case .familie: Color(red: 0.56, green: 0.36, blue: 0.94)
+        case .technik: Color(red: 0.36, green: 0.40, blue: 0.85)
         }
     }
 }
@@ -98,10 +107,14 @@ extension AppStore {
     func allowsArea(_ a: HomeArea) -> Bool {
         let parent = isParent && activeKid == nil
         switch a {
-        case .energie: return parent || [KidFeature.strom, .heizung, .beschattung, .internet, .pool, .bewaesserung].contains(where: { allows($0) })
-        case .haushalt: return [KidFeature.waesche, .saugroboter, .essensplan, .musik].contains(where: { allows($0) })
+        case .auto: return parent && hasCar
+        case .energie: return parent || [KidFeature.strom, .heizung].contains(where: { allows($0) })
+        case .draussen: return true
+        case .haushalt: return [KidFeature.waesche, .saugroboter, .musik].contains(where: { allows($0) })
+                || (allows(.essensplan) && !allows(.listen))
         case .sicherheit: return parent || [KidFeature.haustuer, .rauchmelder].contains(where: { allows($0) })
         case .familie: return parent || allows(.stundenplan) || allows(.schulmappe)
+        case .technik: return parent || allows(.internet)
         }
     }
 }
@@ -318,7 +331,6 @@ struct HomeAreasOverview: View {
     var body: some View {
         VStack(alignment: .leading, spacing: 12) {
             if store.allows(.raeume) { roomsCard }
-            if store.isParent && store.activeKid == nil && store.hasCar { CarCard() }
             LazyVGrid(columns: columns, spacing: 12) {
                 ForEach(HomeArea.allCases.filter { store.allowsArea($0) }) { a in
                     NavigationLink { HomeAreaPage(area: a) } label: { areaCard(a) }
@@ -409,17 +421,26 @@ struct HomeAreasOverview: View {
 
     private func facts(_ a: HomeArea) -> Facts {
         switch a {
+        case .auto:
+            let soc = store.num(CarConfig.soc)
+            let st = store.carStatusText
+            return Facts(big: soc.map { "\(Int($0)) %" } ?? "–",
+                         small: (st == "lädt" ? "lädt · " : "") + store.chargeMode.title)
         case .energie:
             if store.allows(.strom), let pv = store.num(EnergyConfig.pv) {
                 let soc = store.num(EnergyConfig.soc).map { "Akku \(Int($0.rounded())) %" } ?? "Sonne"
                 return Facts(big: pv < 20 ? "keine Sonne" : Fmt.watts(pv), small: pv < 20 ? soc : "\(soc) · Sonne")
             }
-            return Facts(big: "Technik", small: "Heizung · Pool · Internet")
+            return Facts(big: "Energie", small: "Strom · Heizung")
+        case .draussen:
+            let rain = store.states[WeatherConfig.stationRain]?.state == "on"
+            let t = store.outsideTemp.map { String(format: "%.0f°", $0) } ?? "–"
+            return Facts(big: t, small: rain ? "es regnet · Pool · Garten" : "Wetter · Pool · Garten")
         case .haushalt:
             let running = store.runningHousehold
             let n = running.count
             return Facts(big: n == 0 ? "alles aus" : (n == 1 ? "1 läuft" : "\(n) laufen"),
-                         small: n == 0 ? "Geräte · Essen · Musik" : running.joined(separator: " · "))
+                         small: n == 0 ? "Geräte · Sauger · Musik" : running.joined(separator: " · "))
         case .sicherheit:
             if !store.smokeAlarm.isEmpty { return Facts(big: "RAUCH!", small: "Rauchmelder", alert: true) }
             let windows = store.openContacts(["window"]) ?? 0
@@ -428,7 +449,9 @@ struct HomeAreasOverview: View {
             let ring = store.lastRing.map { "Klingel \(DayText.short($0))" } ?? "Haustür · Rauchmelder"
             return Facts(big: big, small: ring, alert: false)
         case .familie:
-            return Facts(big: "Schule", small: store.isParent && store.activeKid == nil ? "Kinder · Dokumente · Karte" : "Stundenplan · Mappe")
+            return Facts(big: "Familie", small: store.isParent && store.activeKid == nil ? "Karte · Schule · Dokumente" : "Stundenplan · Mappe")
+        case .technik:
+            return Facts(big: "Netz", small: "Internet · VPN · Zigbee")
         }
     }
 }
@@ -473,22 +496,35 @@ struct HomeAreaTiles: View {
     @Environment(AppStore.self) private var store
     let area: HomeArea
     @State private var showMap = false
+    @State private var showWeather = false
 
     private let columns = [GridItem(.flexible(), spacing: 12), GridItem(.flexible(), spacing: 12)]
     private var parent: Bool { store.isParent && store.activeKid == nil }
 
     var body: some View {
-        LazyVGrid(columns: columns, spacing: 12) {
-            switch area {
-            case .energie: energie
-            case .haushalt: haushalt
-            case .sicherheit: sicherheit
-            case .familie: familie
+        VStack(spacing: 12) {
+            if area == .auto { CarCard().padding(.horizontal) }
+            LazyVGrid(columns: columns, spacing: 12) {
+                switch area {
+                case .auto: auto
+                case .energie: energie
+                case .draussen: draussen
+                case .haushalt: haushalt
+                case .sicherheit: sicherheit
+                case .familie: familie
+                case .technik: technik
+                }
             }
+            .padding(.horizontal)
         }
-        .padding(.horizontal)
         .buttonStyle(.plain)
         .fullScreenCover(isPresented: $showMap) { FamilyMapView() }
+        .sheet(isPresented: $showWeather) { WeatherSheet().presentationDetents([.large]) }
+    }
+
+    @ViewBuilder private var auto: some View {
+        NavigationLink { CarPage() } label: { HubTile(title: "Laden & Status", symbol: "ev.charger.fill", color: .green) }
+        NavigationLink { CarHistoryPage() } label: { HubTile(title: "Verlauf", symbol: "clock.arrow.circlepath", color: .blue) }
     }
 
     @ViewBuilder private var energie: some View {
@@ -498,20 +534,18 @@ struct HomeAreaTiles: View {
         if store.allows(.heizung) {
             NavigationLink { HeatingView() } label: { HubTile(title: "Heizung", symbol: "heat.waves", color: .red) }
         }
-        if store.allows(.beschattung) {
-            NavigationLink { ShadingView() } label: { HubTile(title: "Beschattung", symbol: "blinds.horizontal.closed", color: .orange) }
-        }
+    }
+
+    @ViewBuilder private var draussen: some View {
+        Button { showWeather = true } label: { HubTile(title: "Wetter", symbol: "cloud.sun.rain.fill", color: .cyan) }
         if store.allows(.pool) {
             NavigationLink { PoolView() } label: { HubTile(title: "Pool", symbol: "figure.pool.swim", color: .blue) }
         }
         if store.allows(.bewaesserung) {
-            NavigationLink { IrrigationView() } label: { HubTile(title: "Bewässerung", symbol: "sprinkler.and.droplets.fill", color: .cyan) }
+            NavigationLink { IrrigationView() } label: { HubTile(title: "Bewässerung", symbol: "sprinkler.and.droplets.fill", color: .mint) }
         }
-        if store.allows(.internet) {
-            NavigationLink { NetworkView() } label: { HubTile(title: "Internet", symbol: "globe.europe.africa.fill", color: .indigo) }
-        }
-        if parent {
-            NavigationLink { DevicesView() } label: { HubTile(title: "Zigbee-Geräte", symbol: "dot.radiowaves.left.and.right", color: .purple) }
+        if store.allows(.beschattung) {
+            NavigationLink { ShadingView() } label: { HubTile(title: "Beschattung", symbol: "blinds.horizontal.closed", color: .orange) }
         }
     }
 
@@ -522,11 +556,12 @@ struct HomeAreaTiles: View {
         if store.allows(.saugroboter) {
             NavigationLink { VacuumsView() } label: { HubTile(title: "Saugroboter", symbol: "fan.fill", color: .mint) }
         }
-        if store.allows(.essensplan) {
-            NavigationLink { MealPlanView() } label: { HubTile(title: "Essensplan", symbol: "fork.knife", color: .orange) }
-        }
         if store.allows(.musik) {
             NavigationLink { MusicView() } label: { HubTile(title: "Musik", symbol: "hifispeaker.2.fill", color: .pink) }
+        }
+        // Essensplan steht im Tab „Listen“ (oben links) – hier nur, wer keine Listen sieht
+        if store.allows(.essensplan) && !store.allows(.listen) {
+            NavigationLink { MealPlanView() } label: { HubTile(title: "Essensplan", symbol: "fork.knife", color: .orange) }
         }
     }
 
@@ -540,12 +575,12 @@ struct HomeAreaTiles: View {
                         symbol: "smoke.fill", color: store.smokeAlarm.isEmpty ? .gray : .red)
             }
         }
-        if parent {
-            Button { showMap = true } label: { HubTile(title: "Wo sind alle?", symbol: "map.fill", color: .green) }
-        }
     }
 
     @ViewBuilder private var familie: some View {
+        if parent {
+            Button { showMap = true } label: { HubTile(title: "Wo sind alle?", symbol: "map.fill", color: .green) }
+        }
         if store.allows(.stundenplan) || store.allows(.schulmappe) {
             NavigationLink { KidsHubView() } label: {
                 HubTile(title: store.activeKid == nil ? "Schule & Kinder" : "Schule", symbol: "graduationcap.fill", color: .teal)
@@ -560,6 +595,15 @@ struct HomeAreaTiles: View {
             NavigationLink { KidsAdminView() } label: {
                 HubTile(title: "Für die Kinder", symbol: "figure.2.and.child.holdinghands", color: .pink)
             }
+        }
+    }
+
+    @ViewBuilder private var technik: some View {
+        if store.allows(.internet) {
+            NavigationLink { NetworkView() } label: { HubTile(title: "Internet & VPN", symbol: "globe.europe.africa.fill", color: .indigo) }
+        }
+        if parent {
+            NavigationLink { DevicesView() } label: { HubTile(title: "Zigbee-Geräte", symbol: "dot.radiowaves.left.and.right", color: .purple) }
         }
     }
 }
