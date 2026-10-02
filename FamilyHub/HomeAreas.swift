@@ -6,7 +6,7 @@ import SwiftUI
 // Jeder Bereich zeigt auf der Übersicht ein, zwei Kennzahlen und führt zu seinen Seiten.
 
 enum HomeArea: String, CaseIterable, Identifiable, Hashable {
-    case auto, energie, draussen, haushalt, sicherheit, familie, technik
+    case auto, energie, draussen, haushalt, sicherheit, familie, technik, sonstiges
     var id: String { rawValue }
 
     var title: String {
@@ -18,6 +18,7 @@ enum HomeArea: String, CaseIterable, Identifiable, Hashable {
         case .sicherheit: "Sicherheit"
         case .familie: "Familie"
         case .technik: "Technik"
+        case .sonstiges: "Sonstiges"
         }
     }
     var symbol: String {
@@ -29,6 +30,7 @@ enum HomeArea: String, CaseIterable, Identifiable, Hashable {
         case .sicherheit: "shield.lefthalf.filled"
         case .familie: "person.2.fill"
         case .technik: "server.rack"
+        case .sonstiges: "square.grid.2x2.fill"
         }
     }
     var color: Color {
@@ -40,6 +42,7 @@ enum HomeArea: String, CaseIterable, Identifiable, Hashable {
         case .sicherheit: Color(red: 0.90, green: 0.28, blue: 0.30)
         case .familie: Color(red: 0.56, green: 0.36, blue: 0.94)
         case .technik: Color(red: 0.36, green: 0.40, blue: 0.85)
+        case .sonstiges: Color(red: 0.43, green: 0.47, blue: 0.54)
         }
     }
 }
@@ -115,6 +118,7 @@ extension AppStore {
         case .sicherheit: return parent || [KidFeature.haustuer, .rauchmelder].contains(where: { allows($0) })
         case .familie: return parent || allows(.stundenplan) || allows(.schulmappe)
         case .technik: return parent || allows(.internet)
+        case .sonstiges: return true
         }
     }
 }
@@ -340,6 +344,13 @@ struct HomeAreasOverview: View {
         }
         .padding(.horizontal)
         .task { if rooms.floors.isEmpty && store.allows(.raeume) { await rooms.load(store) } }
+        .task {
+            // Bahnübergang für die Karte „Sonstiges“ aktuell halten, solange die Übersicht sichtbar ist
+            while !Task.isCancelled {
+                await RailModel.shared.refreshIfStale(maxAge: 60)
+                try? await Task.sleep(for: .seconds(30))
+            }
+        }
     }
 
     // Räume: breite Karte mit Stockwerken
@@ -452,6 +463,12 @@ struct HomeAreasOverview: View {
             return Facts(big: "Familie", small: store.isParent && store.activeKid == nil ? "Karte · Schule · Dokumente" : "Stundenplan · Mappe")
         case .technik:
             return Facts(big: "Netz", small: "Internet · VPN · Streaming")
+        case .sonstiges:
+            let rail = RailModel.shared
+            guard let next = rail.nextPass else { return Facts(big: "Bahn", small: "DB Status") }
+            let min = max(0, Int(next.pass.timeIntervalSinceNow / 60))
+            return Facts(big: min == 0 ? "Zug jetzt" : "Zug \(min) Min.",
+                         small: rail.closedNow != nil ? "Bahnübergang zu" : "Bahnübergang offen")
         }
     }
 }
@@ -513,6 +530,7 @@ struct HomeAreaTiles: View {
                 case .sicherheit: sicherheit
                 case .familie: familie
                 case .technik: technik
+                case .sonstiges: sonstiges
                 }
             }
             .padding(.horizontal)
@@ -609,5 +627,9 @@ struct HomeAreaTiles: View {
         if parent {
             NavigationLink { DevicesView() } label: { HubTile(title: "Zigbee-Geräte", symbol: "dot.radiowaves.left.and.right", color: .purple) }
         }
+    }
+
+    @ViewBuilder private var sonstiges: some View {
+        NavigationLink { RailCrossingView() } label: { HubTile(title: "DB Status", symbol: "tram.fill", color: .red) }
     }
 }

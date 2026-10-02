@@ -4,7 +4,7 @@ Familien-App „Familie“ (SwiftUI, iOS 17+) für Home Assistant unter `https:/
 
 ## Arbeitsweise
 
-- Jede Änderung an der App: `VERSION` um 1 hochzählen (aktuell 150), committen, `git push origin HEAD:main`.
+- Jede Änderung an der App: `VERSION` um 1 hochzählen (aktuell 151), committen, `git push origin HEAD:main`.
 - Commit-Nachricht: `Update <VERSION>: <was>` und am Ende die Co-Authored-By-Zeile.
 - Ein Push auf `main` startet `.github/workflows/build.yml` auf macOS 26 mit Xcode 26. Der Workflow baut, signiert, lädt zu App Store Connect hoch und gibt den Build in TestFlight für die interne Gruppe „Familie“ frei (`.github/scripts/testflight_assign.py`). Die App in App Store Connect heißt „Familie Mohs“, id 6818251048. Jan installiert über **TestFlight**.
 - **Nicht auf den Build warten.** Direkt nach dem Push melden („Update N ist hochgeladen, kommt in ~15 Min.“). Den Status höchstens später prüfen: `curl -s https://api.github.com/repos/janmohs1985-maker/familie-app/actions/runs?per_page=1`.
@@ -54,6 +54,8 @@ Familien-App „Familie“ (SwiftUI, iOS 17+) für Home Assistant unter `https:/
   - Streaming-Seite mit Ruckler-Protokoll
   - Zigbee anlernen und umbenennen
   - Scan-Detail: Paperless-Knopf nicht mehr unter der Tab-Leiste
+  - Zigbee: Anlernen über „+“, Raum pro Gerät ändern (150)
+  - Zuhause → Sonstiges → „DB Status“: Bahnübergang Elchinger Straße Nersingen mit Schranke, Zeitstrahl, Live-Karte, Zugliste (151). Daten von Transitous (`api.transitous.org/api/v1/map/trips`, ohne Schlüssel), Schließzeiten geschätzt (`RailCrossing.swift`). Entwürfe: Design-Fläche „Bahnübergang Nersingen – Entwürfe“.
 - Offen bzw. angeboten:
   - Zuhause-Karten neu gestalten (pausiert)
   - Watch-Komplikationen
