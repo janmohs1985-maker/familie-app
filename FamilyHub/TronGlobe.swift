@@ -102,7 +102,7 @@ struct TronGlobe: View {
         let c = CGPoint(x: sz.width / 2, y: sz.height / 2)
         let lat0 = cam.lat0 * .pi / 180, lon0 = cam.lon(at: t) * .pi / 180
         let s0 = sin(lat0), c0 = cos(lat0)
-        let accent = inbound ? Tron.hot : Tron.cyan
+        let accent = inbound ? Tron.hot : DotBlue.pillar
 
         /// Projektion: (x, y, Tiefe) – Tiefe > 0 = Vorderseite
         func proj(_ sl: Double, _ cl: Double, _ lo: Double, alt: Double = 0) -> (CGPoint, Double) {
@@ -228,7 +228,7 @@ struct TronGlobe: View {
 
     private func color(_ w: Double) -> Color {
         if inbound { return w > 0.7 ? Color(red: 1, green: 0.1, blue: 0.2) : (w > 0.35 ? Tron.hot : Tron.amber) }
-        return w > 0.7 ? Tron.hot : (w > 0.35 ? Tron.amber : Tron.cyan)
+        return w > 0.6 ? DotBlue.hot : DotBlue.pillar
     }
 
     private func unit(_ lat: Double, _ lon: Double) -> (Double, Double, Double) {
@@ -243,5 +243,36 @@ struct TronGlobe: View {
     }
 }
 
-/// Umschalter Karte ↔ Globus (wird gemerkt)
-enum WorldStyle: String { case karte, globus }
+/// Darstellung der Weltkarte (wird gemerkt): A Punktmatrix, B Globus, Neon-Linien
+enum WorldStyle: String {
+    case karte, globus, neon
+    static func next(_ raw: String) -> String {
+        switch WorldStyle(rawValue: raw) ?? .karte {
+        case .karte: return WorldStyle.globus.rawValue
+        case .globus: return WorldStyle.neon.rawValue
+        case .neon: return WorldStyle.karte.rawValue
+        }
+    }
+    /// Symbol für den Knopf = der Stil, zu dem er wechselt
+    static func nextIcon(_ raw: String) -> String {
+        switch WorldStyle(rawValue: next(raw)) ?? .karte {
+        case .karte: return "circle.grid.3x3.fill"
+        case .globus: return "globe.europe.africa"
+        case .neon: return "map"
+        }
+    }
+    static func nextLabel(_ raw: String) -> String {
+        switch WorldStyle(rawValue: next(raw)) ?? .karte {
+        case .karte: return "Als Punktkarte zeigen"
+        case .globus: return "Als Globus zeigen"
+        case .neon: return "Als Neon-Karte zeigen"
+        }
+    }
+}
+
+enum DotBlue {
+    static let dot = Color(red: 0.23, green: 0.48, blue: 1.0)
+    static let pillar = Color(red: 0.44, green: 0.66, blue: 1.0)
+    static let hot = Color(red: 1.0, green: 0.48, blue: 0.85)
+    static let bg = Color(red: 0.016, green: 0.024, blue: 0.06)
+}

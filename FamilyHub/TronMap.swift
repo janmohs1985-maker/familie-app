@@ -17,6 +17,23 @@ enum WorldShapes {
     }
 
     static let countries: Path = load("world_countries", q: 10)
+    /// regelmäßiges Punktraster (2°) über Land – für die Punktkarte
+    static let gridDots: [CGPoint] = {
+        guard let url = Bundle.main.url(forResource: "world_grid", withExtension: "bin"),
+              let d = try? Data(contentsOf: url), d.count > 4 else { return [] }
+        return d.withUnsafeBytes { (raw: UnsafeRawBufferPointer) in
+            let n = Int(UInt32(littleEndian: raw.loadUnaligned(fromByteOffset: 0, as: UInt32.self)))
+            var out: [CGPoint] = []
+            var o = 4
+            for _ in 0..<n where o + 4 <= raw.count {
+                let la = Double(Int16(littleEndian: raw.loadUnaligned(fromByteOffset: o, as: Int16.self))) / 10
+                let lo = Double(Int16(littleEndian: raw.loadUnaligned(fromByteOffset: o + 2, as: Int16.self))) / 10
+                out.append(project(lat: la, lon: lo))
+                o += 4
+            }
+            return out
+        }
+    }()
     static let land: Path = load("world_land", q: 20)
     static let grid: Path = {
         var p = Path()
@@ -99,6 +116,8 @@ struct TronWorldMap: View {
     var interactive = true
     /// geblockter Verkehr von außen: rote Farben, Impulse laufen zum Haus
     var inbound = false
+    /// Punktmatrix mit Lichtsäulen (Entwurf A) statt Neon-Linien
+    var dots = false
     @Binding var viewport: TronViewport
 
     @State private var base: TronViewport?
@@ -110,7 +129,7 @@ struct TronWorldMap: View {
             let size = geo.size
             let t = viewport.transform(in: size)
             ZStack {
-                Tron.bg
+                (dots ? DotBlue.bg : Tron.bg)
                 staticLayer(t: t, size: size)
                     .drawingGroup()
                 TimelineView(.animation(minimumInterval: 1 / 30)) { tl in
@@ -157,7 +176,20 @@ struct TronWorldMap: View {
 
     private func staticLayer(t: CGAffineTransform, size: CGSize) -> some View {
         let zoom = viewport.zoom
+        let scale = viewport.scale(in: size)
         return Canvas { ctx, _ in
+            if dots {
+                let spacing = 2.0 / 360 * Double(WorldShapes.w0) * Double(scale)
+                let r = max(0.7, spacing * 0.3)
+                var p = Path()
+                for u in WorldShapes.gridDots {
+                    let q = u.applying(t)
+                    guard q.x > -4, q.y > -4, q.x < size.width + 4, q.y < size.height + 4 else { continue }
+                    p.addEllipse(in: CGRect(x: q.x - r, y: q.y - r, width: r * 2, height: r * 2))
+                }
+                ctx.fill(p, with: .color((inbound ? Tron.hot : DotBlue.dot).opacity(0.5)))
+                return
+            }
             let grid = WorldShapes.grid.applying(t)
             ctx.stroke(grid, with: .color(Tron.cyan.opacity(0.07)), lineWidth: 0.5)
 
@@ -184,6 +216,61 @@ struct TronWorldMap: View {
             func age(_ p: WorldTraffic.Place) -> Double { p.alter + extra }
             func fadeOf(_ p: WorldTraffic.Place) -> Double { max(0, 1 - age(p) / lifetime) }
             let live = places.filter { age($0) < lifetime }
+
+            if dots {
+                let hot = inbound ? Tron.hot : DotBlue.hot
+                let cool = inbound ? Tron.amber : DotBlue.pillar
+                let zf = min(2.2, sqrt(Double(viewport.zoom)))
+                if showLines {
+                    for p in live.prefix(14) {
+                        let q = WorldShapes.project(lat: p.lat, lon: p.lon).applying(t)
+                        let d = hypot(q.x - h.x, q.y - h.y)
+                        guard d > 4 else { continue }
+                        var arc = Path(); arc.move(to: h)
+                        arc.addQuadCurve(to: q, control: CGPoint(x: (h.x + q.x) / 2, y: (h.y + q.y) / 2 - d * 0.3))
+                        ctx.stroke(arc, with: .color(cool.opacity(0.18 * fadeOf(p))), lineWidth: 0.8)
+                    }
+                }
+                for p in live.sorted(by: { $0.n < $1.n }) {
+                    let q = WorldShapes.project(lat: p.lat, lon: p.lon).applying(t)
+                    guard q.x > -20, q.x < size.width + 20 else { continue }
+                    let w = weightOf(p)
+                    let fade = fadeOf(p)
+                    let col = w > 0.6 ? hot : cool
+                    let grow = min(1, age(p) / 0.8)
+                    let hgt = (10 + 52 * w) * zf * grow
+                    let bw = (2.5 + 2 * w) * zf
+                    let rect = CGRect(x: q.x - bw / 2, y: q.y - hgt, width: bw, height: hgt)
+                    ctx.fill(Path(roundedRect: rect, cornerRadius: bw / 2),
+                             with: .linearGradient(Gradient(colors: [col.opacity(0.95 * fade), col.opacity(0)]),
+                                                   startPoint: CGPoint(x: q.x, y: q.y), endPoint: CGPoint(x: q.x, y: q.y - hgt)))
+                    ctx.drawLayer { g in
+                        g.addFilter(.blur(radius: 4))
+                        g.fill(Path(ellipseIn: CGRect(x: q.x - 5, y: q.y - 5, width: 10, height: 10)), with: .color(col.opacity(0.8 * fade)))
+                    }
+                    let br = (1.8 + 1.5 * w) * zf
+                    ctx.fill(Path(ellipseIn: CGRect(x: q.x - br, y: q.y - br, width: br * 2, height: br * 2)), with: .color(.white.opacity(fade)))
+                }
+                if showLabels {
+                    for p in live.sorted(by: { $0.n > $1.n }).prefix(viewport.zoom > 2 ? 10 : 4) {
+                        let q = WorldShapes.project(lat: p.lat, lon: p.lon).applying(t)
+                        let name = p.stadt.isEmpty ? p.landname : p.stadt
+                        guard !name.isEmpty else { continue }
+                        ctx.draw(Text("\(name) · \(p.n)").font(.system(size: 9, weight: .semibold))
+                                    .foregroundColor(.white.opacity(0.85 * fadeOf(p))),
+                                 at: CGPoint(x: q.x + 7, y: q.y + 2), anchor: .leading)
+                    }
+                }
+                ctx.drawLayer { g in
+                    g.addFilter(.blur(radius: 4))
+                    g.fill(Path(ellipseIn: CGRect(x: h.x - 6, y: h.y - 6, width: 12, height: 12)), with: .color(Tron.amber))
+                }
+                ctx.fill(Path(ellipseIn: CGRect(x: h.x - 2.5, y: h.y - 2.5, width: 5, height: 5)), with: .color(.white))
+                let pr = 7 + 3 * sin(time * 3)
+                ctx.stroke(Path(ellipseIn: CGRect(x: h.x - pr, y: h.y - pr, width: pr * 2, height: pr * 2)),
+                           with: .color(Tron.amber.opacity(0.8)), lineWidth: 1.2)
+                return
+            }
 
             if showLines {
                 for (i, p) in live.prefix(18).enumerated() {

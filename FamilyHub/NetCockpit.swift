@@ -47,7 +47,7 @@ struct NetTabStrip: View {
                                       showLines: true, interactive: false, cam: $miniCam)
                         } else {
                             TronWorldMap(places: live.places, home: home, lifetime: 12, stamp: stamp,
-                                         showLines: true, showLabels: false, interactive: false, viewport: $miniVP)
+                                         showLines: true, showLabels: false, interactive: false, dots: worldStyle != WorldStyle.neon.rawValue, viewport: $miniVP)
                         }
                     }
                         .frame(height: 58)

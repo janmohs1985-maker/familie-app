@@ -372,7 +372,7 @@ struct NetworkView: View {
                         .frame(height: 340)
                 } else {
                     TronWorldMap(places: live.places, home: homePair, lifetime: 12, stamp: liveStamp,
-                                 interactive: false, viewport: $worldVP)
+                                 interactive: false, dots: worldStyle != WorldStyle.neon.rawValue, viewport: $worldVP)
                         .aspectRatio(WorldShapes.w0 / WorldShapes.h0, contentMode: .fit)
                 }
             }
@@ -383,13 +383,13 @@ struct NetworkView: View {
                 Spacer()
                 Button {
                     withAnimation(.snappy) {
-                        worldStyle = worldStyle == WorldStyle.globus.rawValue ? WorldStyle.karte.rawValue : WorldStyle.globus.rawValue
+                        worldStyle = WorldStyle.next(worldStyle)
                     }
                 } label: {
-                    Image(systemName: worldStyle == WorldStyle.globus.rawValue ? "map" : "globe.europe.africa")
+                    Image(systemName: WorldStyle.nextIcon(worldStyle))
                         .frame(width: 32, height: 32)
                 }
-                .accessibilityLabel(worldStyle == WorldStyle.globus.rawValue ? "Als Karte zeigen" : "Als Globus zeigen")
+                .accessibilityLabel(WorldStyle.nextLabel(worldStyle))
                 Image(systemName: "arrow.up.left.and.arrow.down.right")
             }
             .font(.system(size: 10, weight: .bold, design: .monospaced))

@@ -301,7 +301,7 @@ struct WorldTrafficView: View {
                         .background(Tron.bg)
                 } else {
                     TronWorldMap(places: data.places, home: homePair, lifetime: lifetime, stamp: stamp,
-                                 showLines: lines, interactive: false, inbound: blocked, viewport: $viewport)
+                                 showLines: lines, interactive: false, inbound: blocked, dots: style != WorldStyle.neon.rawValue, viewport: $viewport)
                         .aspectRatio(WorldShapes.w0 / WorldShapes.h0, contentMode: .fit)
                 }
             }
@@ -313,10 +313,10 @@ struct WorldTrafficView: View {
                 Text(data.syslogActive ? (blocked ? "ABWEHR · \(data.connections) GEBLOCKT · \(livePlaces.count) QUELLEN" : "NETZ-RADAR · \(livePlaces.count) ZIELE")
                                        : (blocked ? "KEINE GEBLOCKTEN DATEN" : "WARTE AUF DATEN"))
                 Spacer()
-                Button { withAnimation(.snappy) { style = style == WorldStyle.globus.rawValue ? WorldStyle.karte.rawValue : WorldStyle.globus.rawValue } } label: {
-                    Image(systemName: style == WorldStyle.globus.rawValue ? "map" : "globe.europe.africa")
+                Button { withAnimation(.snappy) { style = WorldStyle.next(style) } } label: {
+                    Image(systemName: WorldStyle.nextIcon(style))
                 }
-                .accessibilityLabel(style == WorldStyle.globus.rawValue ? "Als Karte zeigen" : "Als Globus zeigen")
+                .accessibilityLabel(WorldStyle.nextLabel(style))
                 Button { withAnimation { lines.toggle() } } label: {
                     Image(systemName: lines ? "point.topleft.down.to.point.bottomright.curvepath.fill" : "point.topleft.down.to.point.bottomright.curvepath")
                 }
@@ -531,7 +531,7 @@ struct TronFullscreen: View {
                     .background(Tron.bg)
             } else {
                 TronWorldMap(places: data.places, home: home, lifetime: lifetime, stamp: stamp,
-                             showLines: lines, rotated: landscape, inbound: blocked, viewport: $viewport)
+                             showLines: lines, rotated: landscape, inbound: blocked, dots: style != WorldStyle.neon.rawValue, viewport: $viewport)
             }
             HUDFrame().stroke(Tron.cyan.opacity(0.7), lineWidth: 1.5).padding(landscape ? 18 : 10).allowsHitTesting(false)
             hud(size)
@@ -551,8 +551,8 @@ struct TronFullscreen: View {
                 }
                 Spacer()
                 HStack(spacing: 14) {
-                    hudButton(style == WorldStyle.globus.rawValue ? "map" : "globe.europe.africa") {
-                        style = style == WorldStyle.globus.rawValue ? WorldStyle.karte.rawValue : WorldStyle.globus.rawValue
+                    hudButton(WorldStyle.nextIcon(style)) {
+                        style = WorldStyle.next(style)
                     }
                     hudButton(lines ? "point.topleft.down.to.point.bottomright.curvepath.fill" : "point.topleft.down.to.point.bottomright.curvepath") { lines.toggle() }
                     hudButton("arrow.counterclockwise") { withAnimation(.spring) { viewport = TronViewport(); globeCam = GlobeCam() } }
