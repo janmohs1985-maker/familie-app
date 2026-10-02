@@ -44,6 +44,7 @@ struct ZigbeeDevice: Identifiable, Hashable {
     let offline: Bool
     let linkQuality: Int?
     var hasProblem: Bool { offline || batteryLow || (battery ?? 100) <= 20 }
+    static let noRoom = "Ohne Raum"
 }
 
 @MainActor
@@ -68,11 +69,26 @@ extension AppStore {
         let devices: [ZigbeeDevice] = list.compactMap { d in
             guard let id = d["id"]?.string else { return nil }
             return ZigbeeDevice(id: id, name: d["name"]?.string ?? "Gerät", model: d["model"]?.string ?? "",
-                                maker: d["hersteller"]?.string ?? "", room: d["raum"]?.string ?? "Ohne Raum",
+                                maker: d["hersteller"]?.string ?? "", room: d["raum"]?.string ?? ZigbeeDevice.noRoom,
                                 battery: d["akku"]?.double, batteryLow: d["akku_schwach"]?.string == "true",
                                 offline: d["offline"]?.string == "true", linkQuality: d["lq"]?.int)
         }
         return (devices.sorted { $0.name < $1.name }, r["bridge"]?.string == "on")
+    }
+
+    /// Bereiche (Räume) aus Home Assistant, alphabetisch
+    func loadAreas() async throws -> [(id: String, name: String)] {
+        let list = try await client.websocket(["type": "config/area_registry/list"]).array ?? []
+        return list.compactMap { a -> (id: String, name: String)? in
+            guard let id = a["area_id"]?.string, let n = a["name"]?.string else { return nil }
+            return (id, n)
+        }
+        .sorted { $0.name.localizedCompare($1.name) == .orderedAscending }
+    }
+
+    func setDeviceArea(_ device: String, area: String?) async throws {
+        _ = try await client.websocket(["type": "config/device_registry/update", "device_id": device,
+                                        "area_id": area ?? NSNull()])
     }
 }
 
@@ -229,6 +245,9 @@ struct DevicesView: View {
     @State private var loading = true
     @State private var filter = "probleme"
     @State private var search = ""
+    @State private var showJoin = false
+    @State private var unnamed = 0
+    @State private var moving: ZigbeeDevice?
 
     private var shown: [ZigbeeDevice] {
         var list = devices
@@ -241,8 +260,13 @@ struct DevicesView: View {
         return list
     }
     private var rooms: [String] {
-        filter == "akku" ? [""] : Array(Set(shown.map(\.room))).sorted()
+        if filter == "akku" { return [""] }
+        // „Ohne Raum“ immer ans Ende
+        return Array(Set(shown.map(\.room))).sorted {
+            ($0 == ZigbeeDevice.noRoom ? 1 : 0, $0) < ($1 == ZigbeeDevice.noRoom ? 1 : 0, $1)
+        }
     }
+    private var canJoin: Bool { store.isParent && store.activeKid == nil }
 
     var body: some View {
         List {
@@ -262,8 +286,14 @@ struct DevicesView: View {
                 }
                 .pickerStyle(.segmented)
             }
-            if store.isParent && store.activeKid == nil {
-                ZigbeeJoinSection()
+            if canJoin && unnamed > 0 {
+                Section {
+                    Button { showJoin = true } label: {
+                        Label(unnamed == 1 ? "1 neues Gerät hat noch keinen Namen" : "\(unnamed) neue Geräte haben noch keinen Namen",
+                              systemImage: "sparkles")
+                            .foregroundStyle(.purple)
+                    }
+                }
             }
             if loading && devices.isEmpty {
                 Section { ProgressView().frame(maxWidth: .infinity) }
@@ -273,13 +303,37 @@ struct DevicesView: View {
             ForEach(rooms, id: \.self) { room in
                 Section(room) {
                     ForEach(filter == "akku" ? shown : shown.filter { $0.room == room }) { d in
-                        DeviceRow(device: d)
+                        if store.isAdmin {
+                            Button { moving = d } label: { DeviceRow(device: d) }
+                                .foregroundStyle(.primary)
+                        } else {
+                            DeviceRow(device: d)
+                        }
                     }
                 }
             }
         }
         .searchable(text: $search, prompt: "Gerät oder Raum")
         .navigationTitle("Zigbee-Geräte")
+        .toolbar {
+            if canJoin {
+                ToolbarItem(placement: .primaryAction) {
+                    Button { showJoin = true } label: { Image(systemName: "plus") }
+                        .accessibilityLabel("Neues Gerät anlernen")
+                }
+            }
+        }
+        .sheet(isPresented: $showJoin, onDismiss: { Task { await load() } }) {
+            NavigationStack {
+                List { ZigbeeJoinSection() }
+                    .navigationTitle("Neues Gerät")
+                    .navigationBarTitleDisplayMode(.inline)
+                    .toolbar { ToolbarItem(placement: .confirmationAction) { Button("Fertig") { showJoin = false } } }
+            }
+        }
+        .sheet(item: $moving, onDismiss: { Task { await load() } }) { d in
+            ZigbeeRoomPicker(device: d)
+        }
         .refreshable { await load() }
         .task { await load() }
     }
@@ -290,7 +344,73 @@ struct DevicesView: View {
             devices = r.devices
             bridgeOnline = r.bridgeOnline
         }
+        if canJoin, let l = try? await store.loadNewZigbee() {
+            unnamed = l.filter(\.unnamed).count
+        }
         loading = false
+    }
+}
+
+/// Raum (Bereich in Home Assistant) eines Zigbee-Geräts ändern – nur Jan
+struct ZigbeeRoomPicker: View {
+    @Environment(AppStore.self) private var store
+    @Environment(\.dismiss) private var dismiss
+    let device: ZigbeeDevice
+    @State private var areas: [(id: String, name: String)] = []
+    @State private var busy = false
+    @State private var error: String?
+
+    var body: some View {
+        NavigationStack {
+            List {
+                Section {
+                    VStack(alignment: .leading, spacing: 2) {
+                        Text(device.name).font(.headline)
+                        Text([device.maker, device.model].filter { !$0.isEmpty }.joined(separator: " · "))
+                            .font(.caption).foregroundStyle(.secondary)
+                    }
+                    if let error {
+                        Label(error, systemImage: "exclamationmark.triangle.fill").font(.footnote).foregroundStyle(.red)
+                    }
+                }
+                Section("Raum") {
+                    if areas.isEmpty { ProgressView().frame(maxWidth: .infinity) }
+                    ForEach(areas, id: \.id) { a in
+                        Button { set(a.id) } label: {
+                            HStack {
+                                Text(a.name).foregroundStyle(.primary)
+                                Spacer()
+                                if a.name == device.room { Image(systemName: "checkmark").foregroundStyle(.blue) }
+                            }
+                        }
+                    }
+                    if device.room != ZigbeeDevice.noRoom {
+                        Button("Ohne Raum", role: .destructive) { set(nil) }
+                    }
+                }
+            }
+            .disabled(busy)
+            .navigationTitle("In welchen Raum?")
+            .navigationBarTitleDisplayMode(.inline)
+            .toolbar { ToolbarItem(placement: .cancellationAction) { Button("Abbrechen") { dismiss() } } }
+            .task {
+                if let l = try? await store.loadAreas() { areas = l }
+            }
+        }
+        .presentationDetents([.medium, .large])
+    }
+
+    private func set(_ area: String?) {
+        busy = true
+        Task {
+            do {
+                try await store.setDeviceArea(device.id, area: area)
+                dismiss()
+            } catch {
+                self.error = error.localizedDescription
+            }
+            busy = false
+        }
     }
 }
 
