@@ -262,6 +262,9 @@ struct DevicesView: View {
                 }
                 .pickerStyle(.segmented)
             }
+            if store.isParent && store.activeKid == nil {
+                ZigbeeJoinSection()
+            }
             if loading && devices.isEmpty {
                 Section { ProgressView().frame(maxWidth: .infinity) }
             } else if shown.isEmpty {
