@@ -13,11 +13,7 @@ struct IPTVView: View {
             IPTVContent(st: st, error: error, reload: { setup in await load(setup: setup) })
                 .padding()
         }
-        .background(Color.black.ignoresSafeArea())
-        .environment(\.colorScheme, .dark)
-        .toolbarBackground(Color.black, for: .navigationBar)
-        .toolbarBackground(.visible, for: .navigationBar)
-        .toolbarColorScheme(.dark, for: .navigationBar)
+        .background(AppBackground())
         .navigationTitle("Streaming")
         .navigationBarTitleDisplayMode(.large)
         .refreshable { await load() }
@@ -40,9 +36,9 @@ struct IPTVView: View {
 }
 
 enum Neon {
-    static let pink = Color(red: 1.0, green: 0.30, blue: 0.48)
+    static let pink = Color.pink
     static let pinkDeep = Color(red: 0.06, green: 0.02, blue: 0.035)
-    static let green = Color(red: 0.24, green: 0.86, blue: 0.52)
+    static let green = Color.green
     static let panel = Color(red: 0.045, green: 0.06, blue: 0.086)
     static let line = Color(red: 0.11, green: 0.14, blue: 0.2)
 }
@@ -91,7 +87,7 @@ struct IPTVContent: View {
         return VStack(alignment: .leading, spacing: 14) {
             HStack(spacing: 8) {
                 if s.streaming {
-                    Text("LIVE").font(.caption2.weight(.heavy)).tracking(1)
+                    Text("LIVE").font(.caption2.weight(.heavy)).tracking(1).foregroundStyle(.white)
                         .padding(.horizontal, 8).padding(.vertical, 4)
                         .background(Neon.pink, in: RoundedRectangle(cornerRadius: 7))
                     if let start = s.sessionStart {
@@ -146,8 +142,7 @@ struct IPTVContent: View {
             }
         }
         .padding(18)
-        .background(Neon.pinkDeep, in: RoundedRectangle(cornerRadius: 26, style: .continuous))
-        .overlay(RoundedRectangle(cornerRadius: 26, style: .continuous).strokeBorder(Neon.pink.opacity(0.35)))
+        .cardSurface(radius: 24)
     }
 
     @ViewBuilder private func chart(_ s: IPTVStatus) -> some View {
@@ -179,7 +174,7 @@ struct IPTVContent: View {
             }
             .chartYAxis {
                 AxisMarks(position: .trailing, values: .automatic(desiredCount: 3)) { v in
-                    AxisGridLine().foregroundStyle(.white.opacity(0.06))
+                    AxisGridLine().foregroundStyle(Color.primary.opacity(0.07))
                     AxisValueLabel { if let d = v.as(Double.self) { Text("\(d, specifier: "%.0f")") } }
                 }
             }
@@ -209,8 +204,7 @@ struct IPTVContent: View {
             }
         }
         .padding(16).frame(maxWidth: .infinity, alignment: .leading)
-        .background(Neon.panel, in: RoundedRectangle(cornerRadius: 22, style: .continuous))
-        .overlay(RoundedRectangle(cornerRadius: 22, style: .continuous).strokeBorder(Neon.line))
+        .cardSurface(radius: 22)
     }
 
     private func stat(_ title: String, _ value: String, small: Bool = false, color: Color = .primary) -> some View {
@@ -266,8 +260,7 @@ struct IPTVContent: View {
             }
         }
         .padding(16)
-        .background(Neon.panel, in: RoundedRectangle(cornerRadius: 22, style: .continuous))
-        .overlay(RoundedRectangle(cornerRadius: 22, style: .continuous).strokeBorder(Neon.line))
+        .cardSurface(radius: 22)
     }
 
     // MARK: Ruckler-Protokoll
@@ -310,8 +303,7 @@ struct IPTVContent: View {
             }
         }
         .padding(16).frame(maxWidth: .infinity, alignment: .leading)
-        .background(Neon.panel, in: RoundedRectangle(cornerRadius: 22, style: .continuous))
-        .overlay(RoundedRectangle(cornerRadius: 22, style: .continuous).strokeBorder(Neon.line))
+        .cardSurface(radius: 22)
     }
 
     private func logHint(_ s: IPTVStatus) -> some View {

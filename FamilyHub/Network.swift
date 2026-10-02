@@ -283,11 +283,7 @@ struct NetworkView: View {
             }
             .padding()
         }
-        .background(Color.black.ignoresSafeArea())
-        .environment(\.colorScheme, .dark)
-        .toolbarBackground(Color.black, for: .navigationBar)
-        .toolbarBackground(.visible, for: .navigationBar)
-        .toolbarColorScheme(.dark, for: .navigationBar)
+        .background(AppBackground())
         .navigationTitle("Netzwerk")
         .refreshable { await load() }
         .task { await load() }
@@ -421,16 +417,14 @@ struct NetworkView: View {
         }
         .padding(16)
         .frame(maxWidth: .infinity, alignment: .leading)
-        .background(Tron.bg, in: RoundedRectangle(cornerRadius: 18, style: .continuous))
-        .overlay(RoundedRectangle(cornerRadius: 18, style: .continuous).strokeBorder(Tron.cyan.opacity(0.2)))
+        .cardSurface()
 
         NavigationLink { WorldTrafficView() } label: {
             Label("Ganze Weltkarte · Geblockt von außen", systemImage: "globe.americas.fill")
                 .font(.subheadline.weight(.semibold)).frame(maxWidth: .infinity)
                 .padding(14)
-                .background(Tron.bg, in: RoundedRectangle(cornerRadius: 16, style: .continuous))
-                .overlay(RoundedRectangle(cornerRadius: 16, style: .continuous).strokeBorder(Tron.cyan.opacity(0.35)))
-                .foregroundStyle(Tron.cyan)
+                .cardSurface(radius: DS.tileRadius)
+                .foregroundStyle(Color.indigo)
         }
         .buttonStyle(.plain)
     }

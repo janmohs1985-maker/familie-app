@@ -11,8 +11,8 @@ enum NetTab: String, CaseIterable, Identifiable {
 enum WanColor {
     static func of(_ key: String) -> Color {
         switch key {
-        case "wan1": return Tron.cyan
-        case "wan2": return Tron.amber
+        case "wan1": return .blue
+        case "wan2": return .orange
         default: return Color.green
         }
     }
@@ -34,13 +34,13 @@ struct NetTabStrip: View {
     var body: some View {
         ScrollView(.horizontal, showsIndicators: false) {
             HStack(spacing: 10) {
-                tile(.overview, color: Tron.cyan) {
-                    Text("Übersicht").font(.caption.weight(.bold)).foregroundStyle(Tron.cyan)
+                tile(.overview) {
+                    Text("Übersicht").font(.caption.weight(.bold)).foregroundStyle(tab == .overview ? Color.indigo : .secondary)
                     let total = live.wans.reduce(0) { $0 + $1.rx }
                     mbit(total)
                     MiniWanChart(history: live.history).frame(height: 30)
                 }
-                tile(.world, color: Tron.cyan, padding: 6) {
+                tile(.world, padding: 6) {
                     Group {
                         if worldStyle == WorldStyle.globus.rawValue {
                             TronGlobe(places: live.places, home: home, lifetime: 12, stamp: stamp,
@@ -53,26 +53,26 @@ struct NetTabStrip: View {
                         .frame(height: 58)
                         .clipShape(RoundedRectangle(cornerRadius: 10))
                         .allowsHitTesting(false)
-                    Text("\(live.places.filter { $0.alter < 12 }.count) ZIELE LIVE")
-                        .font(.system(size: 9, weight: .bold, design: .monospaced)).foregroundStyle(Tron.cyan)
+                    Text("Weltkarte · \(live.places.filter { $0.alter < 12 }.count)")
+                        .font(.caption.weight(.bold)).foregroundStyle(tab == .world ? Color.indigo : .secondary)
                         .padding(.horizontal, 4)
                 }
-                tile(.streaming, color: Neon.pink) {
+                tile(.streaming) {
                     HStack(spacing: 5) {
                         Text("Streaming").font(.caption.weight(.bold)).foregroundStyle(.secondary)
                         if iptv?.streaming == true {
                             Text("LIVE").font(.system(size: 8, weight: .heavy)).padding(.horizontal, 4).padding(.vertical, 1)
-                                .background(Neon.pink, in: RoundedRectangle(cornerRadius: 4))
+                                .foregroundStyle(.white).background(Color.pink, in: RoundedRectangle(cornerRadius: 4))
                         }
                     }
                     mbit(iptv?.rx ?? 0)
-                    MiniLine(values: (iptv?.verlauf ?? []).suffix(60).map(\.rx), color: Neon.pink).frame(height: 30)
+                    MiniLine(values: (iptv?.verlauf ?? []).suffix(60).map(\.rx), color: .pink).frame(height: 30)
                 }
-                tile(.vpn, color: Neon.green) {
+                tile(.vpn) {
                     Text("VPN").font(.caption.weight(.bold)).foregroundStyle(.secondary)
                     Text("\(vpnUp)/\(max(vpnTotal, vpnUp))").font(.title3.weight(.heavy)).monospacedDigit()
                     Text(vpnUp > 0 ? "verbunden" : "getrennt").font(.caption2.weight(.semibold))
-                        .foregroundStyle(vpnUp > 0 ? Neon.green : .red)
+                        .foregroundStyle(vpnUp > 0 ? Color.green : .red)
                     Spacer(minLength: 0)
                 }
             }
@@ -89,7 +89,7 @@ struct NetTabStrip: View {
         }
     }
 
-    private func tile<C: View>(_ t: NetTab, color: Color, padding: CGFloat = 10, @ViewBuilder content: () -> C) -> some View {
+    private func tile<C: View>(_ t: NetTab, padding: CGFloat = 10, @ViewBuilder content: () -> C) -> some View {
         let on = tab == t
         return Button {
             withAnimation(.snappy) { tab = t }
@@ -97,10 +97,9 @@ struct NetTabStrip: View {
             VStack(alignment: .leading, spacing: 2) { content() }
                 .padding(padding)
                 .frame(width: 118, height: 104, alignment: .topLeading)
-                .background(Color(red: 0.02, green: 0.04, blue: 0.06), in: RoundedRectangle(cornerRadius: 18, style: .continuous))
-                .overlay(RoundedRectangle(cornerRadius: 18, style: .continuous)
-                    .strokeBorder(on ? color : color.opacity(0.22), lineWidth: on ? 1.5 : 1))
-                .shadow(color: on ? color.opacity(0.45) : .clear, radius: 10)
+                .cardSurface(radius: DS.tileRadius)
+                .overlay(RoundedRectangle(cornerRadius: DS.tileRadius, style: .continuous)
+                    .strokeBorder(Color.indigo, lineWidth: on ? 2 : 0))
         }
         .buttonStyle(.plain)
         .accessibilityAddTraits(on ? .isSelected : [])
@@ -179,7 +178,7 @@ struct NetHeroCard: View {
                         .interpolationMethod(.monotone)
                 }
                 .chartForegroundStyleScale(domain: ["wan1", "wan2", "wan3"],
-                                           range: [Tron.cyan.opacity(0.7), Tron.amber.opacity(0.75), Color.green.opacity(0.7)])
+                                           range: [Color.blue.opacity(0.55), Color.orange.opacity(0.6), Color.green.opacity(0.55)])
                 .chartLegend(.hidden)
                 .chartXAxis {
                     AxisMarks(values: .automatic(desiredCount: 4)) { _ in
@@ -188,7 +187,7 @@ struct NetHeroCard: View {
                 }
                 .chartYAxis {
                     AxisMarks(position: .trailing, values: .automatic(desiredCount: 3)) { v in
-                        AxisGridLine().foregroundStyle(.white.opacity(0.06))
+                        AxisGridLine().foregroundStyle(Color.primary.opacity(0.07))
                         AxisValueLabel { if let d = v.as(Double.self) { Text("\(d, specifier: "%.0f")") } }
                     }
                 }
@@ -208,8 +207,7 @@ struct NetHeroCard: View {
             }
         }
         .padding(18)
-        .background(Color(red: 0.02, green: 0.03, blue: 0.05), in: RoundedRectangle(cornerRadius: 26, style: .continuous))
-        .overlay(RoundedRectangle(cornerRadius: 26, style: .continuous).strokeBorder(Tron.cyan.opacity(0.25)))
+        .cardSurface(radius: 26)
     }
 }
 
@@ -221,9 +219,12 @@ struct WanTile: View {
     var body: some View {
         let c = WanColor.of(wan.key)
         VStack(alignment: .leading, spacing: 4) {
-            HStack(spacing: 6) {
-                Circle().fill(wan.up ? c : .red).frame(width: 8, height: 8)
-                Text(wan.name).font(.caption.weight(.bold)).foregroundStyle(c).lineLimit(1)
+            HStack(spacing: 8) {
+                Image(systemName: wan.key == "wan2" ? "dot.radiowaves.up.forward" : "house.fill")
+                    .font(.system(size: 13, weight: .bold)).foregroundStyle(.white)
+                    .frame(width: 28, height: 28)
+                    .background((wan.up ? c : .red).gradient, in: RoundedRectangle(cornerRadius: 8, style: .continuous))
+                Text(wan.name).font(.footnote.weight(.bold)).lineLimit(1)
             }
             HStack(alignment: .firstTextBaseline, spacing: 3) {
                 Text(Rate.text(wan.rx)).font(.title2.weight(.heavy)).monospacedDigit().contentTransition(.numericText())
@@ -235,8 +236,7 @@ struct WanTile: View {
         }
         .padding(14)
         .frame(maxWidth: .infinity, alignment: .leading)
-        .background(Color(red: 0.02, green: 0.03, blue: 0.05), in: RoundedRectangle(cornerRadius: 20, style: .continuous))
-        .overlay(RoundedRectangle(cornerRadius: 20, style: .continuous).strokeBorder(c.opacity(0.3)))
+        .cardSurface(radius: 20)
     }
 }
 
@@ -262,8 +262,8 @@ struct FamilyWifiCard: View {
                     Spacer()
                     GeometryReader { g in
                         ZStack(alignment: .leading) {
-                            Capsule().fill(Tron.amber.opacity(0.15))
-                            Capsule().fill(Tron.amber).frame(width: max(4, g.size.width * d.rate / mx))
+                            Capsule().fill(Color.orange.opacity(0.15))
+                            Capsule().fill(Color.orange).frame(width: max(4, g.size.width * d.rate / mx))
                         }
                     }
                     .frame(width: 100, height: 6)
@@ -273,8 +273,7 @@ struct FamilyWifiCard: View {
             }
         }
         .padding(16)
-        .background(Color(red: 0.045, green: 0.035, blue: 0.02), in: RoundedRectangle(cornerRadius: 20, style: .continuous))
-        .overlay(RoundedRectangle(cornerRadius: 20, style: .continuous).strokeBorder(Tron.amber.opacity(0.3)))
+        .cardSurface(radius: 20)
     }
 }
 
@@ -292,7 +291,6 @@ struct KPITile: View {
         }
         .padding(12)
         .frame(maxWidth: .infinity, alignment: .leading)
-        .background(Neon.panel, in: RoundedRectangle(cornerRadius: 18, style: .continuous))
-        .overlay(RoundedRectangle(cornerRadius: 18, style: .continuous).strokeBorder(Neon.line))
+        .cardSurface(radius: 18)
     }
 }
