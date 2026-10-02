@@ -93,6 +93,7 @@ struct MainTabs: View {
     @Environment(AppStore.self) private var store
     @State private var visited: Set<String> = ["heute"]
     @State private var keyboard = KeyboardWatch.shared
+    @State private var tabBar = TabBarVisibility.shared
     @State private var push = PushState.shared
     @State private var doorConfirm = false
     @State private var doorCall = false
@@ -115,12 +116,13 @@ struct MainTabs: View {
             }
         }
         .overlay(alignment: .bottom) {
-            if !keyboard.visible {
+            if !keyboard.visible && !tabBar.hiddenTabs.contains(store.selectedTab) {
                 GlassTabBar(tabs: tabs, selection: Bindable(store).selectedTab)
                     .transition(.move(edge: .bottom).combined(with: .opacity))
             }
         }
         .animation(.easeOut(duration: 0.2), value: keyboard.visible)
+        .animation(.easeOut(duration: 0.2), value: tabBar.hiddenTabs)
         .onChange(of: store.selectedTab, initial: true) { _, t in visited.insert(t) }
         // Live-Aktivitäten (Wäsche/Spülmaschine): Schlüssel an Family Hub melden – nur Eltern
         .onChange(of: store.isParent && store.activeKid == nil, initial: true) { _, parent in
