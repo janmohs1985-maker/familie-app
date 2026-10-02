@@ -130,10 +130,11 @@ struct WorldTrafficView: View {
     @State private var data = WorldTraffic()
     @State private var loaded = false
     @State private var error: String?
-    @State private var position: MapCameraPosition = .camera(MapCamera(centerCoordinate: .init(latitude: 35, longitude: 10),
-                                                                        distance: 28_000_000))
-    @State private var selected: WorldTraffic.Target?
+    @State private var viewport = TronViewport()
+    @State private var stamp = Date()
     @State private var lines = true
+    @State private var fullscreen = false
+    @State private var focus: (lat: Double, lon: Double)?
 
     /// Punkte leben 12 s nach der letzten Verbindung und verblassen dabei
     private let lifetime = 12.0
@@ -141,6 +142,7 @@ struct WorldTrafficView: View {
     private var home: CLLocationCoordinate2D {
         store.homeCoordinate ?? .init(latitude: 51.2, longitude: 10.4)
     }
+    private var homePair: (lat: Double, lon: Double) { (home.latitude, home.longitude) }
     private var livePlaces: [WorldTraffic.Place] { data.places.filter { $0.alter < lifetime } }
     private var maxN: Int { max(1, livePlaces.map(\.n).max() ?? 1) }
 
@@ -157,9 +159,16 @@ struct WorldTrafficView: View {
             }
             .padding()
         }
-        .background(Color(.systemGroupedBackground))
+        .background(Color.black.ignoresSafeArea())
+        .environment(\.colorScheme, .dark)
+        .toolbarBackground(Color.black, for: .navigationBar)
+        .toolbarBackground(.visible, for: .navigationBar)
+        .toolbarColorScheme(.dark, for: .navigationBar)
         .navigationTitle("Weltkarte")
         .navigationBarTitleDisplayMode(.inline)
+        .fullScreenCover(isPresented: $fullscreen) {
+            TronFullscreen(initial: data, home: homePair, lifetime: lifetime, focus: focus)
+        }
         .task {
             while !Task.isCancelled {
                 await load()
@@ -171,7 +180,7 @@ struct WorldTrafficView: View {
     private func load() async {
         do {
             let d = try await store.loadWorldTraffic(seconds: Int(lifetime) + 3)
-            withAnimation(.easeInOut(duration: 0.6)) { data = d; loaded = true; error = nil }
+            data = d; stamp = .now; loaded = true; error = nil
         } catch {
             self.error = error.localizedDescription
             loaded = true
@@ -261,51 +270,29 @@ struct WorldTrafficView: View {
 
     private var mapCard: some View {
         ZStack(alignment: .topLeading) {
-            Map(position: $position, interactionModes: [.pan, .zoom]) {
-                if lines {
-                    ForEach(livePlaces.prefix(14)) { p in
-                        MapPolyline(coordinates: [home, p.coord], contourStyle: .geodesic)
-                            .stroke(Color.cyan.opacity(0.55 * fade(p)), style: StrokeStyle(lineWidth: 1.2 + 2 * weight(p), lineCap: .round))
-                    }
-                }
-                Annotation("", coordinate: home, anchor: .center) {
-                    ZStack {
-                        Circle().fill(Color.white.opacity(0.25)).frame(width: 22, height: 22)
-                        Image(systemName: "house.fill").font(.system(size: 10, weight: .bold)).foregroundStyle(.white)
-                            .frame(width: 18, height: 18).background(Color.indigo, in: Circle())
-                    }
-                }
-                ForEach(livePlaces) { p in
-                    Annotation("", coordinate: p.coord, anchor: .center) {
-                        PulseDot(size: 8 + 26 * weight(p), color: color(p), fresh: p.alter < 3)
-                            .opacity(fade(p))
-                    }
-                }
-            }
-            .mapStyle(.imagery(elevation: .flat))
-            .colorScheme(.dark)
-            .frame(height: 360)
-            .clipShape(RoundedRectangle(cornerRadius: 26, style: .continuous))
-
+            TronWorldMap(places: data.places, home: homePair, lifetime: lifetime, stamp: stamp,
+                         showLines: lines, interactive: false, viewport: $viewport)
+                .aspectRatio(WorldShapes.w0 / WorldShapes.h0, contentMode: .fit)
+                .onTapGesture { focus = nil; fullscreen = true }
+            HUDFrame().stroke(Tron.cyan.opacity(0.6), lineWidth: 1.2).padding(6).allowsHitTesting(false)
             HStack(spacing: 8) {
-                HStack(spacing: 6) {
-                    Circle().fill(data.syslogActive ? Color.green : Color.orange).frame(width: 7, height: 7)
-                    Text(data.syslogActive ? "\(livePlaces.count) Orte live" : "wartet auf Daten")
-                }
-                .font(.caption.weight(.semibold)).foregroundStyle(.white)
-                .padding(.horizontal, 10).padding(.vertical, 6)
-                .background(.ultraThinMaterial.opacity(0.9), in: Capsule())
-                .environment(\.colorScheme, .dark)
+                Circle().fill(data.syslogActive ? Tron.cyan : Tron.amber).frame(width: 6, height: 6)
+                    .shadow(color: Tron.cyan, radius: 4)
+                Text(data.syslogActive ? "NETZ-RADAR · \(livePlaces.count) ZIELE" : "WARTE AUF DATEN")
                 Spacer()
                 Button { withAnimation { lines.toggle() } } label: {
                     Image(systemName: lines ? "point.topleft.down.to.point.bottomright.curvepath.fill" : "point.topleft.down.to.point.bottomright.curvepath")
-                        .font(.caption.weight(.bold)).foregroundStyle(.white)
-                        .padding(8).background(.ultraThinMaterial.opacity(0.9), in: Circle())
                 }
-                .environment(\.colorScheme, .dark)
+                Button { focus = nil; fullscreen = true } label: { Image(systemName: "arrow.up.left.and.arrow.down.right") }
             }
-            .padding(12)
+            .font(.system(size: 10, weight: .bold, design: .monospaced))
+            .foregroundStyle(Tron.cyan)
+            .padding(.horizontal, 14).padding(.top, 12)
         }
+        .background(Tron.bg)
+        .clipShape(RoundedRectangle(cornerRadius: 18, style: .continuous))
+        .overlay(RoundedRectangle(cornerRadius: 18, style: .continuous).strokeBorder(Tron.cyan.opacity(0.25)))
+        .shadow(color: Tron.cyan.opacity(0.25), radius: 14)
     }
 
     private func weight(_ p: WorldTraffic.Place) -> Double { sqrt(Double(p.n) / Double(maxN)) }
@@ -327,7 +314,8 @@ struct WorldTrafficView: View {
                         Text("\(c.n)").font(.caption).foregroundStyle(.secondary).monospacedDigit()
                     }
                     .padding(.horizontal, 10).padding(.vertical, 6)
-                    .background(Color(.secondarySystemGroupedBackground), in: Capsule())
+                    .background(Tron.bg, in: Capsule())
+                    .overlay(Capsule().strokeBorder(Tron.cyan.opacity(0.3)))
                 }
             }
         }
@@ -339,9 +327,8 @@ struct WorldTrafficView: View {
             ForEach(data.targets.prefix(12)) { z in
                 Button {
                     if let la = z.lat, let lo = z.lon {
-                        withAnimation(.easeInOut(duration: 1.2)) {
-                            position = .camera(MapCamera(centerCoordinate: .init(latitude: la, longitude: lo), distance: 4_000_000))
-                        }
+                        focus = (la, lo)
+                        fullscreen = true
                     }
                 } label: {
                     HStack(spacing: 12) {
@@ -364,7 +351,8 @@ struct WorldTrafficView: View {
             }
         }
         .padding(16)
-        .cardSurface()
+        .background(Tron.bg, in: RoundedRectangle(cornerRadius: 18, style: .continuous))
+        .overlay(RoundedRectangle(cornerRadius: 18, style: .continuous).strokeBorder(Tron.cyan.opacity(0.2)))
     }
 
     private var setupCard: some View {
@@ -409,5 +397,127 @@ private struct PulseDot: View {
             withAnimation(.easeOut(duration: 1.6).repeatForever(autoreverses: false)) { pulse = true }
         }
         .allowsHitTesting(false)
+    }
+}
+
+// MARK: - Vollbild: Karte quer über den ganzen Bildschirm, mit Zoomen und Verschieben
+
+struct TronFullscreen: View {
+    let initial: WorldTraffic
+    let home: (lat: Double, lon: Double)
+    let lifetime: Double
+    var focus: (lat: Double, lon: Double)?
+
+    @Environment(AppStore.self) private var store
+    @Environment(\.dismiss) private var dismiss
+    @State private var data = WorldTraffic()
+    @State private var stamp = Date()
+    @State private var viewport = TronViewport()
+    @State private var landscape = true
+    @State private var lines = true
+    @State private var started = false
+
+    var body: some View {
+        GeometryReader { geo in
+            let full = geo.size
+            let inner = landscape ? CGSize(width: full.height, height: full.width) : full
+            ZStack {
+                Tron.bg.ignoresSafeArea()
+                content(inner)
+                    .frame(width: inner.width, height: inner.height)
+                    .rotationEffect(.degrees(landscape ? 90 : 0))
+                    .position(x: full.width / 2, y: full.height / 2)
+            }
+            .onAppear {
+                guard !started else { return }
+                started = true
+                data = initial
+                if let f = focus {
+                    let s = TronViewport(zoom: 4).scale(in: inner)
+                    let u = WorldShapes.project(lat: f.lat, lon: f.lon)
+                    viewport = TronViewport(zoom: 4, pan: CGSize(width: (WorldShapes.w0 / 2 - u.x) * s,
+                                                                 height: (WorldShapes.h0 / 2 - u.y) * s)).clamped(in: inner)
+                }
+            }
+        }
+        .ignoresSafeArea()
+        .statusBarHidden()
+        .task {
+            while !Task.isCancelled {
+                if let d = try? await store.loadWorldTraffic(seconds: Int(lifetime) + 3) { data = d; stamp = .now }
+                try? await Task.sleep(for: .seconds(2))
+            }
+        }
+    }
+
+    private func content(_ size: CGSize) -> some View {
+        ZStack {
+            TronWorldMap(places: data.places, home: home, lifetime: lifetime, stamp: stamp,
+                         showLines: lines, rotated: landscape, viewport: $viewport)
+            HUDFrame().stroke(Tron.cyan.opacity(0.7), lineWidth: 1.5).padding(landscape ? 18 : 10).allowsHitTesting(false)
+            hud(size)
+        }
+    }
+
+    private func hud(_ size: CGSize) -> some View {
+        let down = data.wans.reduce(0) { $0 + $1.rx }
+        let up = data.wans.reduce(0) { $0 + $1.tx }
+        let live = data.places.filter { $0.alter < lifetime }
+        return VStack {
+            HStack(alignment: .top) {
+                VStack(alignment: .leading, spacing: 3) {
+                    Text("NETZ-RADAR // MOHS").font(.system(size: 13, weight: .heavy, design: .monospaced))
+                    Text("LINKS \(data.connections) · ZIELE \(live.count) · ZOOM \(String(format: "%.1f", viewport.zoom))×")
+                        .font(.system(size: 10, weight: .semibold, design: .monospaced)).opacity(0.75)
+                }
+                Spacer()
+                HStack(spacing: 14) {
+                    hudButton(lines ? "point.topleft.down.to.point.bottomright.curvepath.fill" : "point.topleft.down.to.point.bottomright.curvepath") { lines.toggle() }
+                    hudButton("arrow.counterclockwise") { withAnimation(.spring) { viewport = TronViewport() } }
+                    hudButton(landscape ? "rectangle.portrait.rotate" : "rectangle.landscape.rotate") {
+                        viewport = TronViewport(); landscape.toggle()
+                    }
+                    hudButton("xmark") { dismiss() }
+                }
+            }
+            Spacer()
+            HStack(alignment: .bottom) {
+                VStack(alignment: .leading, spacing: 2) {
+                    ForEach(data.wans) { w in
+                        Text("\(w.name.uppercased())  ▼ \(Rate.full(w.rx))  ▲ \(Rate.full(w.tx))")
+                    }
+                }
+                .font(.system(size: 10, weight: .semibold, design: .monospaced)).opacity(0.85)
+                Spacer()
+                VStack(alignment: .trailing, spacing: 0) {
+                    Text(Rate.text(down)).font(.system(size: 34, weight: .bold, design: .monospaced))
+                        .contentTransition(.numericText())
+                    Text("\(Rate.unit(down)) ▼   \(Rate.full(up)) ▲").font(.system(size: 10, weight: .semibold, design: .monospaced)).opacity(0.75)
+                }
+            }
+            if !data.countries.isEmpty {
+                HStack(spacing: 10) {
+                    ForEach(data.countries.prefix(6)) { c in
+                        Text("\(Flag.emoji(c.iso)) \(c.iso) \(c.n)")
+                    }
+                    Spacer()
+                }
+                .font(.system(size: 11, weight: .bold, design: .monospaced))
+                .padding(.top, 4)
+            }
+        }
+        .foregroundStyle(Tron.cyan)
+        .shadow(color: Tron.cyan.opacity(0.6), radius: 6)
+        .padding(.horizontal, landscape ? 34 : 22)
+        .padding(.vertical, landscape ? 28 : 60)
+    }
+
+    private func hudButton(_ symbol: String, action: @escaping () -> Void) -> some View {
+        Button(action: action) {
+            Image(systemName: symbol).font(.system(size: 14, weight: .bold))
+                .frame(width: 34, height: 34)
+                .background(Tron.bg.opacity(0.7), in: Circle())
+                .overlay(Circle().strokeBorder(Tron.cyan.opacity(0.5)))
+        }
     }
 }
