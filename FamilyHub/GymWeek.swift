@@ -127,6 +127,7 @@ struct GymPlanView: View {
     @State private var showQuotas = false
     @State private var pickDayFor: Sport?
     @State private var startGym: GymProgram?
+    @State private var weekOffset = 0
 
     private let cal = Calendar.current
     private var days: [Date] { (0..<7).map { cal.date(byAdding: .day, value: $0, to: plan.weekStart)! } }
@@ -181,12 +182,16 @@ struct GymPlanView: View {
     var body: some View {
         ScrollView {
             VStack(alignment: .leading, spacing: 14) {
-                if gym.run != nil, let r = gym.run { GymStartCard(program: r.program) }
-                todayCard
+                weekHeader
+                if isThisWeek {
+                    if gym.run != nil, let r = gym.run { GymStartCard(program: r.program) }
+                    todayCard
+                }
                 if let e = plan.error { Label(e, systemImage: "exclamationmark.triangle").font(.footnote).foregroundStyle(.orange) }
                 tokensCard
                 weekStrip
-                if !upcoming.isEmpty { upcomingCard }
+                if isThisWeek && !upcoming.isEmpty { upcomingCard }
+                if !isThisWeek || !weekWorkouts.isEmpty { allWorkoutsCard }
             }
             .padding(.horizontal)
             .padding(.top, 8)
@@ -217,8 +222,65 @@ struct GymPlanView: View {
     }
 
     private func reload() async {
-        await plan.load(store, week: FitnessModel.startOfWeek)
-        await plan.ensureFixed(store)
+        await fit.refresh(maxAge: 60)
+        await plan.load(store, week: shownWeek)
+        if isThisWeek { await plan.ensureFixed(store) }
+    }
+
+    // MARK: Wochen blättern + alle Trainings der Woche aus Apple Health
+
+    private var shownWeek: Date { cal.date(byAdding: .day, value: 7 * weekOffset, to: FitnessModel.startOfWeek)! }
+    private var isThisWeek: Bool { weekOffset == 0 }
+
+    private var weekHeader: some View {
+        let end = cal.date(byAdding: .day, value: 6, to: shownWeek)!
+        let title = weekOffset == 0 ? "Diese Woche" : (weekOffset == -1 ? "Letzte Woche" : (weekOffset == 1 ? "Nächste Woche" : "Woche \(Calendar(identifier: .iso8601).component(.weekOfYear, from: shownWeek))"))
+        return HStack {
+            Button { weekOffset -= 1; Task { await reload() } } label: {
+                Image(systemName: "chevron.left").font(.headline).frame(width: 40, height: 40).background(.regularMaterial, in: Circle())
+            }
+            .buttonStyle(.plain).accessibilityLabel("Woche davor")
+            Spacer()
+            VStack(spacing: 0) {
+                Text(title).font(.headline)
+                Text(shownWeek.formatted(.dateTime.day().month(.abbreviated)) + " – " + end.formatted(.dateTime.day().month(.abbreviated)))
+                    .font(.caption).foregroundStyle(.secondary)
+            }
+            Spacer()
+            Button { weekOffset += 1; Task { await reload() } } label: {
+                Image(systemName: "chevron.right").font(.headline).frame(width: 40, height: 40).background(.regularMaterial, in: Circle())
+            }
+            .buttonStyle(.plain).disabled(weekOffset >= 1).opacity(weekOffset >= 1 ? 0.3 : 1).accessibilityLabel("Woche danach")
+        }
+        .overlay(alignment: .bottom) {
+            if weekOffset != 0 {
+                Button("Zu dieser Woche") { weekOffset = 0; Task { await reload() } }.font(.caption.weight(.semibold)).offset(y: 20)
+            }
+        }
+        .padding(.bottom, weekOffset != 0 ? 14 : 0)
+    }
+
+    /// Alles, was in dieser Woche in Apple Health aufgezeichnet wurde – auch Spaziergänge und Sonstiges
+    private var allWorkoutsCard: some View {
+        let list = weekWorkouts.sorted { $0.start > $1.start }
+        let hours = list.map(\.duration).reduce(0, +) / 3600
+        return VStack(alignment: .leading, spacing: 0) {
+            HStack {
+                Text("ALLE TRAININGS (APPLE HEALTH)").font(.caption.weight(.bold)).foregroundStyle(.secondary)
+                Spacer()
+                Text("\(list.count) · \(FitFmt.hm(hours))").font(.caption.weight(.semibold)).foregroundStyle(.secondary)
+            }
+            .padding([.horizontal, .top], 16).padding(.bottom, 6)
+            if list.isEmpty {
+                Text("Keine Trainings in dieser Woche.").font(.subheadline).foregroundStyle(.secondary).padding([.horizontal, .bottom], 16)
+            }
+            ForEach(list) { w in
+                NavigationLink { WorkoutDetailView(workout: w) } label: { WorkoutRow(w: w).padding(.horizontal, 16).padding(.vertical, 8) }
+                    .buttonStyle(.plain)
+            }
+        }
+        .padding(.bottom, 8)
+        .cardSurface()
     }
 
     private func planOn(_ s: Sport, _ d: Date) async {
