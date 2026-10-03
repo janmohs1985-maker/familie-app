@@ -103,6 +103,41 @@ struct FitWorkout: Identifiable, Hashable {
     var duration: TimeInterval { end.timeIntervalSince(start) }
 }
 
+struct NutritionDay: Identifiable, Hashable {
+    let date: Date
+    let kcal: Double?
+    let protein: Double?
+    let carbs: Double?
+    let fat: Double?
+    let fiber: Double?
+    let sugar: Double?
+    let water: Double?
+    let active: Double?
+    let basal: Double?
+    var id: Date { date }
+    var burned: Double? { (active == nil && basal == nil) ? nil : (active ?? 0) + (basal ?? 0) }
+    var logged: Bool { (kcal ?? 0) > 100 }
+}
+
+struct Meal: Identifiable, Hashable {
+    var start: Date
+    var end: Date
+    var kcal: Double
+    var protein: Double = 0
+    var carbs: Double = 0
+    var fat: Double = 0
+    var id: Date { start }
+    var name: String {
+        let h = Calendar.current.component(.hour, from: start)
+        switch h {
+        case ..<11: return "Frühstück"
+        case 11..<15: return "Mittagessen"
+        case 15..<17: return "Snack"
+        default: return "Abendessen"
+        }
+    }
+}
+
 @MainActor @Observable
 final class FitnessModel {
     static let shared = FitnessModel()
@@ -124,6 +159,10 @@ final class FitnessModel {
     var kmToday: Double?
     var activity: HKActivitySummary?
     var age: Int?
+    var lean: [FitPoint] = []
+    var bmi: [FitPoint] = []
+    var nutrition: [NutritionDay] = []      // letzte 35 Tage, ältester zuerst
+    var mealsToday: [Meal] = []
 
     private var readTypes: Set<HKObjectType> {
         var s: Set<HKObjectType> = [
@@ -131,7 +170,12 @@ final class FitnessModel {
             HKQuantityType(.distanceWalkingRunning), HKQuantityType(.distanceCycling), HKQuantityType(.distanceSwimming),
             HKQuantityType(.activeEnergyBurned), HKQuantityType(.appleExerciseTime), HKQuantityType(.restingHeartRate),
             HKQuantityType(.vo2Max), HKQuantityType(.heartRate), HKCategoryType(.sleepAnalysis),
-            HKObjectType.workoutType(), HKObjectType.activitySummaryType(), HKSeriesType.workoutRoute()
+            HKObjectType.workoutType(), HKObjectType.activitySummaryType(), HKSeriesType.workoutRoute(),
+            // Ernährung (Yazio) und Waage (Renpho)
+            HKQuantityType(.dietaryEnergyConsumed), HKQuantityType(.dietaryProtein), HKQuantityType(.dietaryCarbohydrates),
+            HKQuantityType(.dietaryFatTotal), HKQuantityType(.dietaryFiber), HKQuantityType(.dietarySugar),
+            HKQuantityType(.dietaryWater), HKQuantityType(.basalEnergyBurned),
+            HKQuantityType(.leanBodyMass), HKQuantityType(.bodyMassIndex)
         ]
         s.insert(HKCharacteristicType(.dateOfBirth))
         return s
@@ -174,6 +218,10 @@ final class FitnessModel {
             async let st = todaySum(.stepCount, unit: .count())
             async let km = todaySum(.distanceWalkingRunning, unit: .meterUnit(with: .kilo))
             async let act = activitySummaryToday()
+            async let ln = quantity(.leanBodyMass, unit: .gramUnit(with: .kilo), from: twoYears)
+            async let bm = quantity(.bodyMassIndex, unit: .count(), from: twoYears)
+            async let nu = loadNutrition(days: 35)
+            async let me = loadMealsToday()
             weights = try await w
             bodyFat = try await f.map { FitPoint(date: $0.date, value: $0.value * 100) }
             restingHR = try await r
@@ -183,6 +231,10 @@ final class FitnessModel {
             stepsToday = await st
             kmToday = await km
             activity = await act
+            lean = (try? await ln) ?? []
+            bmi = (try? await bm) ?? []
+            nutrition = await nu
+            mealsToday = await me
             if let comps = try? health.dateOfBirthComponents(), let dob = cal.date(from: comps) {
                 age = cal.dateComponents([.year], from: dob, to: now).year
             }
@@ -276,6 +328,75 @@ final class FitnessModel {
             perNight[day, default: 0] += s.endDate.timeIntervalSince(s.startDate) / 3600
         }
         return perNight.map { FitPoint(date: $0.key, value: $0.value) }.sorted { $0.date < $1.date }
+    }
+
+    // MARK: Ernährung
+
+    private func daily(_ id: HKQuantityTypeIdentifier, unit: HKUnit, days: Int) async -> [Date: Double] {
+        let cal = Calendar.current
+        let start = cal.date(byAdding: .day, value: -(days - 1), to: cal.startOfDay(for: .now))!
+        let q = HKStatisticsCollectionQueryDescriptor(
+            predicate: .quantitySample(type: HKQuantityType(id), predicate: HKQuery.predicateForSamples(withStart: start, end: nil)),
+            options: .cumulativeSum, anchorDate: start, intervalComponents: DateComponents(day: 1))
+        guard let coll = try? await q.result(for: health) else { return [:] }
+        var out: [Date: Double] = [:]
+        for s in coll.statistics() {
+            if let v = s.sumQuantity()?.doubleValue(for: unit) { out[cal.startOfDay(for: s.startDate)] = v }
+        }
+        return out
+    }
+
+    private func loadNutrition(days: Int) async -> [NutritionDay] {
+        async let kcal = daily(.dietaryEnergyConsumed, unit: .kilocalorie(), days: days)
+        async let pro = daily(.dietaryProtein, unit: .gram(), days: days)
+        async let carb = daily(.dietaryCarbohydrates, unit: .gram(), days: days)
+        async let fat = daily(.dietaryFatTotal, unit: .gram(), days: days)
+        async let fib = daily(.dietaryFiber, unit: .gram(), days: days)
+        async let sug = daily(.dietarySugar, unit: .gram(), days: days)
+        async let wat = daily(.dietaryWater, unit: .liter(), days: days)
+        async let act = daily(.activeEnergyBurned, unit: .kilocalorie(), days: days)
+        async let bas = daily(.basalEnergyBurned, unit: .kilocalorie(), days: days)
+        let (k, p, c, f, fi, s, w, a, b) = await (kcal, pro, carb, fat, fib, sug, wat, act, bas)
+        let cal = Calendar.current
+        let start = cal.date(byAdding: .day, value: -(days - 1), to: cal.startOfDay(for: .now))!
+        return (0..<days).map { i in
+            let d = cal.date(byAdding: .day, value: i, to: start)!
+            return NutritionDay(date: d, kcal: k[d], protein: p[d], carbs: c[d], fat: f[d], fiber: fi[d], sugar: s[d],
+                                water: w[d], active: a[d], basal: b[d])
+        }
+    }
+
+    /// Mahlzeiten von heute: Einträge, die zeitlich nah beieinander liegen (45 Min), sind eine Mahlzeit
+    private func loadMealsToday() async -> [Meal] {
+        let start = Calendar.current.startOfDay(for: .now)
+        func samples(_ id: HKQuantityTypeIdentifier, _ unit: HKUnit) async -> [(Date, Double)] {
+            let q = HKSampleQueryDescriptor(predicates: [.quantitySample(type: HKQuantityType(id), predicate: HKQuery.predicateForSamples(withStart: start, end: nil))],
+                                            sortDescriptors: [SortDescriptor(\.startDate)])
+            return ((try? await q.result(for: health)) ?? []).map { ($0.startDate, $0.quantity.doubleValue(for: unit)) }
+        }
+        let kcal = await samples(.dietaryEnergyConsumed, .kilocalorie())
+        let pro = await samples(.dietaryProtein, .gram())
+        let carb = await samples(.dietaryCarbohydrates, .gram())
+        let fat = await samples(.dietaryFatTotal, .gram())
+        var meals: [Meal] = []
+        for (t, v) in kcal {
+            if let last = meals.last, t.timeIntervalSince(last.end) < 45 * 60 {
+                meals[meals.count - 1].kcal += v
+                meals[meals.count - 1].end = t
+            } else {
+                meals.append(Meal(start: t, end: t, kcal: v))
+            }
+        }
+        func add(_ list: [(Date, Double)], _ kp: WritableKeyPath<Meal, Double>) {
+            for (t, v) in list {
+                guard let i = meals.indices.min(by: { abs(meals[$0].start.timeIntervalSince(t)) < abs(meals[$1].start.timeIntervalSince(t)) }) else { continue }
+                meals[i][keyPath: kp] += v
+            }
+        }
+        add(pro, \.protein)
+        add(carb, \.carbs)
+        add(fat, \.fat)
+        return meals
     }
 
     // MARK: Einzelnes Training: Puls und Strecke

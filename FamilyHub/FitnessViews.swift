@@ -26,6 +26,22 @@ struct FitnessView: View {
                 gymEntry
                 if fit.loaded != nil {
                     goalCard
+                    HStack(spacing: 12) {
+                        NavigationLink { NutritionView() } label: {
+                            let d = fit.nutritionToday
+                            let left = fit.kcalTarget - (d?.kcal ?? 0)
+                            entryTile("Ernährung", "fork.knife", .green,
+                                      (d?.logged ?? false) ? FitFmt.int(abs(left)) + (left >= 0 ? " übrig" : " drüber") : "–",
+                                      d?.protein.map { "Eiweiß \(FitFmt.int($0))/\(FitFmt.int(fit.proteinTarget)) g" } ?? "aus Yazio")
+                        }
+                        .buttonStyle(.plain)
+                        NavigationLink { BodyCompView() } label: {
+                            entryTile("Körperwerte", "scalemass.fill", .blue,
+                                      fit.bodyFat.last.map { FitFmt.num($0.value, 1) + " % Fett" } ?? "–",
+                                      fit.lean.last.map { "Magermasse \(FitFmt.num($0.value, 1)) kg" } ?? "von der Waage")
+                        }
+                        .buttonStyle(.plain)
+                    }
                     HStack(alignment: .top, spacing: 12) {
                         ringsCard
                         VStack(spacing: 12) {
@@ -88,6 +104,23 @@ struct FitnessView: View {
                 }
             }
         }
+    }
+
+    private func entryTile(_ title: String, _ symbol: String, _ color: Color, _ big: String, _ small: String) -> some View {
+        VStack(alignment: .leading, spacing: 6) {
+            HStack {
+                Image(systemName: symbol).font(.subheadline.weight(.bold)).foregroundStyle(.white)
+                    .frame(width: 32, height: 32).background(color.gradient, in: RoundedRectangle(cornerRadius: 9, style: .continuous))
+                Spacer()
+                Image(systemName: "chevron.right").font(.caption.weight(.bold)).foregroundStyle(.tertiary)
+            }
+            Text(big).font(.headline.weight(.heavy)).monospacedDigit().lineLimit(1).minimumScaleFactor(0.7)
+            Text(title).font(.subheadline.weight(.semibold))
+            Text(small).font(.caption2).foregroundStyle(.secondary).lineLimit(1).minimumScaleFactor(0.8)
+        }
+        .padding(14)
+        .frame(maxWidth: .infinity, alignment: .leading)
+        .cardSurface()
     }
 
     private var connectCard: some View {
