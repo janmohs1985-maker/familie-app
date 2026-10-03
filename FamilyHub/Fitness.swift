@@ -119,7 +119,7 @@ struct NutritionDay: Identifiable, Hashable {
     var logged: Bool { (kcal ?? 0) > 100 }
 }
 
-struct Meal: Identifiable, Hashable {
+struct FoodMeal: Identifiable, Hashable {
     var start: Date
     var end: Date
     var kcal: Double
@@ -162,7 +162,7 @@ final class FitnessModel {
     var lean: [FitPoint] = []
     var bmi: [FitPoint] = []
     var nutrition: [NutritionDay] = []      // letzte 35 Tage, ältester zuerst
-    var mealsToday: [Meal] = []
+    var mealsToday: [FoodMeal] = []
 
     private var readTypes: Set<HKObjectType> {
         var s: Set<HKObjectType> = [
@@ -367,7 +367,7 @@ final class FitnessModel {
     }
 
     /// Mahlzeiten von heute: Einträge, die zeitlich nah beieinander liegen (45 Min), sind eine Mahlzeit
-    private func loadMealsToday() async -> [Meal] {
+    private func loadMealsToday() async -> [FoodMeal] {
         let start = Calendar.current.startOfDay(for: .now)
         func samples(_ id: HKQuantityTypeIdentifier, _ unit: HKUnit) async -> [(Date, Double)] {
             let q = HKSampleQueryDescriptor(predicates: [.quantitySample(type: HKQuantityType(id), predicate: HKQuery.predicateForSamples(withStart: start, end: nil))],
@@ -378,16 +378,16 @@ final class FitnessModel {
         let pro = await samples(.dietaryProtein, .gram())
         let carb = await samples(.dietaryCarbohydrates, .gram())
         let fat = await samples(.dietaryFatTotal, .gram())
-        var meals: [Meal] = []
+        var meals: [FoodMeal] = []
         for (t, v) in kcal {
             if let last = meals.last, t.timeIntervalSince(last.end) < 45 * 60 {
                 meals[meals.count - 1].kcal += v
                 meals[meals.count - 1].end = t
             } else {
-                meals.append(Meal(start: t, end: t, kcal: v))
+                meals.append(FoodMeal(start: t, end: t, kcal: v))
             }
         }
-        func add(_ list: [(Date, Double)], _ kp: WritableKeyPath<Meal, Double>) {
+        func add(_ list: [(Date, Double)], _ kp: WritableKeyPath<FoodMeal, Double>) {
             for (t, v) in list {
                 guard let i = meals.indices.min(by: { abs(meals[$0].start.timeIntervalSince(t)) < abs(meals[$1].start.timeIntervalSince(t)) }) else { continue }
                 meals[i][keyPath: kp] += v
