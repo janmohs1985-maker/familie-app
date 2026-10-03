@@ -318,6 +318,7 @@ struct CameraDetailView: View {
     @State private var vodStart: Date?
     @State private var vodEnd: Date?
     @State private var loadingVod = false
+    @State private var liveRetries = 0
     @State private var triedClip = false
     @State private var failInfo: String?
     @State private var playing = true
@@ -382,7 +383,14 @@ struct CameraDetailView: View {
             while !Task.isCancelled {
                 try? await Task.sleep(for: .milliseconds(500))
                 guard !scrubbing else { continue }
-                if live { center = Date() }
+                if live {
+                    center = Date()
+                    // Live klappt nicht → bis zu zweimal neu anfordern
+                    if let item = player.currentItem, item.status == .failed, !loadingVod, liveRetries < 2 {
+                        liveRetries += 1
+                        await goLive(retry: true)
+                    }
+                }
                 else if let s = vodStart, let item = player.currentItem {
                     let t = player.currentTime().seconds
                     if t.isFinite { center = s.addingTimeInterval(t) }
@@ -424,7 +432,7 @@ struct CameraDetailView: View {
                         if let failInfo { Text(failInfo).font(.caption2).opacity(0.8) }
                     }
                     .videoChip()
-                } else if !live, loadingVod || player.currentItem?.status == .unknown {
+                } else if loadingVod || (!live && player.currentItem?.status == .unknown) {
                     ProgressView().tint(.white).padding(10).background(.ultraThinMaterial, in: Circle())
                         .environment(\.colorScheme, .dark)
                 }
@@ -607,13 +615,18 @@ struct CameraDetailView: View {
 
     // MARK: Abspielen
 
-    private func goLive() async {
+    private func goLive(retry: Bool = false) async {
+        if !retry { liveRetries = 0 }
         live = true
         playbackFailed = false
         vodStart = nil
         center = Date()
         player.pause()
+        loadingVod = true
+        defer { loadingVod = false }
         if let url = await fm.liveURL(store, cam) {
+            _ = await fm.waitForLive(url)
+            guard live else { return }
             liveFailed = false
             player.replaceCurrentItem(with: AVPlayerItem(url: url))
             player.isMuted = true

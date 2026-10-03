@@ -279,6 +279,24 @@ final class FrigateModel {
         return req.url?.absoluteURL
     }
 
+    /// HA baut das HLS-Live-Video erst nach dem Anfordern auf. Warten, bis die Wiedergabeliste
+    /// Teilstücke enthält – sonst gibt AVPlayer sofort auf und bleibt schwarz.
+    func waitForLive(_ url: URL, timeout: TimeInterval = 12) async -> Bool {
+        let end = Date().addingTimeInterval(timeout)
+        while Date() < end, !Task.isCancelled {
+            if let res = try? await URLSession.shared.data(from: url),
+               let master = String(data: res.0, encoding: .utf8) {
+                if master.contains("#EXTINF") { return true }
+                if let line = master.split(separator: "\n").first(where: { !$0.hasPrefix("#") && !$0.isEmpty }),
+                   let sub = URL(string: String(line), relativeTo: url),
+                   let res2 = try? await URLSession.shared.data(from: sub),
+                   let pl = String(data: res2.0, encoding: .utf8), pl.contains("#EXTINF") { return true }
+            }
+            try? await Task.sleep(for: .milliseconds(500))
+        }
+        return false
+    }
+
     /// Abspielbares Objekt mit Anmeldung (für Clips und Aufnahmen).
     /// Frigate schickt MP4s am Stück ohne Länge und ohne Teilabruf (Range) – das spielt AVPlayer
     /// direkt nicht ab. Deshalb erst in eine Datei laden und dann von dort abspielen.
