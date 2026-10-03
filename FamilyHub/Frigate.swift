@@ -279,10 +279,34 @@ final class FrigateModel {
         return req.url?.absoluteURL
     }
 
-    /// Abspielbares Objekt mit Anmeldung (für Clips und Aufnahmen)
+    /// Abspielbares Objekt mit Anmeldung (für Clips und Aufnahmen).
+    /// Frigate schickt MP4s am Stück ohne Länge und ohne Teilabruf (Range) – das spielt AVPlayer
+    /// direkt nicht ab. Deshalb erst in eine Datei laden und dann von dort abspielen.
     func asset(_ store: AppStore, path: String) async -> AVURLAsset? {
-        guard let req = try? await store.client.authorizedRequest(path: path), let url = req.url?.absoluteURL else { return nil }
-        return AVURLAsset(url: url, options: ["AVURLAssetHTTPHeaderFieldsKey": req.allHTTPHeaderFields ?? [:]])
+        let dir = FileManager.default.temporaryDirectory.appendingPathComponent("frigate", isDirectory: true)
+        let name = String(path.map { $0.isLetter || $0.isNumber ? $0 : "_" })
+        let file = dir.appendingPathComponent(name + ".mp4")
+        if FileManager.default.fileExists(atPath: file.path) { return AVURLAsset(url: file) }
+        guard let req = try? await store.client.authorizedRequest(path: path),
+              let res = try? await URLSession.shared.download(for: req),
+              (res.1 as? HTTPURLResponse)?.statusCode == 200 else { return nil }
+        let tmp = res.0
+        try? FileManager.default.createDirectory(at: dir, withIntermediateDirectories: true)
+        cleanVideoCache(dir)
+        do { try FileManager.default.moveItem(at: tmp, to: file) } catch { return nil }
+        return AVURLAsset(url: file)
+    }
+
+    /// Nur die letzten Videos behalten
+    private func cleanVideoCache(_ dir: URL) {
+        let fm = FileManager.default
+        guard let files = try? fm.contentsOfDirectory(at: dir, includingPropertiesForKeys: [.contentModificationDateKey]) else { return }
+        let sorted = files.sorted {
+            let a = (try? $0.resourceValues(forKeys: [.contentModificationDateKey]).contentModificationDate) ?? .distantPast
+            let b = (try? $1.resourceValues(forKeys: [.contentModificationDateKey]).contentModificationDate) ?? .distantPast
+            return a > b
+        }
+        for f in sorted.dropFirst(10) { try? fm.removeItem(at: f) }
     }
 
     /// Aufnahme eines Zeitraums als MP4 (Frigate setzt die Aufnahmen zusammen).

@@ -317,6 +317,7 @@ struct CameraDetailView: View {
     @State private var center = Date()
     @State private var vodStart: Date?
     @State private var vodEnd: Date?
+    @State private var loadingVod = false
     @State private var triedClip = false
     @State private var failInfo: String?
     @State private var playing = true
@@ -423,7 +424,7 @@ struct CameraDetailView: View {
                         if let failInfo { Text(failInfo).font(.caption2).opacity(0.8) }
                     }
                     .videoChip()
-                } else if !live, player.currentItem?.status == .unknown {
+                } else if !live, loadingVod || player.currentItem?.status == .unknown {
                     ProgressView().tint(.white).padding(10).background(.ultraThinMaterial, in: Circle())
                         .environment(\.colorScheme, .dark)
                 }
@@ -636,11 +637,14 @@ struct CameraDetailView: View {
         await play(from: min(t, now.addingTimeInterval(-20)))
     }
 
-    /// Spielt 5 Minuten Aufnahme ab t (danach geht es automatisch weiter)
+    /// Spielt 2 Minuten Aufnahme ab t (danach geht es automatisch weiter).
+    /// Kurze Stücke, weil die App jedes Stück erst ganz herunterlädt.
     private func play(from t: Date) async {
         playbackFailed = false
         failInfo = nil
-        let end = min(t.addingTimeInterval(300), Date().addingTimeInterval(-10))
+        let end = min(t.addingTimeInterval(120), Date().addingTimeInterval(-10))
+        loadingVod = true
+        defer { loadingVod = false }
         guard end > t.addingTimeInterval(2),
               let asset = await fm.asset(store, path: fm.recordingPath(cam, from: t, to: end)) else {
             playbackFailed = true
