@@ -98,6 +98,36 @@ extension AppStore {
         } catch { report(error) }
     }
 
+    /// Titel aus einer Liste abspielen und danach weiterlaufen lassen:
+    /// – Playlist/Album (als Ganzes abspielbar): alles laden und ab diesem Titel starten (Sonos-Warteschlange)
+    /// – sonst (z. B. Lieblingssongs): diesen Titel spielen und die nächsten Titel hinten anstellen
+    func playFrom(_ list: [MediaItem], index: Int, container: MediaItem, on speaker: String) async {
+        guard list.indices.contains(index) else { return }
+        let track = list[index]
+        do {
+            if container.canPlay {
+                try await client.call("media_player", "play_media", ["entity_id": speaker, "media_content_id": container.contentID,
+                                                                     "media_content_type": container.contentType, "enqueue": "replace"])
+                try? await Task.sleep(for: .seconds(1.5))
+                try await client.call("sonos", "play_queue", ["entity_id": speaker, "queue_position": index])
+            } else {
+                try await client.call("media_player", "play_media", ["entity_id": speaker, "media_content_id": track.contentID,
+                                                                     "media_content_type": track.contentType, "enqueue": "replace"])
+                // Rest im Hintergrund anstellen, damit der erste Titel sofort läuft
+                let rest = Array(list.dropFirst(index + 1).filter { $0.canPlay && !$0.canExpand }.prefix(40))
+                let client = self.client
+                Task.detached {
+                    for t in rest {
+                        try? await client.call("media_player", "play_media", ["entity_id": speaker, "media_content_id": t.contentID,
+                                                                              "media_content_type": t.contentType, "enqueue": "add"])
+                    }
+                }
+            }
+            try? await Task.sleep(for: .seconds(1))
+            await refreshStates()
+        } catch { report(error) }
+    }
+
     func media(_ service: String, _ speaker: String, _ extra: [String: Any] = [:]) async {
         var data = extra
         data["entity_id"] = speaker
@@ -249,6 +279,8 @@ struct MusicSearchView: View {
     }
 
     private func play(_ hit: SearchHit, _ how: String) {
+        UIImpactFeedbackGenerator(style: .medium).impactOccurred()
+        started = hit.uri
         Task {
             if let err = await store.playHit(hit, on: speaker, enqueue: how) {
                 message = err
@@ -270,6 +302,22 @@ struct BrowseView: View {
     @State private var error: String?
     @State private var filter = ""
     @State private var started: String?
+    @State private var pending: String?
+
+    private func tap(_ child: MediaItem) {
+        UIImpactFeedbackGenerator(style: .medium).impactOccurred()
+        withAnimation(.easeOut(duration: 0.15)) { pending = child.id }
+        Task {
+            let all = result?.items ?? []
+            if let i = all.firstIndex(of: child) {
+                await store.playFrom(all, index: i, container: item, on: speaker)
+            } else {
+                await store.play(child, on: speaker)
+            }
+            UINotificationFeedbackGenerator().notificationOccurred(.success)
+            withAnimation { started = child.id; pending = nil }
+        }
+    }
 
     private var items: [MediaItem] {
         let all = result?.items ?? []
@@ -281,7 +329,13 @@ struct BrowseView: View {
         List {
             if item.canPlay {
                 Button {
-                    Task { await store.play(item, on: speaker); started = item.id }
+                    UIImpactFeedbackGenerator(style: .medium).impactOccurred()
+                    pending = item.id
+                    Task {
+                        await store.play(item, on: speaker)
+                        UINotificationFeedbackGenerator().notificationOccurred(.success)
+                        started = item.id; pending = nil
+                    }
                 } label: {
                     Label(started == item.id ? "Läuft" : "Alles abspielen",
                           systemImage: started == item.id ? "speaker.wave.2.fill" : "play.fill")
@@ -303,17 +357,22 @@ struct BrowseView: View {
                     }
                 } else {
                     Button {
-                        Task { await store.play(child, on: speaker); started = child.id }
+                        tap(child)
                     } label: {
                         HStack {
                             MediaRow(item: child)
-                            if started == child.id {
+                            if pending == child.id {
+                                ProgressView()
+                            } else if started == child.id {
                                 Image(systemName: "speaker.wave.2.fill").foregroundStyle(.tint)
+                                    .symbolEffect(.variableColor.iterative, options: .repeating)
                             }
                         }
+                        .contentShape(Rectangle())
                     }
                     .buttonStyle(.plain)
-                    .disabled(!child.canPlay)
+                    .disabled(!child.canPlay || pending != nil)
+                    .listRowBackground(pending == child.id || started == child.id ? Color.accentColor.opacity(0.12) : nil)
                 }
             }
         }
