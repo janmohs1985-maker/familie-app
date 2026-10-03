@@ -163,6 +163,7 @@ final class FitnessModel {
     var lean: [FitPoint] = []
     var bmi: [FitPoint] = []
     var nutrition: [NutritionDay] = []      // letzte 35 Tage, ältester zuerst
+    var lastMealAt: Date?                   // letzter Eintrag mit Kalorien (Yazio)
     var mealsToday: [FoodMeal] = []
 
     private var readTypes: Set<HKObjectType> {
@@ -239,6 +240,7 @@ final class FitnessModel {
             bmi = (try? await bm) ?? []
             nutrition = await nu
             mealsToday = await me
+            lastMealAt = await latestSample(.dietaryEnergyConsumed)
             if let comps = try? health.dateOfBirthComponents(), let dob = cal.date(from: comps) {
                 age = cal.dateComponents([.year], from: dob, to: now).year
             }
@@ -378,6 +380,14 @@ final class FitnessModel {
     }
 
     private func loadMealsToday() async -> [FoodMeal] { await meals(on: .now) }
+
+    /// Zeitpunkt des neuesten Eintrags (z. B. letzte Mahlzeit)
+    private func latestSample(_ id: HKQuantityTypeIdentifier) async -> Date? {
+        let from = Calendar.current.date(byAdding: .day, value: -4, to: .now)!
+        let q = HKSampleQueryDescriptor(predicates: [.quantitySample(type: HKQuantityType(id), predicate: HKQuery.predicateForSamples(withStart: from, end: nil))],
+                                        sortDescriptors: [SortDescriptor(\.endDate, order: .reverse)], limit: 1)
+        return try? await q.result(for: health).first?.endDate
+    }
 
     /// Mahlzeiten eines Tages: Einträge, die zeitlich nah beieinander liegen (45 Min), sind eine Mahlzeit
     func meals(on day: Date) async -> [FoodMeal] {

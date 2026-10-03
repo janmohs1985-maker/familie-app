@@ -23,6 +23,123 @@ extension FitnessModel {
     var proteinTarget: Double { (NutritionTargets.proteinPerKg * NutritionTargets.goalKg).rounded() }
 }
 
+// MARK: - Ketose (Schätzung aus Netto-Kohlenhydraten und Fastenzeit)
+
+struct KetoDay: Identifiable {
+    let date: Date
+    let net: Double?
+    var id: Date { date }
+}
+
+struct KetoEstimate {
+    let level: Int              // 0 eher nicht, 1 möglich, 2 wahrscheinlich
+    let title: String
+    let detail: String
+    let hint: String?
+    let days: [KetoDay]
+    var color: Color { level == 2 ? .purple : (level == 1 ? .indigo : .secondary) }
+}
+
+@MainActor
+extension FitnessModel {
+    static func netCarbs(_ d: NutritionDay) -> Double? {
+        guard d.logged, let c = d.carbs else { return nil }
+        return max(0, c - (d.fiber ?? 0))
+    }
+
+    var fastingHours: Double? { lastMealAt.map { max(0, Date.now.timeIntervalSince($0) / 3600) } }
+
+    var keto: KetoEstimate? {
+        let last3 = Array(nutrition.suffix(3))
+        guard last3.count == 3, last3.contains(where: { Self.netCarbs($0) != nil }) || fastingHours != nil else { return nil }
+        let nets = last3.map { Self.netCarbs($0) }
+        let full = nets.prefix(2)                         // vorgestern, gestern
+        let today = nets.last ?? nil
+        let fullKnown = full.compactMap { $0 }
+        let low20 = fullKnown.count == 2 && fullKnown.allSatisfy { $0 <= 25 }
+        let low50 = fullKnown.count == 2 && fullKnown.allSatisfy { $0 <= 50 }
+        let fast = fastingHours ?? 0
+        var parts: [String] = []
+        if let y = full.last ?? nil { parts.append("gestern \(FitFmt.int(y)) g Netto-KH") }
+        if let t = today { parts.append("heute bisher \(FitFmt.int(t)) g") }
+        if fast >= 1 { parts.append("seit \(FitFmt.hm(fast).replacingOccurrences(of: " Std", with: "")) Std. nichts gegessen") }
+        let detail = parts.joined(separator: " · ")
+        let days = last3.map { KetoDay(date: $0.date, net: Self.netCarbs($0)) }
+
+        if (low20 && (today ?? 0) <= 30) || fast >= 24 {
+            return KetoEstimate(level: 2, title: "Ketose wahrscheinlich", detail: detail,
+                                hint: "Gut trinken und auf Salz/Elektrolyte achten.", days: days)
+        }
+        if fast >= 16 {
+            return KetoEstimate(level: 1, title: "Fasten-Ketose möglich", detail: detail,
+                                hint: "Ab etwa 16 Stunden ohne Essen beginnt der Körper, Fett zu Ketonen umzubauen.", days: days)
+        }
+        if low50 && (today ?? 0) <= 50 {
+            return KetoEstimate(level: 1, title: "Leichte Ketose möglich", detail: detail,
+                                hint: "Unter 20–25 g Netto-KH pro Tag wird sie wahrscheinlicher.", days: days)
+        }
+        return KetoEstimate(level: 0, title: "Eher keine Ketose", detail: detail,
+                            hint: "Dafür 2–3 Tage unter etwa 20–50 g Netto-Kohlenhydrate – oder 16+ Stunden fasten.", days: days)
+    }
+}
+
+struct KetoCard: View {
+    @State private var fit = FitnessModel.shared
+
+    var body: some View {
+        if let k = fit.keto {
+            VStack(alignment: .leading, spacing: 10) {
+                HStack {
+                    Text("KETOSE · SCHÄTZUNG").font(.caption.weight(.bold)).foregroundStyle(.secondary)
+                    Spacer()
+                    if let last = fit.lastMealAt {
+                        TimelineView(.periodic(from: .now, by: 60)) { ctx in
+                            let h = max(0, ctx.date.timeIntervalSince(last) / 3600)
+                            Label("\(Int(h)):" + String(format: "%02d", Int((h - floor(h)) * 60)) + " h fasten", systemImage: "timer")
+                                .font(.caption.weight(.semibold)).monospacedDigit()
+                                .foregroundStyle(h >= 16 ? Color.purple : .secondary)
+                        }
+                    }
+                }
+                HStack(spacing: 10) {
+                    Circle().fill(k.level == 0 ? Color(.systemGray3) : k.color).frame(width: 14, height: 14)
+                    Text(k.title).font(.title3.weight(.heavy)).foregroundStyle(k.level == 0 ? .primary : k.color)
+                }
+                if !k.detail.isEmpty { Text(k.detail).font(.footnote) }
+                // Netto-Kohlenhydrate der letzten 3 Tage mit Grenzen 20 g und 50 g
+                HStack(alignment: .bottom, spacing: 14) {
+                    ForEach(k.days) { d in
+                        let v = d.net ?? 0
+                        VStack(spacing: 4) {
+                            Text(d.net.map { FitFmt.int($0) + " g" } ?? "–").font(.caption2.weight(.bold)).monospacedDigit()
+                            ZStack(alignment: .bottom) {
+                                RoundedRectangle(cornerRadius: 6).fill(Color(.tertiarySystemFill)).frame(height: 60)
+                                RoundedRectangle(cornerRadius: 6)
+                                    .fill(v <= 25 ? Color.purple : (v <= 50 ? Color.indigo.opacity(0.7) : Color.orange.opacity(0.7)))
+                                    .frame(height: d.net == nil ? 0 : max(4, min(60, v / 150 * 60)))
+                            }
+                            .frame(width: 34)
+                            Text(Calendar.current.isDateInToday(d.date) ? "heute" : d.date.formatted(.dateTime.weekday(.abbreviated)))
+                                .font(.caption2).foregroundStyle(.secondary)
+                        }
+                    }
+                    VStack(alignment: .leading, spacing: 4) {
+                        Label("≤ 25 g: Ketose", systemImage: "circle.fill").foregroundStyle(.purple)
+                        Label("≤ 50 g: möglich", systemImage: "circle.fill").foregroundStyle(.indigo)
+                        Label("darüber: eher nicht", systemImage: "circle.fill").foregroundStyle(.orange)
+                    }
+                    .font(.caption2).labelStyle(.titleAndIcon)
+                }
+                if let h = k.hint { Text(h).font(.caption).foregroundStyle(.secondary) }
+                Text("Geschätzt aus deinen Yazio-Einträgen (Kohlenhydrate minus Ballaststoffe) und der Zeit seit der letzten Mahlzeit. Sicher geht es nur mit einer Keton-Messung.")
+                    .font(.caption2).foregroundStyle(.tertiary)
+            }
+            .padding(16)
+            .cardSurface()
+        }
+    }
+}
+
 struct NutritionView: View {
     @State private var fit = FitnessModel.shared
     @State private var tab = 0
@@ -162,6 +279,8 @@ struct NutritionView: View {
             .frame(maxWidth: .infinity, alignment: .leading)
             .background((bal >= 0 ? Color.green : Color.orange).opacity(0.12), in: RoundedRectangle(cornerRadius: 18, style: .continuous))
         }
+
+        if isToday { KetoCard() }
 
         VStack(alignment: .leading, spacing: 14) {
             Text("Nährstoffe").font(.headline)

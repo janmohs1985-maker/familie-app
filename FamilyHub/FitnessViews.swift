@@ -32,7 +32,8 @@ struct FitnessView: View {
                             let left = fit.kcalTarget - (d?.kcal ?? 0)
                             entryTile("Ernährung", "fork.knife", .green,
                                       (d?.logged ?? false) ? FitFmt.int(abs(left)) + (left >= 0 ? " übrig" : " drüber") : "–",
-                                      d?.protein.map { "Eiweiß \(FitFmt.int($0))/\(FitFmt.int(fit.proteinTarget)) g" } ?? "aus Yazio")
+                                      (fit.keto?.level ?? 0) == 2 ? "Ketose wahrscheinlich"
+                                        : (d?.protein.map { "Eiweiß \(FitFmt.int($0))/\(FitFmt.int(fit.proteinTarget)) g" } ?? "aus Yazio"))
                         }
                         .buttonStyle(.plain)
                         NavigationLink { BodyCompView() } label: {
