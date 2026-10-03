@@ -83,6 +83,143 @@ struct AppUpdateBanner: View {
     }
 }
 
+// MARK: - Builds in der Pipeline (GitHub Actions, nur Jan)
+
+struct BuildRun: Identifiable, Decodable {
+    let id: Int
+    let display_title: String
+    let status: String              // queued, in_progress, completed
+    let conclusion: String?         // success, failure, cancelled …
+    let run_started_at: String?
+    let updated_at: String?
+    let html_url: String
+
+    /// „Update 168: …“ → 168
+    var update: Int? {
+        guard let m = display_title.firstMatch(of: #/Update (\d+)/#) else { return nil }
+        return Int(m.1)
+    }
+    var text: String {
+        display_title.replacingOccurrences(of: #"^Update \d+:\s*"#, with: "", options: .regularExpression)
+    }
+    var started: Date? { HADate.parse(run_started_at) }
+    var finished: Date? { status == "completed" ? HADate.parse(updated_at) : nil }
+}
+
+enum BuildPipeline {
+    static let repo = "janmohs1985-maker/familie-app"
+
+    static func load() async throws -> [BuildRun] {
+        struct Wrap: Decodable { let workflow_runs: [BuildRun] }
+        var req = URLRequest(url: URL(string: "https://api.github.com/repos/\(repo)/actions/runs?per_page=6")!, timeoutInterval: 20)
+        req.setValue("application/vnd.github+json", forHTTPHeaderField: "Accept")
+        req.setValue("FamilieApp", forHTTPHeaderField: "User-Agent")
+        let (data, resp) = try await URLSession.shared.data(for: req)
+        let code = (resp as? HTTPURLResponse)?.statusCode ?? 0
+        if code == 403 || code == 429 { throw URLError(.resourceUnavailable) }
+        return try JSONDecoder().decode(Wrap.self, from: data).workflow_runs
+    }
+}
+
+struct BuildsSection: View {
+    @Environment(\.openURL) private var openURL
+    @State private var runs: [BuildRun] = []
+    @State private var error: String?
+    @State private var loading = false
+
+    private var installed: Int? { Int(AppVersionInfo.current.version.split(separator: ".").last ?? "") }
+
+    var body: some View {
+        Section {
+            if runs.isEmpty && loading { HStack { ProgressView(); Text("Lade …").foregroundStyle(.secondary) } }
+            if let error { Label(error, systemImage: "exclamationmark.triangle").font(.footnote).foregroundStyle(.orange) }
+            TimelineView(.periodic(from: .now, by: 30)) { ctx in
+                VStack(spacing: 0) {
+                    ForEach(runs.prefix(5)) { r in
+                        row(r, now: ctx.date)
+                        if r.id != runs.prefix(5).last?.id { Divider().padding(.leading, 40) }
+                    }
+                }
+            }
+            Button {
+                if let u = URL(string: "itms-beta://") { openURL(u) }
+            } label: {
+                Label("TestFlight öffnen", systemImage: "airplane")
+            }
+        } header: {
+            HStack {
+                Text("Builds")
+                Spacer()
+                if loading { ProgressView().controlSize(.mini) }
+            }
+        } footer: {
+            Text("Live von GitHub. „Fertig“ heißt: in TestFlight verfügbar (manchmal braucht Apple danach noch ein paar Minuten).")
+        }
+        .task {
+            // aktualisiert sich jede Minute, solange die Einstellungen offen sind
+            while !Task.isCancelled {
+                await reload()
+                try? await Task.sleep(for: .seconds(runs.contains { $0.status != "completed" } ? 60 : 180))
+            }
+        }
+    }
+
+    private func reload() async {
+        loading = true
+        do {
+            runs = try await BuildPipeline.load()
+            error = nil
+        } catch {
+            self.error = "GitHub gerade nicht erreichbar."
+        }
+        loading = false
+    }
+
+    private func row(_ r: BuildRun, now: Date) -> some View {
+        let (symbol, color, state): (String, Color, String) = {
+            switch (r.status, r.conclusion) {
+            case ("queued", _), ("waiting", _), ("pending", _): return ("clock.fill", .gray, "wartet")
+            case ("in_progress", _):
+                let m = r.started.map { Int(now.timeIntervalSince($0) / 60) } ?? 0
+                return ("hammer.fill", .orange, "baut · \(m) Min")
+            case (_, .some("success")): return ("checkmark.circle.fill", .green, "fertig")
+            case (_, .some("cancelled")): return ("minus.circle.fill", .gray, "abgebrochen")
+            default: return ("xmark.octagon.fill", .red, "Fehler")
+            }
+        }()
+        let isInstalled = r.update != nil && r.update == installed
+        return Button {
+            if let u = URL(string: r.html_url) { openURL(u) }
+        } label: {
+            HStack(spacing: 10) {
+                Image(systemName: symbol).foregroundStyle(color).font(.title3)
+                    .symbolEffect(.pulse, isActive: r.status == "in_progress")
+                    .frame(width: 28)
+                VStack(alignment: .leading, spacing: 2) {
+                    HStack(spacing: 6) {
+                        Text(r.update.map { "Update \($0)" } ?? "Build").font(.subheadline.weight(.bold))
+                        if isInstalled {
+                            Text("installiert").font(.caption2.weight(.bold)).foregroundStyle(.white)
+                                .padding(.horizontal, 6).padding(.vertical, 2).background(Color.accentColor, in: Capsule())
+                        }
+                    }
+                    Text(r.text).font(.caption).foregroundStyle(.secondary).lineLimit(2)
+                }
+                Spacer(minLength: 4)
+                VStack(alignment: .trailing, spacing: 2) {
+                    Text(state).font(.caption.weight(.bold)).foregroundStyle(color)
+                    if let f = r.finished {
+                        Text(f.formatted(.relative(presentation: .named))).font(.caption2).foregroundStyle(.secondary)
+                    }
+                }
+            }
+            .padding(.vertical, 8)
+            .contentShape(Rectangle())
+        }
+        .buttonStyle(.plain)
+    }
+}
+
 /// Abschnitt in den Einstellungen: installierte Version + Aktualisieren
 struct AppVersionSection: View {
     @Environment(AppStore.self) private var store

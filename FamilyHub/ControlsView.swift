@@ -773,6 +773,8 @@ struct SettingsView: View {
 
                 AppVersionSection()
 
+                if store.isAdmin { BuildsSection() }
+
                 Section {
                     NavigationLink {
                         Form {
