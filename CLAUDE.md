@@ -4,7 +4,7 @@ Familien-App „Familie“ (SwiftUI, iOS 17+) für Home Assistant unter `https:/
 
 ## Arbeitsweise
 
-- Jede Änderung an der App: `VERSION` um 1 hochzählen (aktuell 154), committen, `git push origin HEAD:main`.
+- Jede Änderung an der App: `VERSION` um 1 hochzählen (aktuell 155), committen, `git push origin HEAD:main`.
 - Commit-Nachricht: `Update <VERSION>: <was>` und am Ende die Co-Authored-By-Zeile.
 - Ein Push auf `main` startet `.github/workflows/build.yml` auf macOS 26 mit Xcode 26. Der Workflow baut, signiert, lädt zu App Store Connect hoch und gibt den Build in TestFlight für die interne Gruppe „Familie“ frei (`.github/scripts/testflight_assign.py`). Die App in App Store Connect heißt „Familie Mohs“, id 6818251048. Jan installiert über **TestFlight**.
 - **Nicht auf den Build warten.** Direkt nach dem Push melden („Update N ist hochgeladen, kommt in ~15 Min.“). Den Status höchstens später prüfen: `curl -s https://api.github.com/repos/janmohs1985-maker/familie-app/actions/runs?per_page=1`.
@@ -57,6 +57,7 @@ Familien-App „Familie“ (SwiftUI, iOS 17+) für Home Assistant unter `https:/
   - Zigbee: Anlernen über „+“, Raum pro Gerät ändern (150)
   - Zuhause → Sonstiges → „DB Status“: Bahnübergang Elchinger Straße Nersingen mit Schranke, Zeitstrahl, Live-Karte, Zugliste (151). Daten von Transitous (`api.transitous.org/api/v1/map/trips`, ohne Schlüssel), Schließzeiten geschätzt (`RailCrossing.swift`). Entwürfe: Design-Fläche „Bahnübergang Nersingen – Entwürfe“.
   - Musik-Player neu im Look „Cover-Glas“ (Entwurf 1B): Vollbild mit Cover-Farben, Bibliothek/Suche/Konto als Blatt von unten (`MusicPlayer.swift`, 154). Entwürfe: Design-Fläche „Musik-Player – 6 Entwürfe“.
+  - Fitness-Bereich Schritt 1 (155, nur Jan/`isAdmin`): Zuhause-Karte „Fitness“ → Übersicht (Ziel 127 → 108 kg, Ringe, Erholung, Woche, Muskeln-Körper), Trainings, Detail (Karte, Puls, Zonen), Entwicklung. Daten direkt aus Apple Health (`Fitness.swift`, `FitnessViews.swift`, `BodyMap.swift`). Der Build schaltet HEALTHKIT an der App-ID ein und übernimmt Berechtigungen nur, wenn das Profil sie enthält. Offen: Schritt 2 Wochenplan mit HA-Kalender `calendar.gym` (angelegt, nur dort eintragen), Schritt 3 Gym-Training mit Anfängerplan (MC Shape Nersingen, Life Fitness Insignia) auf iPhone + Watch, Gerät-Bildschirm Variante V7. Entwürfe: Design-Fläche „Fitness-Bereich – Entwürfe“. Wochenziel: 2× Gym, 1× Padel, 1× Schwimmen, 2× Rad.
   - Saugroboter-Live-Aktivität: Startzeit aus „Reinigungszeit“ statt altem „letzter Reinigungsbeginn“ (Family Hub `server.py`, Sicherung `server.py.vor_sauger_fix`).
 - Offen bzw. angeboten:
   - Zuhause-Karten neu gestalten (pausiert)

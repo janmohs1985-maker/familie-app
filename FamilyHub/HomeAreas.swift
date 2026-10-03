@@ -6,12 +6,13 @@ import SwiftUI
 // Jeder Bereich zeigt auf der Übersicht ein, zwei Kennzahlen und führt zu seinen Seiten.
 
 enum HomeArea: String, CaseIterable, Identifiable, Hashable {
-    case auto, energie, draussen, haushalt, sicherheit, familie, technik, sonstiges
+    case auto, fitness, energie, draussen, haushalt, sicherheit, familie, technik, sonstiges
     var id: String { rawValue }
 
     var title: String {
         switch self {
         case .auto: "Auto"
+        case .fitness: "Fitness"
         case .energie: "Energie"
         case .draussen: "Garten & Draußen"
         case .haushalt: "Haushalt"
@@ -24,6 +25,7 @@ enum HomeArea: String, CaseIterable, Identifiable, Hashable {
     var symbol: String {
         switch self {
         case .auto: "car.side.fill"
+        case .fitness: "figure.strengthtraining.traditional"
         case .energie: "bolt.fill"
         case .draussen: "tree.fill"
         case .haushalt: "washer.fill"
@@ -36,6 +38,7 @@ enum HomeArea: String, CaseIterable, Identifiable, Hashable {
     var color: Color {
         switch self {
         case .auto: Color(red: 0.20, green: 0.70, blue: 0.40)
+        case .fitness: Color(red: 1.0, green: 0.48, blue: 0.10)
         case .energie: Color(red: 0.91, green: 0.64, blue: 0.09)
         case .draussen: Color(red: 0.25, green: 0.62, blue: 0.85)
         case .haushalt: Color(red: 0.08, green: 0.64, blue: 0.72)
@@ -111,6 +114,7 @@ extension AppStore {
         let parent = isParent && activeKid == nil
         switch a {
         case .auto: return parent && hasCar
+        case .fitness: return isAdmin           // nur Jan – die Daten liegen auf seinem iPhone
         case .energie: return parent || [KidFeature.strom, .heizung].contains(where: { allows($0) })
         case .draussen: return true
         case .haushalt: return [KidFeature.waesche, .saugroboter, .musik].contains(where: { allows($0) })
@@ -337,7 +341,9 @@ struct HomeAreasOverview: View {
             if store.allows(.raeume) { roomsCard }
             LazyVGrid(columns: columns, spacing: 12) {
                 ForEach(HomeArea.allCases.filter { store.allowsArea($0) }) { a in
-                    NavigationLink { HomeAreaPage(area: a) } label: { areaCard(a) }
+                    NavigationLink {
+                        if a == .fitness { FitnessView() } else { HomeAreaPage(area: a) }
+                    } label: { areaCard(a) }
                         .buttonStyle(.plain)
                 }
             }
@@ -348,6 +354,7 @@ struct HomeAreasOverview: View {
             // Bahnübergang für die Karte „Sonstiges“ aktuell halten, solange die Übersicht sichtbar ist
             while !Task.isCancelled {
                 await RailModel.shared.refreshIfStale(maxAge: 60)
+                if store.isAdmin { await FitnessModel.shared.refreshIfAllowed() }
                 try? await Task.sleep(for: .seconds(30))
             }
         }
@@ -463,6 +470,16 @@ struct HomeAreasOverview: View {
             return Facts(big: "Familie", small: store.isParent && store.activeKid == nil ? "Karte · Schule · Dokumente" : "Stundenplan · Mappe")
         case .technik:
             return Facts(big: "Netz", small: "Internet · VPN · Streaming")
+        case .fitness:
+            let fit = FitnessModel.shared
+            let goal = UserDefaults.standard.object(forKey: "fitGoalKg") as? Double ?? FitnessConfig.defaultGoalKg
+            guard let w = fit.currentWeight?.value else {
+                let n = fit.workouts(since: FitnessModel.startOfWeek).count
+                return Facts(big: fit.loaded == nil ? "Fitness" : "\(n)× Training", small: "Gewicht · Trainings · Plan")
+            }
+            let rest = w - goal
+            return Facts(big: FitFmt.num(w, 1) + " kg",
+                         small: rest > 0 ? "noch \(FitFmt.num(rest, 1)) kg bis \(FitFmt.kg(goal))" : "Ziel erreicht!")
         case .sonstiges:
             let rail = RailModel.shared
             guard let next = rail.nextPass else { return Facts(big: "Bahn", small: "DB Status") }
@@ -531,6 +548,7 @@ struct HomeAreaTiles: View {
                 case .familie: familie
                 case .technik: technik
                 case .sonstiges: sonstiges
+                case .fitness: EmptyView()
                 }
             }
             .padding(.horizontal)

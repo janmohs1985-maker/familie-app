@@ -56,11 +56,22 @@ jobs:
             # 2) Ad-hoc-Profil mit allen eingetragenen iPhones
             python3 -m pip install --quiet --user --break-system-packages pyjwt cryptography 2>/dev/null \
               || python3 -m pip install --quiet --user pyjwt cryptography
-            PROFILE=$(CERT_SERIAL="$CERT_SERIAL" ENABLE_CAPS=USERNOTIFICATIONS_COMMUNICATION CAPS_OK_FILE="$RUNNER_TEMP/komm_ok" \
-              python3 .github/scripts/adhoc_profile.py)
-            # Mitteilungen mit Profilbild nur, wenn Apple die Fähigkeit freigeschaltet hat
-            if [ -f "$RUNNER_TEMP/komm_ok" ]; then ENT=Familie-Kommunikation.entitlements; else ENT=Familie.entitlements; fi
-            echo "Berechtigungen: $ENT"
+            PROFILE=$(CERT_SERIAL="$CERT_SERIAL" ENABLE_CAPS=USERNOTIFICATIONS_COMMUNICATION,HEALTHKIT \
+              PROFILE_ENT_FILE="$RUNNER_TEMP/profil_rechte.txt" python3 .github/scripts/adhoc_profile.py)
+            # Berechtigungen der App aus dem Profil ableiten: nur was Apple wirklich freigeschaltet hat
+            # (Mitteilungen mit Profilbild, Apple Health) – so kann die Signatur nicht daran scheitern
+            ENT="$RUNNER_TEMP/Familie-gebaut.entitlements"
+            cp Familie.entitlements "$ENT"
+            if grep -q "usernotifications.communication" "$RUNNER_TEMP/profil_rechte.txt" 2>/dev/null; then
+              /usr/libexec/PlistBuddy -c "Add :com.apple.developer.usernotifications.communication bool true" "$ENT"
+            fi
+            if grep -qx "com.apple.developer.healthkit" "$RUNNER_TEMP/profil_rechte.txt" 2>/dev/null; then
+              /usr/libexec/PlistBuddy -c "Add :com.apple.developer.healthkit bool true" "$ENT"
+              /usr/libexec/PlistBuddy -c "Add :com.apple.developer.healthkit.access array" "$ENT"
+            else
+              echo "::warning::Apple Health ist für die App-ID noch nicht freigeschaltet – Fitness-Bereich ohne Health-Daten"
+            fi
+            echo "Berechtigungen: $(plutil -convert json -o - "$ENT")"
             echo "Profil: $PROFILE"
             # Profil für die Mitteilungs-Erweiterung (Bilder in Mitteilungen); App-ID wird bei Bedarf angelegt
             PROFILE_NSE=$(CERT_SERIAL="$CERT_SERIAL" BUNDLE_ID=es.mohs.familie.mitteilung BUNDLE_NAME="Familie Mitteilungen" \

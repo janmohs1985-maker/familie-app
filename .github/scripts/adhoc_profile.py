@@ -123,5 +123,9 @@ info = plistlib.loads(content[start:end])
 folder = pathlib.Path.home() / "Library/MobileDevice/Provisioning Profiles"
 folder.mkdir(parents=True, exist_ok=True)
 (folder / f"{info['UUID']}.mobileprovision").write_bytes(content)
+# Welche Berechtigungen das Profil wirklich enthält (der Build nimmt nur diese in die App auf)
+if os.environ.get("PROFILE_ENT_FILE"):
+    pathlib.Path(os.environ["PROFILE_ENT_FILE"]).write_text("\n".join(sorted(info.get("Entitlements", {}).keys())))
+    print("Berechtigungen im Profil: " + ", ".join(sorted(info.get("Entitlements", {}).keys())), file=sys.stderr)
 print(f"Profil „{name}“ mit {len(devices)} Gerät(en) installiert", file=sys.stderr)
 print(name)

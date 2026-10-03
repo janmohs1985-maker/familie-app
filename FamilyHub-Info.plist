@@ -4,6 +4,10 @@
 <dict>
 	<key>ITSAppUsesNonExemptEncryption</key>
 	<false/>
+	<key>NSHealthShareUsageDescription</key>
+	<string>Der Fitness-Bereich zeigt deine Trainings, dein Gewicht, Schlaf und Puls aus Apple Health. Die Daten bleiben auf deinem iPhone.</string>
+	<key>NSHealthUpdateUsageDescription</key>
+	<string>Gym-Trainings aus der App werden in Apple Health gespeichert.</string>
 	<key>NSSupportsLiveActivities</key>
 	<true/>
 	<key>NSUserActivityTypes</key>
