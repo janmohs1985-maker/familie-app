@@ -516,40 +516,9 @@ struct GymPlanView: View {
     // MARK: Woche + Demnächst
 
     private var weekStrip: some View {
-        HStack(spacing: 4) {
-            ForEach(days, id: \.self) { d in
-                let done = weekWorkouts.first { cal.isDate($0.start, inSameDayAs: d) }
-                let planned = plan.events.first { cal.isDate($0.start, inSameDayAs: d) }
-                let today = cal.isDateInToday(d)
-                VStack(spacing: 5) {
-                    Text(d.formatted(.dateTime.weekday(.abbreviated))).font(.caption2.weight(.bold))
-                        .foregroundStyle(today ? Sport.gym.color : .secondary)
-                    ZStack {
-                        RoundedRectangle(cornerRadius: 12, style: .continuous)
-                            .fill(done.map { AnyShapeStyle($0.sport.color) } ?? AnyShapeStyle(Color(.tertiarySystemFill)))
-                        if let s = done?.sport {
-                            Image(systemName: s.symbol).font(.system(size: 14, weight: .bold)).foregroundStyle(.white)
-                        } else if let p = planned {
-                            RoundedRectangle(cornerRadius: 12, style: .continuous).strokeBorder(p.sport.color, lineWidth: 2)
-                            Image(systemName: p.sport.symbol).font(.system(size: 13, weight: .bold)).foregroundStyle(p.sport.color)
-                        }
-                        // mehrere Einheiten am Tag
-                        let n = max(weekWorkouts.filter { cal.isDate($0.start, inSameDayAs: d) }.count,
-                                    plan.events.filter { cal.isDate($0.start, inSameDayAs: d) }.count)
-                        if n > 1 {
-                            Text("\(n)").font(.system(size: 9, weight: .heavy)).foregroundStyle(.white)
-                                .frame(width: 15, height: 15).background(Color.black.opacity(0.55), in: Circle())
-                                .frame(maxWidth: .infinity, maxHeight: .infinity, alignment: .topTrailing).offset(x: 3, y: -3)
-                        }
-                    }
-                    .frame(height: 38)
-                    .overlay(RoundedRectangle(cornerRadius: 12, style: .continuous).strokeBorder(today ? Sport.gym.color : .clear, lineWidth: 2))
-                }
-                .frame(maxWidth: .infinity)
-            }
-        }
-        .padding(14)
-        .cardSurface()
+        WeekStrip(days: days)
+            .padding(14)
+            .cardSurface()
     }
 
     private var upcomingCard: some View {
@@ -575,6 +544,171 @@ struct GymPlanView: View {
         }
         .padding(.bottom, 8)
         .cardSurface()
+    }
+}
+
+// MARK: - Woche: alle Einheiten pro Tag sichtbar, Tag antippen = Liste
+
+struct DayEntry: Identifiable {
+    let id: String
+    let sport: Sport
+    let done: Bool
+    let title: String
+    let time: Date
+    let minutes: Int
+    let event: PlanEvent?
+}
+
+@MainActor
+extension GymPlanModel {
+    /// erledigte Trainings (Apple Health + Gym-Verlauf ohne Health-Eintrag) und noch offene geplante Einheiten eines Tages
+    func entries(on d: Date) -> [DayEntry] {
+        let cal = Calendar.current
+        let fit = FitnessModel.shared, gym = GymModel.shared
+        let health = fit.workouts.filter { cal.isDate($0.start, inSameDayAs: d) }
+        var out = health.map { DayEntry(id: $0.id.uuidString, sport: $0.sport, done: true, title: $0.name, time: $0.start,
+                                        minutes: Int($0.duration / 60), event: nil) }
+        for log in gym.history where cal.isDate(log.start, inSameDayAs: d) && !health.contains(where: { gym.log(for: $0)?.id == log.id }) {
+            out.append(DayEntry(id: log.id.uuidString, sport: .gym, done: true, title: log.program.title, time: log.start,
+                                minutes: Int(log.end.timeIntervalSince(log.start) / 60), event: nil))
+        }
+        // geplante Einheiten: die ersten k einer Sportart gelten als erledigt, wenn k-mal trainiert wurde
+        let planned = events.filter { cal.isDate($0.start, inSameDayAs: d) }.sorted { $0.start < $1.start }
+        var used: [Sport: Int] = [:]
+        for e in planned {
+            let doneN = out.filter { $0.done && $0.sport == e.sport }.count
+            let n = used[e.sport, default: 0]
+            used[e.sport] = n + 1
+            if n >= doneN {
+                out.append(DayEntry(id: e.uid, sport: e.sport, done: false, title: e.title, time: e.start, minutes: e.minutes, event: e))
+            }
+        }
+        return out.sorted { $0.time < $1.time }
+    }
+}
+
+struct WeekStrip: View {
+    let days: [Date]
+    @State private var plan = GymPlanModel.shared
+    @State private var fit = FitnessModel.shared
+    @State private var openDay: DayBox?
+
+    struct DayBox: Identifiable { let date: Date; var id: Date { date } }
+
+    var body: some View {
+        let cal = Calendar.current
+        HStack(alignment: .top, spacing: 4) {
+            ForEach(days, id: \.self) { d in
+                let list = plan.entries(on: d)
+                let today = cal.isDateInToday(d)
+                Button { openDay = DayBox(date: d) } label: {
+                    VStack(spacing: 4) {
+                        Text(d.formatted(.dateTime.weekday(.abbreviated))).font(.caption2.weight(.bold))
+                            .foregroundStyle(today ? Sport.gym.color : .secondary)
+                        if list.isEmpty {
+                            RoundedRectangle(cornerRadius: 9, style: .continuous).fill(Color(.tertiarySystemFill)).frame(height: 30)
+                        }
+                        ForEach(list.prefix(3)) { e in
+                            ZStack {
+                                RoundedRectangle(cornerRadius: 9, style: .continuous)
+                                    .fill(e.done ? AnyShapeStyle(e.sport.color) : AnyShapeStyle(e.sport.color.opacity(0.1)))
+                                if !e.done {
+                                    RoundedRectangle(cornerRadius: 9, style: .continuous).strokeBorder(e.sport.color, lineWidth: 1.5)
+                                }
+                                Image(systemName: e.sport.symbol).font(.system(size: 12, weight: .bold))
+                                    .foregroundStyle(e.done ? .white : e.sport.color)
+                            }
+                            .frame(height: 30)
+                        }
+                        if list.count > 3 {
+                            Text("+\(list.count - 3)").font(.caption2.weight(.heavy)).foregroundStyle(.secondary)
+                        }
+                    }
+                    .padding(3)
+                    .background(today ? Sport.gym.color.opacity(0.1) : .clear, in: RoundedRectangle(cornerRadius: 12, style: .continuous))
+                    .contentShape(Rectangle())
+                }
+                .buttonStyle(.plain)
+                .frame(maxWidth: .infinity)
+                .accessibilityLabel(d.formatted(.dateTime.weekday(.wide)) + ": " + (list.isEmpty ? "nichts" : list.map(\.title).joined(separator: ", ")))
+            }
+        }
+        .sheet(item: $openDay) { box in DayDetailSheet(date: box.date) }
+    }
+}
+
+struct DayDetailSheet: View {
+    let date: Date
+    @Environment(AppStore.self) private var store
+    @Environment(\.dismiss) private var dismiss
+    @State private var plan = GymPlanModel.shared
+
+    var body: some View {
+        let cal = Calendar.current
+        let list = plan.entries(on: date)
+        NavigationStack {
+            List {
+                if list.isEmpty {
+                    Text(date < cal.startOfDay(for: .now) ? "Kein Training – Ruhetag." : "Noch nichts geplant.").foregroundStyle(.secondary)
+                }
+                ForEach(list) { e in
+                    HStack(spacing: 12) {
+                        Image(systemName: e.sport.symbol).font(.subheadline.weight(.bold))
+                            .foregroundStyle(e.done ? .white : e.sport.color)
+                            .frame(width: 36, height: 36)
+                            .background(e.done ? AnyShapeStyle(e.sport.color) : AnyShapeStyle(e.sport.color.opacity(0.12)),
+                                        in: RoundedRectangle(cornerRadius: 10, style: .continuous))
+                        VStack(alignment: .leading, spacing: 1) {
+                            Text(e.title).font(.subheadline.weight(.semibold))
+                            Text(e.time.formatted(date: .omitted, time: .shortened) + " · \(e.minutes) Min" + (e.done ? " · ✓ erledigt" : " · geplant"))
+                                .font(.caption).foregroundStyle(e.done ? .green : .secondary)
+                        }
+                        Spacer()
+                        if let ev = e.event {
+                            Menu {
+                                let tomorrow = cal.date(byAdding: .day, value: 1, to: cal.startOfDay(for: .now))!
+                                if !cal.isDateInToday(ev.start) { Button("Heute") { Task { await plan.move(store, ev, to: .now) } } }
+                                if !cal.isDate(ev.start, inSameDayAs: tomorrow) { Button("Morgen") { Task { await plan.move(store, ev, to: tomorrow) } } }
+                                ForEach((2..<7).map { cal.date(byAdding: .day, value: $0, to: cal.startOfDay(for: .now))! }, id: \.self) { d in
+                                    if !cal.isDate(ev.start, inSameDayAs: d) {
+                                        Button(d.formatted(.dateTime.weekday(.wide))) { Task { await plan.move(store, ev, to: d) } }
+                                    }
+                                }
+                                Button("Fällt aus", role: .destructive) { Task { await plan.delete(store, ev) } }
+                            } label: {
+                                Image(systemName: "arrow.left.arrow.right").font(.subheadline.weight(.bold)).foregroundStyle(e.sport.color)
+                                    .frame(width: 36, height: 36).background(e.sport.color.opacity(0.12), in: Circle())
+                            }
+                        }
+                    }
+                }
+                if date >= cal.startOfDay(for: .now) {
+                    Menu {
+                        ForEach(Sport.allCases.filter { $0 != .andere }) { s in
+                            Button { Task { await add(s) } } label: { Label(s.title, systemImage: s.symbol) }
+                        }
+                    } label: {
+                        Label("Einheit dazu", systemImage: "plus")
+                    }
+                }
+            }
+            .navigationTitle(date.formatted(.dateTime.weekday(.wide).day().month(.wide)))
+            .navigationBarTitleDisplayMode(.inline)
+            .toolbar { ToolbarItem(placement: .confirmationAction) { Button("Fertig") { dismiss() } } }
+        }
+        .presentationDetents([.medium, .large])
+    }
+
+    private func add(_ s: Sport) async {
+        let cal = Calendar.current
+        if cal.isDateInToday(date) { await plan.planToday(store, s); return }
+        let q = plan.quota(s)
+        let weekend = cal.isDateInWeekend(date)
+        var start = cal.date(bySettingHour: weekend ? 10 : (q?.hour ?? 18), minute: weekend ? 0 : (q?.minute ?? 30), second: 0, of: date) ?? date
+        if let lastEnd = plan.events.filter({ cal.isDate($0.start, inSameDayAs: date) }).map(\.end).max(), lastEnd > start.addingTimeInterval(-1800) {
+            start = lastEnd.addingTimeInterval(1800)
+        }
+        await plan.add(store, sport: s, title: GymPlanModel.title(for: s), start: start, minutes: q?.minutes ?? 60)
     }
 }
 

@@ -283,36 +283,7 @@ struct FitnessView: View {
                 .contentShape(Rectangle())
             }
             .buttonStyle(.plain)
-            HStack(spacing: 4) {
-                ForEach(days, id: \.self) { d in
-                    let list = week.filter { Calendar.current.isDate($0.start, inSameDayAs: d) }
-                    let planned = GymPlanModel.shared.events.first { Calendar.current.isDate($0.start, inSameDayAs: d) }
-                    let today = Calendar.current.isDateInToday(d)
-                    VStack(spacing: 6) {
-                        Text(d.formatted(.dateTime.weekday(.abbreviated)))
-                            .font(.caption2.weight(.semibold)).foregroundStyle(today ? Sport.gym.color : .secondary)
-                        ZStack {
-                            RoundedRectangle(cornerRadius: 12, style: .continuous)
-                                .fill(list.first.map { AnyShapeStyle($0.sport.color) } ?? AnyShapeStyle(Color(.tertiarySystemFill)))
-                            if let s = list.first?.sport {
-                                Image(systemName: s.symbol).font(.system(size: 15, weight: .bold)).foregroundStyle(.white)
-                            } else if let p = planned {
-                                // geplant, noch nicht gemacht
-                                RoundedRectangle(cornerRadius: 12, style: .continuous).strokeBorder(p.sport.color, lineWidth: 2)
-                                Image(systemName: p.sport.symbol).font(.system(size: 14, weight: .bold)).foregroundStyle(p.sport.color)
-                            }
-                            if list.count > 1 {
-                                Text("\(list.count)").font(.system(size: 9, weight: .heavy)).foregroundStyle(.white)
-                                    .padding(3).background(.black.opacity(0.35), in: Circle())
-                                    .frame(maxWidth: .infinity, maxHeight: .infinity, alignment: .topTrailing).padding(2)
-                            }
-                        }
-                        .frame(height: 38)
-                        .overlay(RoundedRectangle(cornerRadius: 12, style: .continuous).strokeBorder(today ? Sport.gym.color : .clear, lineWidth: 2))
-                    }
-                    .frame(maxWidth: .infinity)
-                }
-            }
+            WeekStrip(days: days)
             HStack(spacing: 12) {
                 ForEach(Sport.allCases.filter { s in s != .andere && (week.contains { $0.sport == s } || GymPlanModel.shared.events.contains { $0.sport == s }) }, id: \.self) { s in
                     HStack(spacing: 4) {
