@@ -331,7 +331,9 @@ final class FitnessModel {
         var sum: [Muscle: Double] = [:]
         for w in workouts(since: since) {
             let minutes = w.duration / 60
-            for (m, f) in w.sport.muscles { sum[m, default: 0] += f * minutes }
+            // Gym: wenn in der App abgehakt, die echten Geräte nehmen
+            let profile = (w.sport == .gym ? GymModel.shared.log(for: w)?.muscles : nil) ?? w.sport.muscles
+            for (m, f) in profile { sum[m, default: 0] += f * minutes }
         }
         let mx = sum.values.max() ?? 0
         guard mx > 0 else { return [:] }

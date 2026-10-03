@@ -23,6 +23,7 @@ struct FitnessView: View {
                     connectCard
                 }
                 if let e = fit.error { note(e, "exclamationmark.triangle") }
+                gymEntry
                 if fit.loaded != nil {
                     goalCard
                     HStack(alignment: .top, spacing: 12) {
@@ -66,6 +67,28 @@ struct FitnessView: View {
     }
 
     // MARK: Karten
+
+    /// Gym-Training: läuft gerade, steht heute im Plan – oder A/B frei wählen
+    @ViewBuilder private var gymEntry: some View {
+        let todayGym = plan.events.first { $0.sport == .gym && Calendar.current.isDateInToday($0.start) }
+        if let run = GymModel.shared.run {
+            GymStartCard(program: run.program)
+        } else if let e = todayGym {
+            GymStartCard(program: GymProgram.from(title: e.title))
+        } else {
+            HStack(spacing: 10) {
+                ForEach(GymProgram.allCases) { p in
+                    NavigationLink { GymSessionView(program: p) } label: {
+                        Label(p.short, systemImage: "dumbbell.fill").font(.subheadline.weight(.bold))
+                            .frame(maxWidth: .infinity, minHeight: 46)
+                            .foregroundStyle(Sport.gym.color)
+                            .cardSurface(radius: 16)
+                    }
+                    .buttonStyle(.plain)
+                }
+            }
+        }
+    }
 
     private var connectCard: some View {
         VStack(alignment: .leading, spacing: 12) {

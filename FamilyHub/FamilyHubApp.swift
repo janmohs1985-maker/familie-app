@@ -116,7 +116,7 @@ struct MainTabs: View {
             }
         }
         .overlay(alignment: .bottom) {
-            if !keyboard.visible && !tabBar.hiddenTabs.contains(store.selectedTab) {
+            if !keyboard.visible && !tabBar.isHidden(store.selectedTab) {
                 GlassTabBar(tabs: tabs, selection: Bindable(store).selectedTab)
                     .transition(.move(edge: .bottom).combined(with: .opacity))
             }

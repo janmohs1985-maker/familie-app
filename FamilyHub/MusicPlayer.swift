@@ -53,8 +53,8 @@ struct MusicView: View {
                 .presentationBackground(palette.base.opacity(0.94))
                 .environment(\.colorScheme, .dark)
         }
-        .onAppear { myTab = store.selectedTab; TabBarVisibility.shared.hiddenTabs.insert(myTab) }
-        .onDisappear { TabBarVisibility.shared.hiddenTabs.remove(myTab) }
+        .onAppear { myTab = store.selectedTab; TabBarVisibility.shared.hide(myTab) }
+        .onDisappear { TabBarVisibility.shared.show(myTab) }
         .task(id: s?.attr("entity_picture")?.string) { await loadCover() }
         .onAppear { volume = s?.attr("volume_level")?.double ?? 0 }
         .onChange(of: s?.attr("volume_level")?.double) { _, v in
@@ -475,7 +475,15 @@ struct CoverGlow: View {
 @MainActor @Observable
 final class TabBarVisibility {
     static let shared = TabBarVisibility()
-    var hiddenTabs: Set<String> = []
+    /// Tab → Anzahl offener Vollbild-Seiten (zählt, damit beim Wechsel zwischen zwei solchen Seiten nichts aufblitzt)
+    var hiddenTabs: [String: Int] = [:]
+
+    func hide(_ tab: String) { hiddenTabs[tab, default: 0] += 1 }
+    func show(_ tab: String) {
+        let n = (hiddenTabs[tab] ?? 0) - 1
+        hiddenTabs[tab] = n > 0 ? n : nil
+    }
+    func isHidden(_ tab: String) -> Bool { (hiddenTabs[tab] ?? 0) > 0 }
 }
 
 // Zurück-Wischen auch auf Seiten ohne Navigationsleiste

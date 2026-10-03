@@ -181,6 +181,11 @@ struct GymPlanView: View {
         ScrollView {
             VStack(alignment: .leading, spacing: 14) {
                 weekHeader
+                if let run = GymModel.shared.run {
+                    GymStartCard(program: run.program)
+                } else if let g = plan.events.first(where: { $0.sport == .gym && Calendar.current.isDateInToday($0.start) }) {
+                    GymStartCard(program: GymProgram.from(title: g.title))
+                }
                 goalsCard
                 if let hint = recoveryHint { hintCard(hint) }
                 if let e = plan.error {
@@ -326,6 +331,7 @@ struct GymPlanView: View {
                 }
                 ForEach(planned) { e in
                     let ok = done.contains { $0.sport == e.sport }
+                        || (e.sport == .gym && GymModel.shared.history.contains { cal.isDate($0.start, inSameDayAs: d) })
                     eventChip(e, done: ok, missed: past && !ok)
                 }
                 // Trainings ohne Plan (z. B. spontan Laufen)
