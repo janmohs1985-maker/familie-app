@@ -195,23 +195,33 @@ struct GymPlanView: View {
                 Text("Verschieben mit ⇄ an der Einheit – oder gedrückt halten und auf einen anderen Tag ziehen. Antippen ändert Uhrzeit und Dauer.")
                     .font(.caption).foregroundStyle(.secondary).padding(.horizontal, 4)
                 ForEach(days, id: \.self) { d in dayCard(d) }
-                HStack(spacing: 10) {
+                VStack(alignment: .leading, spacing: 10) {
+                    Text("Meine Standard-Woche").font(.headline)
+                    Text(templateText).font(.footnote).foregroundStyle(.secondary)
                     Button { Task { await plan.fillFromTemplate(store) } } label: {
-                        Label("Woche planen", systemImage: "wand.and.stars").font(.subheadline.weight(.bold))
+                        Label("Diese Woche damit füllen", systemImage: "wand.and.stars").font(.subheadline.weight(.bold))
+                            .foregroundStyle(.white)
                             .frame(maxWidth: .infinity, minHeight: 48)
+                            .background(Sport.gym.color, in: RoundedRectangle(cornerRadius: 14, style: .continuous))
                     }
-                    .buttonStyle(.borderedProminent).tint(.primary)
+                    .buttonStyle(.plain)
+                    Text("Trägt die Standard-Woche an allen freien Tagen ab heute ein. Danach kannst du alles mit ⇄ verschieben.")
+                        .font(.caption).foregroundStyle(.secondary)
                     Button {
                         plan.saveAsTemplate()
-                        info = "Diese Woche ist jetzt die Vorlage für „Woche planen“."
+                        info = "Gespeichert – so sieht deine Standard-Woche jetzt aus."
                     } label: {
-                        Label("Als Vorlage", systemImage: "square.on.square").font(.subheadline.weight(.semibold))
-                            .frame(maxWidth: .infinity, minHeight: 48)
+                        Label("Diese Woche als Standard merken", systemImage: "square.and.arrow.down").font(.subheadline.weight(.semibold))
+                            .foregroundStyle(Sport.gym.color)
+                            .frame(maxWidth: .infinity, minHeight: 44)
+                            .background(Sport.gym.color.opacity(0.12), in: RoundedRectangle(cornerRadius: 14, style: .continuous))
                     }
-                    .buttonStyle(.bordered)
+                    .buttonStyle(.plain)
                     .disabled(plan.events.isEmpty)
+                    if let info { Text(info).font(.caption).foregroundStyle(.green) }
                 }
-                if let info { Text(info).font(.caption).foregroundStyle(.secondary) }
+                .padding(16)
+                .cardSurface()
                 Text("Steht nur im Kalender „Gym“ in Home Assistant – sonst nirgends.").font(.caption2).foregroundStyle(.tertiary)
             }
             .padding(.horizontal)
@@ -229,6 +239,16 @@ struct GymPlanView: View {
     }
 
     private struct DayBox: Identifiable { let date: Date; var id: Date { date } }
+
+    /// „Mo Gym A 18:30 · Di Basketball 19:00 …“
+    private var templateText: String {
+        let names = ["Mo", "Di", "Mi", "Do", "Fr", "Sa", "So"]
+        return plan.template.sorted { ($0.weekday, $0.hour, $0.minute) < ($1.weekday, $1.hour, $1.minute) }.map { t in
+            let short = t.title.components(separatedBy: " · ").first ?? t.title
+            return "\(names[max(0, min(6, t.weekday - 1))]) \(short) \(t.hour):" + String(format: "%02d", t.minute)
+        }
+        .joined(separator: " · ")
+    }
 
     private var weekHeader: some View {
         let end = Calendar.current.date(byAdding: .day, value: 6, to: plan.weekStart)!
