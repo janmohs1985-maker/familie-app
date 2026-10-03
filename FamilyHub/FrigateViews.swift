@@ -319,6 +319,8 @@ struct CameraDetailView: View {
     @State private var vodEnd: Date?
     @State private var loadingVod = false
     @State private var liveRetries = 0
+    @State private var rtc = LiveRTC()
+    @State private var rtcOn = false
     @State private var triedClip = false
     @State private var failInfo: String?
     @State private var playing = true
@@ -365,7 +367,8 @@ struct CameraDetailView: View {
         .fullScreenCover(isPresented: $fullscreen) {
             ZStack(alignment: .topTrailing) {
                 Color.black.ignoresSafeArea()
-                PlayerLayerView(player: player, gravity: .resizeAspect).ignoresSafeArea()
+                if live && rtcOn { RTCVideoView(rtc: rtc, fill: false).ignoresSafeArea() }
+                else { PlayerLayerView(player: player, gravity: .resizeAspect).ignoresSafeArea() }
                 Button { fullscreen = false } label: {
                     Image(systemName: "xmark").font(.headline).foregroundStyle(.white)
                         .frame(width: 40, height: 40).background(.ultraThinMaterial, in: Circle())
@@ -413,7 +416,11 @@ struct CameraDetailView: View {
         .onChange(of: center) { _, d in
             if scrubbing { Task { await fm.ensureDay(store, d) } }
         }
-        .onDisappear { player.pause() }
+        .onDisappear {
+            player.pause()
+            rtc.stop()
+            rtcOn = false
+        }
     }
 
     // MARK: Video
@@ -422,7 +429,8 @@ struct CameraDetailView: View {
         Color.black
             .aspectRatio(16 / 9, contentMode: .fit)
             .overlay {
-                if live && liveFailed { CamSnapshot(cam: cam, interval: 1) }
+                if live && rtcOn { RTCVideoView(rtc: rtc) }
+                else if live && liveFailed { CamSnapshot(cam: cam, interval: 1) }
                 else { PlayerLayerView(player: player) }
             }
             .overlay {
@@ -624,6 +632,19 @@ struct CameraDetailView: View {
         player.pause()
         loadingVod = true
         defer { loadingVod = false }
+        // Zuerst WebRTC (Bild in Echtzeit), sonst HLS als Rückfall
+        if !retry {
+            rtc.onState = { s in if s == .failed, rtcOn { rtcOn = false; Task { await goLive(retry: true) } } }
+            if await rtc.start(store, entityID: cam.entityID) {
+                guard live else { rtc.stop(); return }
+                player.replaceCurrentItem(with: nil)
+                liveFailed = false
+                rtcOn = true
+                playing = true
+                return
+            }
+        }
+        rtcOn = false
         if let url = await fm.liveURL(store, cam) {
             _ = await fm.waitForLive(url)
             guard live else { return }
@@ -653,6 +674,8 @@ struct CameraDetailView: View {
     /// Spielt 2 Minuten Aufnahme ab t (danach geht es automatisch weiter).
     /// Kurze Stücke, weil die App jedes Stück erst ganz herunterlädt.
     private func play(from t: Date) async {
+        rtc.stop()
+        rtcOn = false
         playbackFailed = false
         failInfo = nil
         let end = min(t.addingTimeInterval(120), Date().addingTimeInterval(-10))

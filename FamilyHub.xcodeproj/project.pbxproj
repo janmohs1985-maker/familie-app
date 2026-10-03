@@ -19,6 +19,7 @@
 		F0A1000000000000000000E9 /* FamilieKlingel.appex in Embed Foundation Extensions */ = {isa = PBXBuildFile; fileRef = F0A1000000000000000000E1 /* FamilieKlingel.appex */; settings = {ATTRIBUTES = (RemoveHeadersOnCopy, ); }; };
 		F0A1000000000000000000F9 /* FamilieLive.appex in Embed Foundation Extensions */ = {isa = PBXBuildFile; fileRef = F0A1000000000000000000F1 /* FamilieLive.appex */; settings = {ATTRIBUTES = (RemoveHeadersOnCopy, ); }; };
 		F0A100000000000000000109 /* FamilieWatch.app in Embed Watch Content */ = {isa = PBXBuildFile; fileRef = F0A100000000000000000101 /* FamilieWatch.app */; settings = {ATTRIBUTES = (RemoveHeadersOnCopy, ); }; };
+		F0A100000000000000000203 /* WebRTC in Frameworks */ = {isa = PBXBuildFile; productRef = F0A100000000000000000202 /* WebRTC */; };
 /* End PBXBuildFile section */
 
 /* Begin PBXContainerItemProxy section */
@@ -112,6 +113,7 @@
 			isa = PBXFrameworksBuildPhase;
 			buildActionMask = 2147483647;
 			files = (
+				F0A100000000000000000203 /* WebRTC in Frameworks */,
 			);
 			runOnlyForDeploymentPostprocessing = 0;
 		};
@@ -196,6 +198,7 @@
 			);
 			name = FamilyHub;
 			packageProductDependencies = (
+				F0A100000000000000000202 /* WebRTC */,
 			);
 			productName = FamilyHub;
 			productReference = F0A1000000000000000000A1 /* Familie.app */;
@@ -325,6 +328,9 @@
 			);
 			mainGroup = F0A1000000000000000000A4;
 			minimizedProjectReferenceProxies = 1;
+			packageReferences = (
+				F0A100000000000000000201 /* XCRemoteSwiftPackageReference "WebRTC" */,
+			);
 			preferredProjectObjectVersion = 77;
 			productRefGroup = F0A1000000000000000000A5 /* Products */;
 			projectDirPath = "";
@@ -871,6 +877,25 @@
 			defaultConfigurationName = Release;
 		};
 /* End XCConfigurationList section */
+
+/* Begin XCRemoteSwiftPackageReference section */
+		F0A100000000000000000201 /* XCRemoteSwiftPackageReference "WebRTC" */ = {
+			isa = XCRemoteSwiftPackageReference;
+			repositoryURL = "https://github.com/stasel/WebRTC";
+			requirement = {
+				kind = upToNextMajorVersion;
+				minimumVersion = 154.0.0;
+			};
+		};
+/* End XCRemoteSwiftPackageReference section */
+
+/* Begin XCSwiftPackageProductDependency section */
+		F0A100000000000000000202 /* WebRTC */ = {
+			isa = XCSwiftPackageProductDependency;
+			package = F0A100000000000000000201 /* XCRemoteSwiftPackageReference "WebRTC" */;
+			productName = WebRTC;
+		};
+/* End XCSwiftPackageProductDependency section */
 	};
 	rootObject = F0A1000000000000000000A9 /* Project object */;
 }
