@@ -443,6 +443,13 @@ struct WorkoutListView: View {
                         ForEach(Array(items.enumerated()), id: \.element.id) { i, w in
                             NavigationLink { WorkoutDetailView(workout: w) } label: { WorkoutRow(w: w).padding(.horizontal, 14).padding(.vertical, 10) }
                                 .buttonStyle(.plain)
+                                .contextMenu {
+                                    if fit.isOwn(w) {
+                                        Button(role: .destructive) { Task { await fit.delete(w) } } label: { Label("Training löschen", systemImage: "trash") }
+                                    } else {
+                                        Button(role: .destructive) { withAnimation { fit.hide(w) } } label: { Label("In der App ausblenden", systemImage: "eye.slash") }
+                                    }
+                                }
                             if i < items.count - 1 { Divider().padding(.leading, 68) }
                         }
                     }
@@ -450,6 +457,14 @@ struct WorkoutListView: View {
                 }
                 if list.isEmpty {
                     Text("Keine Trainings gefunden.").foregroundStyle(.secondary).frame(maxWidth: .infinity).padding(30)
+                }
+                Text("Lange drücken = Training löschen bzw. ausblenden.").font(.caption).foregroundStyle(.secondary).padding(.horizontal, 4)
+                if !fit.hiddenWorkouts.isEmpty {
+                    Button { Task { await fit.unhideAll() } } label: {
+                        Label("\(fit.hiddenWorkouts.count) ausgeblendete Trainings wieder anzeigen", systemImage: "eye")
+                            .font(.subheadline)
+                    }
+                    .padding(.horizontal, 4)
                 }
             }
             .padding(.horizontal)
@@ -535,6 +550,9 @@ struct WorkoutListView: View {
 
 struct WorkoutDetailView: View {
     let workout: FitWorkout
+    @Environment(\.dismiss) private var dismiss
+    @Environment(\.openURL) private var openURL
+    @State private var askDelete = false
     @State private var fit = FitnessModel.shared
     @State private var hr: [FitPoint] = []
     @State private var route: [CLLocationCoordinate2D] = []
@@ -591,6 +609,25 @@ struct WorkoutDetailView: View {
         .background(AppBackground())
         .navigationTitle(workout.sport.title)
         .navigationBarTitleDisplayMode(.inline)
+        .toolbar {
+            ToolbarItem(placement: .topBarTrailing) {
+                Button(role: .destructive) { askDelete = true } label: { Image(systemName: "trash") }
+                    .accessibilityLabel("Training löschen")
+            }
+        }
+        .confirmationDialog(fit.isOwn(workout) ? "Training löschen?" : "Training ausblenden?", isPresented: $askDelete, titleVisibility: .visible) {
+            if fit.isOwn(workout) {
+                Button("Löschen (auch in Apple Health)", role: .destructive) { Task { await fit.delete(workout); dismiss() } }
+            } else {
+                Button("In der App ausblenden", role: .destructive) { fit.hide(workout); dismiss() }
+                Button("In der Health-App löschen …") { if let u = URL(string: "x-apple-health://") { openURL(u) } }
+            }
+            Button("Abbrechen", role: .cancel) {}
+        } message: {
+            Text(fit.isOwn(workout)
+                 ? "Das Training wurde mit der Familie-App aufgezeichnet und wird überall gelöscht."
+                 : "Aufgezeichnet mit \(workout.source). Apple erlaubt nur der Health-App, es zu löschen – in der Familie-App kann es ausgeblendet werden (Health: Durchsuchen › Aktivität › Trainings).")
+        }
         .task {
             async let h = fit.heartRates(for: workout)
             async let r = fit.route(for: workout)

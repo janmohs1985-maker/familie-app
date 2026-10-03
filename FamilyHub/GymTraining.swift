@@ -299,6 +299,12 @@ final class GymModel {
         return log
     }
 
+    func deleteLog(_ log: GymLog) {
+        history.removeAll { $0.id == log.id }
+        saveHistory()
+        updateWatchPayload()
+    }
+
     func cancel() {
         run = nil
         UNUserNotificationCenter.current().removePendingNotificationRequests(withIdentifiers: ["gym-pause"])

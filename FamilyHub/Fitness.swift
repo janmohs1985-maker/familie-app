@@ -235,7 +235,8 @@ final class FitnessModel {
             bodyFat = try await f.map { FitPoint(date: $0.date, value: $0.value * 100) }
             restingHR = try await r
             vo2 = try await v
-            workouts = try await wo
+            let hidden = hiddenWorkouts
+            workouts = try await wo.filter { !hidden.contains($0.id.uuidString) }
             sleep = (try? await sl) ?? []
             stepsToday = await st
             kmToday = await km
@@ -461,6 +462,46 @@ final class FitnessModel {
     // MARK: Auswertungen
 
     var currentWeight: FitPoint? { weights.last }
+
+    // MARK: Trainings löschen / ausblenden
+
+    /// in der App ausgeblendete Trainings (fremde Apps – die darf die App in Apple Health nicht löschen)
+    var hiddenWorkouts: Set<String> {
+        get { Set(UserDefaults.standard.stringArray(forKey: "fitAusgeblendet") ?? []) }
+        set { UserDefaults.standard.set(Array(newValue), forKey: "fitAusgeblendet") }
+    }
+
+    /// Hat die Familie-App (iPhone oder Uhr) dieses Training gespeichert? Nur dann darf sie es löschen.
+    func isOwn(_ w: FitWorkout) -> Bool {
+        w.workout.sourceRevision.source.bundleIdentifier.hasPrefix("es.mohs.familie")
+    }
+
+    func hide(_ w: FitWorkout) {
+        hiddenWorkouts.insert(w.id.uuidString)
+        workouts.removeAll { $0.id == w.id }
+    }
+
+    func unhideAll() async {
+        hiddenWorkouts = []
+        await refresh(maxAge: 0)
+    }
+
+    /// Löschen: eigenes Training aus Apple Health + Gym-Verlauf; fremdes nur ausblenden
+    @discardableResult
+    func delete(_ w: FitWorkout) async -> Bool {
+        if let log = GymModel.shared.log(for: w) { GymModel.shared.deleteLog(log) }
+        guard isOwn(w) else { hide(w); return false }
+        do {
+            try await health.requestAuthorization(toShare: [HKObjectType.workoutType(), HKQuantityType(.activeEnergyBurned)], read: [])
+            try await health.delete(w.workout)
+            workouts.removeAll { $0.id == w.id }
+            return true
+        } catch {
+            hide(w)
+            self.error = "In Apple Health nicht gelöscht – in der App ausgeblendet."
+            return false
+        }
+    }
 
     // MARK: Erholung (auch ohne Uhr in der Nacht)
 
