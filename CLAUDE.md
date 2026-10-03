@@ -4,7 +4,7 @@ Familien-App „Familie“ (SwiftUI, iOS 17+) für Home Assistant unter `https:/
 
 ## Arbeitsweise
 
-- Jede Änderung an der App: `VERSION` um 1 hochzählen (aktuell 173), committen, `git push origin HEAD:main`.
+- Jede Änderung an der App: `VERSION` um 1 hochzählen (aktuell 174), committen, `git push origin HEAD:main`.
 - Commit-Nachricht: `Update <VERSION>: <was>` und am Ende die Co-Authored-By-Zeile.
 - Ein Push auf `main` startet `.github/workflows/build.yml` auf macOS 26 mit Xcode 26. Der Workflow baut, signiert, lädt zu App Store Connect hoch und gibt den Build in TestFlight für die interne Gruppe „Familie“ frei (`.github/scripts/testflight_assign.py`). Die App in App Store Connect heißt „Familie Mohs“, id 6818251048. Jan installiert über **TestFlight**.
 - **Nicht auf den Build warten.** Direkt nach dem Push melden („Update N ist hochgeladen, kommt in ~15 Min.“). Den Status höchstens später prüfen: `curl -s https://api.github.com/repos/janmohs1985-maker/familie-app/actions/runs?per_page=1`.
@@ -63,6 +63,7 @@ Familien-App „Familie“ (SwiftUI, iOS 17+) für Home Assistant unter `https:/
   - 169: Einstellungen → „Builds“ (nur Jan, `BuildsSection` in `AppUpdate.swift`): letzte GitHub-Actions-Läufe live (wartet/baut/fertig/Fehler, „installiert“), direkt von der öffentlichen GitHub-API, Link zu TestFlight.
   - 170: Sportart „Gehen“ (walking/hiking, `figure.walk`). 171: Training löschen (Detail-Mülleimer, langes Drücken in der Liste): eigene (Familie-App/Uhr) in Apple Health löschen + Gym-Verlauf, fremde nur ausblenden (`fitAusgeblendet`), Link zur Health-App.
   - 172: Musik – Haptik + Ladeanzeige beim Antippen; Titel aus Liste spielt weiter (`playFrom`): Playlist/Album ganz laden + `sonos.play_queue` ab Position, Lieblingssongs (nicht als Ganzes abspielbar) = Titel + nächste 40 per `enqueue: add`.
+  - 174: Kameras (Frigate, nur Eltern): Technik → Karte „Kameras“ + Kacheln „Kameras“/„Kamera-Ereignisse“ (`Frigate.swift`, `FrigateViews.swift`). Übersicht (Raster, jüngste Bewegung groß), Kamera mit Live-Bild (HLS `camera/stream`) und wischbarer Zeitleiste (Aufnahmen über VOD `/api/frigate/<instanz>/vod/…`, Zoom per Fingern), Ereignis-Feed mit „neu“/„Alle gesehen“, Clip ansehen + teilen, PTZ (Dienst `frigate.ptz`, Positionen über WS `frigate/ptz/info`, sonst im Menü einschaltbar), Einstellungen = Frigate-Schalter/-Zahlen des Geräts. Kameras aus dem Entitäten-Register (Plattform `frigate`), Ereignisse per WS `frigate/events/get`, Bilder/Clips über `/api/frigate/notifications/<id>/…`. Instanz-ID „frigate“ (UserDefaults `frigateInstance`). Entwürfe: Design-Fläche „Frigate Kameras – Entwürfe“. Offen: Mitteilungen bei Personen über Family Hub.
   - Family Hub `_w_builds` (im Wächter, alle 2 Min): fertige GitHub-Builds → Mitteilung nur an Jan („✅ Update N ist fertig“ / „⛔ … fehlgeschlagen“). Sicherung `server.py.vor_builds`.
   - Saugroboter-Live-Aktivität: Startzeit aus „Reinigungszeit“ statt altem „letzter Reinigungsbeginn“ (Family Hub `server.py`, Sicherung `server.py.vor_sauger_fix`).
 - Offen bzw. angeboten:

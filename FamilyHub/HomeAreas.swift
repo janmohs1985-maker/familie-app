@@ -469,7 +469,11 @@ struct HomeAreasOverview: View {
         case .familie:
             return Facts(big: "Familie", small: store.isParent && store.activeKid == nil ? "Karte · Schule · Dokumente" : "Stundenplan · Mappe")
         case .technik:
-            return Facts(big: "Netz", small: "Internet · VPN · Streaming")
+            let newCam = FrigateModel.shared.newEvents.count
+            if store.isParent && store.activeKid == nil && newCam > 0 {
+                return Facts(big: "\(newCam) neu", small: "Kameras · Internet · Streaming")
+            }
+            return Facts(big: "Netz", small: store.isParent && store.activeKid == nil ? "Internet · Kameras · Streaming" : "Internet · VPN · Streaming")
         case .fitness:
             let fit = FitnessModel.shared
             let goal = UserDefaults.standard.object(forKey: "fitGoalKg") as? Double ?? FitnessConfig.defaultGoalKg
@@ -538,6 +542,11 @@ struct HomeAreaTiles: View {
     var body: some View {
         VStack(spacing: 12) {
             if area == .auto { CarCard().padding(.horizontal) }
+            if area == .technik && parent {
+                NavigationLink { CamerasView() } label: { CameraPreviewCard() }
+                    .buttonStyle(.plain)
+                    .padding(.horizontal)
+            }
             LazyVGrid(columns: columns, spacing: 12) {
                 switch area {
                 case .auto: auto
@@ -643,6 +652,8 @@ struct HomeAreaTiles: View {
             NavigationLink { IPTVView() } label: { HubTile(title: "Streaming", symbol: "play.tv.fill", color: .pink) }
         }
         if parent {
+            NavigationLink { CamerasView() } label: { HubTile(title: "Kameras", symbol: "video.fill", color: .indigo) }
+            NavigationLink { EventsFeedView() } label: { HubTile(title: "Kamera-Ereignisse", symbol: "film.stack", color: .blue) }
             NavigationLink { DevicesView() } label: { HubTile(title: "Zigbee-Geräte", symbol: "dot.radiowaves.left.and.right", color: .purple) }
         }
     }
