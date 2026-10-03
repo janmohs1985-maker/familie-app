@@ -143,6 +143,7 @@ struct ChargeModeView: View {
 
 struct HomeView: View {
     let parent: Bool
+    @ObservedObject private var link = WatchLink.shared
     @State private var soc: Double?
     @State private var charging = false
     @State private var mode: ChargeMode?
@@ -160,6 +161,18 @@ struct HomeView: View {
 
     var body: some View {
         List {
+            if let gym = link.gym, let next = gym.programs.first(where: { $0.id == gym.next }) {
+                NavigationLink {
+                    GymWatchStart(data: gym)
+                } label: {
+                    Label {
+                        VStack(alignment: .leading) {
+                            Text("Gym")
+                            Text("\(next.short) ist dran").font(.caption2).foregroundStyle(.secondary)
+                        }
+                    } icon: { Image(systemName: "dumbbell.fill").foregroundStyle(Color(red: 1.0, green: 0.48, blue: 0.10)) }
+                }
+            }
             Section {
                 HStack(spacing: 10) {
                     Gauge(value: (soc ?? 0) / 100) {

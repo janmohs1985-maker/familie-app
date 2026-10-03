@@ -71,6 +71,7 @@ final class GymPlanModel {
             }
             .sorted { $0.start < $1.start }
             error = nil
+            if Calendar.current.isDate(weekStart, inSameDayAs: FitnessModel.startOfWeek) { GymModel.shared.updateWatchPayload() }
         } catch {
             self.error = "Gym-Kalender nicht erreichbar."
         }

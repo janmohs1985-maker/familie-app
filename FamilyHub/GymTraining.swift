@@ -97,6 +97,15 @@ enum GymProgram: String, CaseIterable, Identifiable, Codable {
 
 // MARK: Verlauf
 
+extension JSONDecoder {
+    /// Datum als Sekunden seit 1970 (so schickt es die Uhr)
+    static var gym: JSONDecoder {
+        let d = JSONDecoder()
+        d.dateDecodingStrategy = .secondsSince1970
+        return d
+    }
+}
+
 struct GymSetLog: Codable, Hashable {
     var weight: Double
     var reps: Int
@@ -153,6 +162,45 @@ final class GymModel {
             // nur weiterführen, wenn die Einheit nicht älter als 4 Stunden ist
             if -r.start.timeIntervalSinceNow < 4 * 3600 { run = r }
         }
+        updateWatchPayload()
+    }
+
+    // MARK: Apple Watch
+
+    /// Welcher Tag ist dran: laut Plan heute, sonst abwechselnd nach dem letzten Training
+    var nextProgram: GymProgram {
+        if let e = GymPlanModel.shared.events.first(where: { $0.sport == .gym && Calendar.current.isDateInToday($0.start) }) {
+            return GymProgram.from(title: e.title)
+        }
+        return history.max { $0.start < $1.start }?.program == .a ? .b : .a
+    }
+
+    /// Plan + vorgeschlagene Gewichte für die Uhr (liegt in den UserDefaults, WatchBridge schickt es mit)
+    func updateWatchPayload() {
+        let programs: [[String: Any]] = GymProgram.allCases.map { p in
+            ["id": p.rawValue, "title": p.title, "short": p.short,
+             "exercises": p.exercises.map { ex -> [String: Any] in
+                ["id": ex.id, "name": ex.name, "machine": ex.machine, "icon": ex.icon,
+                 "muscles": Dictionary(uniqueKeysWithValues: ex.muscles.map { ($0.key.rawValue, $0.value) }),
+                 "sets": ex.sets, "repsLow": ex.repsLow, "repsHigh": ex.repsHigh, "seconds": ex.seconds,
+                 "weight": suggestedWeight(ex), "reps": suggestedReps(ex), "step": ex.step, "rest": ex.rest, "tip": ex.tip]
+             }]
+        }
+        let payload: [String: Any] = ["next": nextProgram.rawValue, "programs": programs]
+        if let d = try? JSONSerialization.data(withJSONObject: payload) {
+            UserDefaults.standard.set(String(decoding: d, as: UTF8.self), forKey: "gymWatchPayload")
+        }
+        WatchBridge.shared.push()
+    }
+
+    /// Training von der Uhr übernehmen
+    func importFromWatch(_ json: String) {
+        guard let d = json.data(using: .utf8), let log = try? JSONDecoder.gym.decode(GymLog.self, from: d) else { return }
+        guard !history.contains(where: { $0.id == log.id }) else { return }
+        history.append(log)
+        saveHistory()
+        updateWatchPayload()
+        Task { await FitnessModel.shared.refresh(maxAge: 0) }
     }
 
     private func saveRun() {
@@ -246,6 +294,7 @@ final class GymModel {
         guard !log.sets.isEmpty else { return nil }
         history.append(log)
         saveHistory()
+        updateWatchPayload()
         if saveToHealth { await Self.saveWorkout(log) }
         return log
     }

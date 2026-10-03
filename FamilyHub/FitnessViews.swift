@@ -78,6 +78,9 @@ struct FitnessView: View {
         .task {
             await fit.refreshIfAllowed()
             await GymPlanModel.shared.load(store, week: FitnessModel.startOfWeek)
+            // Gym-Plan auf die Apple Watch bringen
+            UserDefaults.standard.set(true, forKey: "gymOnWatch")
+            GymModel.shared.updateWatchPayload()
         }
         .sheet(isPresented: $showGoal) { FitnessGoalSheet(startKg: $startKg, goalKg: $goalKg) }
     }

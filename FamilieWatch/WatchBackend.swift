@@ -124,6 +124,13 @@ final class WatchLink: NSObject, WCSessionDelegate, ObservableObject {
     static let shared = WatchLink()
     @Published var linked = WatchKeychain.load() != nil
     @Published var parent = WatchKeychain.load()?.parent ?? false
+    /// Gym-Plan mit Gewichten vom iPhone (nur bei Jan)
+    @Published var gym: WGymData? = WatchLink.decodeGym(UserDefaults.standard.string(forKey: "gymData"))
+
+    static func decodeGym(_ s: String?) -> WGymData? {
+        guard let d = s?.data(using: .utf8) else { return nil }
+        return try? JSONDecoder().decode(WGymData.self, from: d)
+    }
 
     func start() {
         guard WCSession.isSupported() else { return }
@@ -132,6 +139,10 @@ final class WatchLink: NSObject, WCSessionDelegate, ObservableObject {
     }
 
     private func take(_ ctx: [String: Any]) {
+        if let g = ctx["gym"] as? String, let data = Self.decodeGym(g) {
+            UserDefaults.standard.set(g, forKey: "gymData")
+            DispatchQueue.main.async { self.gym = data }
+        }
         guard let server = ctx["server"] as? String, !server.isEmpty else { return }
         let c = WatchCredentials(server: server, refreshToken: ctx["refreshToken"] as? String,
                                  longLivedToken: ctx["longLivedToken"] as? String,

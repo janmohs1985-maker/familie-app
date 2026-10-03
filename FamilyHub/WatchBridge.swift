@@ -21,7 +21,15 @@ final class WatchBridge: NSObject, WCSessionDelegate {
         if let t = c.refreshToken { ctx["refreshToken"] = t }
         if let t = c.longLivedToken { ctx["longLivedToken"] = t }
         if let t = UserDefaults.standard.string(forKey: "pushToken") { ctx["pushToken"] = t }
+        // Gym-Plan mit Gewichten (nur wenn Jan den Fitness-Bereich nutzt)
+        if let g = UserDefaults.standard.string(forKey: "gymWatchPayload"), UserDefaults.standard.bool(forKey: "gymOnWatch") { ctx["gym"] = g }
         return ctx
+    }
+
+    /// Fertiges Training von der Uhr
+    func session(_ session: WCSession, didReceiveUserInfo userInfo: [String: Any] = [:]) {
+        guard let json = userInfo["gymLog"] as? String else { return }
+        Task { @MainActor in GymModel.shared.importFromWatch(json) }
     }
 
     func push() {

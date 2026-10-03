@@ -87,8 +87,18 @@ jobs:
             echo "Profil Live: $PROFILE_LIVE"
             # Profil für die Apple-Watch-App
             PROFILE_WATCH=$(CERT_SERIAL="$CERT_SERIAL" BUNDLE_ID=es.mohs.familie.watchkitapp BUNDLE_NAME="Familie Watch" \
+              ENABLE_CAPS=HEALTHKIT PROFILE_ENT_FILE="$RUNNER_TEMP/profil_rechte_watch.txt" \
               PROFILE_PREFIX="Familie Watch AdHoc CI" python3 .github/scripts/adhoc_profile.py)
             echo "Profil Watch: $PROFILE_WATCH"
+            # Watch: Apple Health (Gym-Training) nur, wenn das Profil es enthält
+            WATCH_ENT=""
+            if grep -qx "com.apple.developer.healthkit" "$RUNNER_TEMP/profil_rechte_watch.txt" 2>/dev/null; then
+              WATCH_ENT="$RUNNER_TEMP/FamilieWatch-gebaut.entitlements"
+              printf '%s\n' '<?xml version="1.0" encoding="UTF-8"?>' '<!DOCTYPE plist PUBLIC "-//Apple//DTD PLIST 1.0//EN" "http://www.apple.com/DTDs/PropertyList-1.0.dtd">' \
+                '<plist version="1.0"><dict><key>com.apple.developer.healthkit</key><true/><key>com.apple.developer.healthkit.access</key><array/></dict></plist>' > "$WATCH_ENT"
+            else
+              echo "::warning::Apple Health ist für die Watch-App-ID noch nicht freigeschaltet – Gym auf der Uhr ohne Puls"
+            fi
             # App-Store-Profile für TestFlight (ohne Geräteliste) – Fehler hier stoppen den normalen Build nicht
             AS_APP=$(CERT_SERIAL="$CERT_SERIAL" PROFILE_TYPE=IOS_APP_STORE PROFILE_PREFIX="Familie AppStore CI" python3 .github/scripts/adhoc_profile.py || true)
             AS_NSE=$(CERT_SERIAL="$CERT_SERIAL" PROFILE_TYPE=IOS_APP_STORE BUNDLE_ID=es.mohs.familie.mitteilung PROFILE_PREFIX="Familie Mitteilung AppStore CI" python3 .github/scripts/adhoc_profile.py || true)
@@ -101,7 +111,7 @@ jobs:
               -project FamilyHub.xcodeproj -scheme FamilyHub -configuration Release \
               -destination generic/platform=iOS -archivePath build/Familie.xcarchive \
               DEVELOPMENT_TEAM="$TEAM_ID" CODE_SIGN_STYLE=Manual \
-              CODE_SIGN_IDENTITY="Apple Distribution" FAMILIE_PROFILE_APP="$PROFILE" FAMILIE_ENTITLEMENTS="$ENT" FAMILIE_PROFILE_NSE="$PROFILE_NSE" FAMILIE_PROFILE_KLINGEL="$PROFILE_KLINGEL" FAMILIE_PROFILE_LIVE="$PROFILE_LIVE" FAMILIE_PROFILE_WATCH="$PROFILE_WATCH" \
+              CODE_SIGN_IDENTITY="Apple Distribution" FAMILIE_PROFILE_APP="$PROFILE" FAMILIE_ENTITLEMENTS="$ENT" FAMILIE_PROFILE_NSE="$PROFILE_NSE" FAMILIE_PROFILE_KLINGEL="$PROFILE_KLINGEL" FAMILIE_PROFILE_LIVE="$PROFILE_LIVE" FAMILIE_PROFILE_WATCH="$PROFILE_WATCH" FAMILIE_WATCH_ENTITLEMENTS="$WATCH_ENT" \
               OTHER_CODE_SIGN_FLAGS="--keychain $KC" \
               MARKETING_VERSION="$VER" CURRENT_PROJECT_VERSION="$BUILD" > build.log 2>&1 || true
             grep -E "error:|ARCHIVE (SUCCEEDED|FAILED)" build.log | sort -u | head -60 || true
