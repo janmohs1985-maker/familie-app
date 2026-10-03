@@ -27,6 +27,47 @@ struct NutritionView: View {
     @State private var fit = FitnessModel.shared
     @State private var tab = 0
     @State private var showTargets = false
+    /// 0 = heute, -1 = gestern …
+    @State private var dayOffset = 0
+    @State private var dayMeals: [FoodMeal] = []
+
+    private var selectedDate: Date { Calendar.current.date(byAdding: .day, value: dayOffset, to: Calendar.current.startOfDay(for: .now))! }
+    private var selectedDay: NutritionDay? { fit.nutrition.first { Calendar.current.isDate($0.date, inSameDayAs: selectedDate) } }
+    private var isToday: Bool { dayOffset == 0 }
+    private var oldest: Int { -(max(1, fit.nutrition.count) - 1) }
+
+    private func step(_ by: Int) {
+        let n = min(0, max(oldest, dayOffset + by))
+        guard n != dayOffset else { return }
+        withAnimation(.easeInOut(duration: 0.2)) { dayOffset = n }
+        UISelectionFeedbackGenerator().selectionChanged()
+    }
+
+    private var dayHeader: some View {
+        let cal = Calendar.current
+        let title = isToday ? "Heute" : (dayOffset == -1 ? "Gestern" : selectedDate.formatted(.dateTime.weekday(.wide)))
+        return HStack {
+            Button { step(-1) } label: {
+                Image(systemName: "chevron.left").font(.headline).frame(width: 44, height: 44).background(.regularMaterial, in: Circle())
+            }
+            .buttonStyle(.plain).disabled(dayOffset <= oldest).accessibilityLabel("Tag davor")
+            Spacer()
+            VStack(spacing: 0) {
+                Text(title).font(.headline)
+                Text(selectedDate.formatted(.dateTime.day().month(.wide))).font(.caption).foregroundStyle(.secondary)
+            }
+            Spacer()
+            Button { step(1) } label: {
+                Image(systemName: "chevron.right").font(.headline).frame(width: 44, height: 44).background(.regularMaterial, in: Circle())
+            }
+            .buttonStyle(.plain).disabled(isToday).opacity(isToday ? 0.3 : 1).accessibilityLabel("Tag danach")
+        }
+        .overlay(alignment: .bottom) {
+            if !isToday && !cal.isDateInYesterday(selectedDate) {
+                Button("Zu heute") { withAnimation { dayOffset = 0 } }.font(.caption.weight(.semibold)).offset(y: 22)
+            }
+        }
+    }
     @AppStorage("nutDeficit") private var deficit = 550.0
     @AppStorage("nutProteinKg") private var proteinKg = 1.6
     @AppStorage("nutCarbsMax") private var carbsMax = 200.0
@@ -39,10 +80,11 @@ struct NutritionView: View {
         ScrollView {
             VStack(alignment: .leading, spacing: 14) {
                 Picker("", selection: $tab) {
-                    Text("Heute").tag(0)
+                    Text("Tag").tag(0)
                     Text("Woche").tag(1)
                 }
                 .pickerStyle(.segmented)
+                if tab == 0 { dayHeader.padding(.bottom, isToday || dayOffset == -1 ? 0 : 14) }
                 if !fit.nutrition.contains(where: \.logged) {
                     Label("Noch keine Ernährungsdaten. In Yazio unter Einstellungen › Apple Health das Teilen der Ernährung einschalten.",
                           systemImage: "fork.knife")
@@ -62,15 +104,26 @@ struct NutritionView: View {
                 Button { showTargets = true } label: { Image(systemName: "slider.horizontal.3") }.accessibilityLabel("Ziele")
             }
         }
+        // nach rechts wischen = Tag davor, nach links = Tag danach
+        .simultaneousGesture(
+            DragGesture(minimumDistance: 30).onEnded { v in
+                guard tab == 0, abs(v.translation.width) > 70, abs(v.translation.width) > abs(v.translation.height) * 1.5 else { return }
+                step(v.translation.width > 0 ? -1 : 1)
+            }
+        )
         .refreshable { await fit.refresh(maxAge: 0) }
         .task { await fit.refresh(maxAge: 120) }
+        .task(id: dayOffset) {
+            dayMeals = isToday ? fit.mealsToday : await fit.meals(on: selectedDate)
+        }
+        .onChange(of: fit.mealsToday) { _, m in if isToday { dayMeals = m } }
         .sheet(isPresented: $showTargets) { targetsSheet }
     }
 
     // MARK: Heute
 
     @ViewBuilder private var today: some View {
-        let d = fit.nutritionToday
+        let d = selectedDay
         let eaten = d?.kcal ?? 0
         let target = fit.kcalTarget
         let left = target - eaten
@@ -90,7 +143,7 @@ struct NutritionView: View {
                 VStack(alignment: .leading, spacing: 8) {
                     labeled("Gegessen", FitFmt.int(eaten) + " kcal", big: true)
                     labeled("Ziel", FitFmt.int(target) + " kcal")
-                    labeled("Verbraucht bisher", burned.map { FitFmt.int($0) + " kcal" } ?? "–")
+                    labeled(isToday ? "Verbraucht bisher" : "Verbraucht", burned.map { FitFmt.int($0) + " kcal" } ?? "–")
                 }
             }
         }
@@ -101,8 +154,8 @@ struct NutritionView: View {
             let bal = b - eaten
             HStack(spacing: 10) {
                 Text((bal >= 0 ? "−" : "+") + FitFmt.int(abs(bal))).font(.system(size: 26, weight: .heavy)).foregroundStyle(bal >= 0 ? .green : .orange)
-                Text(bal >= 0 ? "kcal Defizit bisher. Für etwa −0,5 kg pro Woche reichen rund −550 am Tag."
-                              : "kcal Überschuss bisher – heute ist noch Bewegung drin.")
+                Text(bal >= 0 ? (isToday ? "kcal Defizit bisher. Für etwa −0,5 kg pro Woche reichen rund −550 am Tag." : "kcal Defizit an diesem Tag.")
+                              : (isToday ? "kcal Überschuss bisher – heute ist noch Bewegung drin." : "kcal Überschuss an diesem Tag."))
                     .font(.footnote)
             }
             .padding(14)
@@ -122,10 +175,10 @@ struct NutritionView: View {
         .padding(16)
         .cardSurface()
 
-        if !fit.mealsToday.isEmpty {
+        if !dayMeals.isEmpty {
             VStack(alignment: .leading, spacing: 0) {
                 Text("Mahlzeiten").font(.headline).padding([.horizontal, .top], 16).padding(.bottom, 4)
-                ForEach(fit.mealsToday) { m in
+                ForEach(dayMeals) { m in
                     HStack(spacing: 12) {
                         Text(m.start.formatted(date: .omitted, time: .shortened)).font(.caption.weight(.bold)).foregroundStyle(.secondary).frame(width: 46, alignment: .leading)
                         VStack(alignment: .leading, spacing: 1) {

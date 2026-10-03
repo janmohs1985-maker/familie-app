@@ -377,11 +377,14 @@ final class FitnessModel {
         }
     }
 
-    /// Mahlzeiten von heute: Einträge, die zeitlich nah beieinander liegen (45 Min), sind eine Mahlzeit
-    private func loadMealsToday() async -> [FoodMeal] {
-        let start = Calendar.current.startOfDay(for: .now)
+    private func loadMealsToday() async -> [FoodMeal] { await meals(on: .now) }
+
+    /// Mahlzeiten eines Tages: Einträge, die zeitlich nah beieinander liegen (45 Min), sind eine Mahlzeit
+    func meals(on day: Date) async -> [FoodMeal] {
+        let start = Calendar.current.startOfDay(for: day)
+        let end = Calendar.current.date(byAdding: .day, value: 1, to: start)!
         func samples(_ id: HKQuantityTypeIdentifier, _ unit: HKUnit) async -> [(Date, Double)] {
-            let q = HKSampleQueryDescriptor(predicates: [.quantitySample(type: HKQuantityType(id), predicate: HKQuery.predicateForSamples(withStart: start, end: nil))],
+            let q = HKSampleQueryDescriptor(predicates: [.quantitySample(type: HKQuantityType(id), predicate: HKQuery.predicateForSamples(withStart: start, end: end))],
                                             sortDescriptors: [SortDescriptor(\.startDate)])
             return ((try? await q.result(for: health)) ?? []).map { ($0.startDate, $0.quantity.doubleValue(for: unit)) }
         }
