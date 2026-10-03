@@ -237,21 +237,33 @@ struct FitnessView: View {
     }
 
     private var recoveryCard: some View {
-        let lastSleep = fit.sleep.last.flatMap { Calendar.current.isDateInToday($0.date) ? $0.value : nil }
-        let rhr = fit.restingHR.last?.value
-        let avgRhr: Double? = {
-            let recent = fit.restingHR.suffix(30).map(\.value)
-            return recent.isEmpty ? nil : recent.reduce(0, +) / Double(recent.count)
-        }()
-        var state = "–"
-        var color: Color = .primary
-        if let s = lastSleep, let r = rhr, let avg = avgRhr {
-            if s >= 7 && r <= avg + 2 { state = "gut"; color = .green }
-            else if s < 6 || r > avg + 5 { state = "müde"; color = .orange }
-            else { state = "okay"; color = .blue }
+        let r = fit.recovery
+        return VStack(alignment: .leading, spacing: 4) {
+            Text("Erholung").font(.caption).foregroundStyle(.secondary)
+            Text(r?.label ?? "–").font(.title3.weight(.heavy)).foregroundStyle(r?.color ?? .primary)
+            Text(r?.reasons.first ?? "Wie fühlst du dich?").font(.caption2).foregroundStyle(.secondary).lineLimit(2)
+            HStack(spacing: 6) {
+                feelingButton(.fit, "bolt.fill", .green, "fit")
+                feelingButton(.okay, "hand.thumbsup.fill", .blue, "okay")
+                feelingButton(.muede, "moon.zzz.fill", .orange, "müde")
+            }
+            .padding(.top, 2)
         }
-        let sleepText = lastSleep.map { "Schlaf \(FitFmt.hm($0))" } ?? "kein Schlaf"
-        return smallCard("Erholung", state, sleepText + (rhr.map { " · Ruhepuls \(Int($0))" } ?? ""), color)
+        .padding(14)
+        .frame(maxWidth: .infinity, alignment: .leading)
+        .cardSurface()
+    }
+
+    private func feelingButton(_ f: FitnessModel.Feeling, _ symbol: String, _ color: Color, _ label: String) -> some View {
+        let on = fit.feeling == f
+        return Button { withAnimation { fit.feeling = on ? nil : f } } label: {
+            Image(systemName: symbol).font(.caption.weight(.bold))
+                .foregroundStyle(on ? .white : color)
+                .frame(maxWidth: .infinity, minHeight: 30)
+                .background(on ? AnyShapeStyle(color) : AnyShapeStyle(color.opacity(0.12)), in: Capsule())
+        }
+        .buttonStyle(.plain)
+        .accessibilityLabel("Ich fühle mich \(label)")
     }
 
     private var weekCard: some View {

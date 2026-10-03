@@ -159,6 +159,7 @@ final class FitnessModel {
     var kmToday: Double?
     var activity: HKActivitySummary?
     var age: Int?
+    var hrv: [FitPoint] = []
     var lean: [FitPoint] = []
     var bmi: [FitPoint] = []
     var nutrition: [NutritionDay] = []      // letzte 35 Tage, ältester zuerst
@@ -175,7 +176,8 @@ final class FitnessModel {
             HKQuantityType(.dietaryEnergyConsumed), HKQuantityType(.dietaryProtein), HKQuantityType(.dietaryCarbohydrates),
             HKQuantityType(.dietaryFatTotal), HKQuantityType(.dietaryFiber), HKQuantityType(.dietarySugar),
             HKQuantityType(.dietaryWater), HKQuantityType(.basalEnergyBurned),
-            HKQuantityType(.leanBodyMass), HKQuantityType(.bodyMassIndex)
+            HKQuantityType(.leanBodyMass), HKQuantityType(.bodyMassIndex),
+            HKQuantityType(.heartRateVariabilitySDNN)
         ]
         s.insert(HKCharacteristicType(.dateOfBirth))
         return s
@@ -218,6 +220,7 @@ final class FitnessModel {
             async let st = todaySum(.stepCount, unit: .count())
             async let km = todaySum(.distanceWalkingRunning, unit: .meterUnit(with: .kilo))
             async let act = activitySummaryToday()
+            async let hv = quantity(.heartRateVariabilitySDNN, unit: .secondUnit(with: .milli), from: cal.date(byAdding: .day, value: -60, to: now)!)
             async let ln = quantity(.leanBodyMass, unit: .gramUnit(with: .kilo), from: twoYears)
             async let bm = quantity(.bodyMassIndex, unit: .count(), from: twoYears)
             async let nu = loadNutrition(days: 35)
@@ -231,6 +234,7 @@ final class FitnessModel {
             stepsToday = await st
             kmToday = await km
             activity = await act
+            hrv = (try? await hv) ?? []
             lean = (try? await ln) ?? []
             bmi = (try? await bm) ?? []
             nutrition = await nu
@@ -327,6 +331,13 @@ final class FitnessModel {
             let day = Calendar.current.startOfDay(for: s.endDate)
             perNight[day, default: 0] += s.endDate.timeIntervalSince(s.startDate) / 3600
         }
+        // Ohne Uhr in der Nacht: „Im Bett“ aus der Schlafenszeit des iPhones als Ersatz
+        var inBed: [Date: Double] = [:]
+        for s in all where s.value == HKCategoryValueSleepAnalysis.inBed.rawValue {
+            let day = Calendar.current.startOfDay(for: s.endDate)
+            inBed[day, default: 0] += s.endDate.timeIntervalSince(s.startDate) / 3600
+        }
+        for (day, h) in inBed where perNight[day] == nil && h > 2 { perNight[day] = min(h, 12) }
         return perNight.map { FitPoint(date: $0.key, value: $0.value) }.sorted { $0.date < $1.date }
     }
 
@@ -432,6 +443,71 @@ final class FitnessModel {
     // MARK: Auswertungen
 
     var currentWeight: FitPoint? { weights.last }
+
+    // MARK: Erholung (auch ohne Uhr in der Nacht)
+
+    enum Feeling: String { case fit, okay, muede }
+
+    private static var feelingKey: String { "gefuehl-" + HADate.day.string(from: .now) }
+
+    /// eigene Einschätzung für heute (per Tipp)
+    var feeling: Feeling? {
+        get { _ = feelingStamp; return UserDefaults.standard.string(forKey: Self.feelingKey).flatMap(Feeling.init) }
+        set {
+            UserDefaults.standard.set(newValue?.rawValue, forKey: Self.feelingKey)
+            feelingStamp += 1
+        }
+    }
+    private var feelingStamp = 0
+
+    struct Recovery {
+        let label: String           // gut / okay / müde
+        let color: Color
+        let reasons: [String]
+        var good: Bool { label == "gut" }
+    }
+
+    /// Ruhepuls und HRV gegen den eigenen 30-Tage-Schnitt, Trainingslast gestern, Schlaf (wenn vorhanden), eigenes Gefühl
+    var recovery: Recovery? {
+        var score = 0.0
+        var reasons: [String] = []
+        var signals = 0
+        let avg = { (l: [FitPoint]) -> Double? in let v = l.suffix(30).map(\.value); return v.isEmpty ? nil : v.reduce(0, +) / Double(v.count) }
+        if let r = restingHR.last?.value, let a = avg(restingHR) {
+            signals += 1
+            if r > a + 5 { score -= 2; reasons.append("Ruhepuls \(Int(r)) – deutlich höher als sonst") }
+            else if r > a + 2 { score -= 1; reasons.append("Ruhepuls \(Int(r)) – etwas erhöht") }
+            else { score += r < a - 1 ? 1 : 0.5; reasons.append("Ruhepuls \(Int(r))") }
+        }
+        let todayHRV = hrv.filter { Calendar.current.isDateInToday($0.date) || $0.date > .now.addingTimeInterval(-36 * 3600) }.map(\.value)
+        if !todayHRV.isEmpty, let a = avg(hrv) {
+            signals += 1
+            let v = todayHRV.reduce(0, +) / Double(todayHRV.count)
+            if v < a * 0.8 { score -= 2; reasons.append("HRV niedrig (\(Int(v)) ms)") }
+            else if v < a * 0.9 { score -= 1; reasons.append("HRV etwas niedrig") }
+            else { score += v > a * 1.1 ? 1 : 0.5; reasons.append("HRV gut (\(Int(v)) ms)") }
+        }
+        if let s = sleep.last, Calendar.current.isDateInToday(s.date) {
+            signals += 1
+            if s.value < 6 { score -= 1.5; reasons.append("nur \(FitFmt.hm(s.value)) Schlaf") }
+            else if s.value >= 7 { score += 1; reasons.append("\(FitFmt.hm(s.value)) Schlaf") }
+        }
+        let yesterday = Calendar.current.date(byAdding: .day, value: -1, to: Calendar.current.startOfDay(for: .now))!
+        let load = workouts.filter { Calendar.current.isDate($0.start, inSameDayAs: yesterday) }.map(\.duration).reduce(0, +) / 60
+        if load > 90 { score -= 1; reasons.append("gestern \(Int(load)) Min Training") }
+        if let f = feeling {
+            signals += 1
+            switch f {
+            case .fit: score += 2; reasons.insert("du fühlst dich fit", at: 0)
+            case .okay: reasons.insert("du fühlst dich okay", at: 0)
+            case .muede: score -= 2.5; reasons.insert("du fühlst dich müde", at: 0)
+            }
+        }
+        guard signals > 0 else { return nil }
+        if score >= 1 { return Recovery(label: "gut", color: .green, reasons: reasons) }
+        if score <= -2 { return Recovery(label: "müde", color: .orange, reasons: reasons) }
+        return Recovery(label: "okay", color: .blue, reasons: reasons)
+    }
 
     /// kg pro Woche aus den letzten 8 Wochen (negativ = abnehmen)
     var weeklyTrend: Double? {

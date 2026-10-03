@@ -192,7 +192,7 @@ struct GymPlanView: View {
                 if let e = plan.error {
                     Label(e, systemImage: "exclamationmark.triangle").font(.footnote).foregroundStyle(.orange)
                 }
-                Text("Zum Verschieben eine Einheit gedrückt halten und auf einen anderen Tag ziehen – oder antippen.")
+                Text("Verschieben mit ⇄ an der Einheit – oder gedrückt halten und auf einen anderen Tag ziehen. Antippen ändert Uhrzeit und Dauer.")
                     .font(.caption).foregroundStyle(.secondary).padding(.horizontal, 4)
                 ForEach(days, id: \.self) { d in dayCard(d) }
                 HStack(spacing: 10) {
@@ -290,15 +290,16 @@ struct GymPlanView: View {
     private var recoveryHint: (String, Bool)? {
         guard Calendar.current.isDate(plan.weekStart, inSameDayAs: FitnessModel.startOfWeek),
               let today = plan.events.first(where: { Calendar.current.isDateInToday($0.start) }) else { return nil }
-        let sleep = fit.sleep.last.flatMap { Calendar.current.isDateInToday($0.date) ? $0.value : nil }
-        let rhr = fit.restingHR.last?.value
-        let recent = fit.restingHR.suffix(30).map(\.value)
-        let avg = recent.isEmpty ? nil : recent.reduce(0, +) / Double(recent.count)
-        guard let s = sleep, let r = rhr, let a = avg else { return nil }
-        if s < 6 || r > a + 5 {
-            return ("Eher müde: \(FitFmt.hm(s)) Schlaf, Ruhepuls \(Int(r)). Heute lieber locker – \(today.title) etwas leichter oder verschieben.", false)
+        guard let r = fit.recovery else { return nil }
+        let why = r.reasons.prefix(2).joined(separator: ", ")
+        switch r.label {
+        case "müde":
+            return ("Eher müde (\(why)). Heute lieber locker – \(today.title) etwas leichter oder mit ⇄ verschieben.", false)
+        case "gut":
+            return ("Gut erholt (\(why)). \(today.title) passt wie geplant.", true)
+        default:
+            return ("Erholung okay (\(why)). \(today.title) normal, aber nicht ans Limit.", true)
         }
-        return ("Gut erholt: \(FitFmt.hm(s)) Schlaf, Ruhepuls \(Int(r)). \(today.title) passt wie geplant.", true)
     }
 
     private func hintCard(_ h: (String, Bool)) -> some View {
@@ -370,7 +371,8 @@ struct GymPlanView: View {
     }
 
     private func eventChip(_ e: PlanEvent, done: Bool, missed: Bool) -> some View {
-        Button { editing = e } label: {
+        HStack(spacing: 10) {
+            // Antippen = bearbeiten; gedrückt halten und ziehen = auf anderen Tag
             HStack(spacing: 10) {
                 Image(systemName: e.sport.symbol).font(.system(size: 14, weight: .bold)).foregroundStyle(.white)
                     .frame(width: 32, height: 32)
@@ -384,29 +386,46 @@ struct GymPlanView: View {
                     Text("✓ erledigt").font(.caption.weight(.bold)).foregroundStyle(.green)
                 } else if missed {
                     Text("verpasst").font(.caption).foregroundStyle(.secondary)
-                } else {
-                    Image(systemName: "line.3.horizontal").font(.caption).foregroundStyle(.tertiary)
                 }
             }
             .contentShape(Rectangle())
-            .opacity(missed ? 0.6 : 1)
+            .onTapGesture { editing = e }
+            .draggable(e.uid) {
+                Label(e.title, systemImage: e.sport.symbol).font(.subheadline.weight(.bold))
+                    .padding(10).background(.regularMaterial, in: Capsule())
+            }
+            if !done { moveMenu(e) }
         }
-        .buttonStyle(.plain)
-        .draggable(e.uid) {
-            Label(e.title, systemImage: e.sport.symbol).font(.subheadline.weight(.bold))
-                .padding(10).background(.regularMaterial, in: Capsule())
-        }
-        .contextMenu {
-            Menu("Verschieben auf …") {
-                ForEach(days, id: \.self) { d in
-                    if !Calendar.current.isDate(d, inSameDayAs: e.start) {
-                        Button(d.formatted(.dateTime.weekday(.wide).day().month(.abbreviated))) { Task { await plan.move(store, e, to: d) } }
-                    }
+        .opacity(missed ? 0.6 : 1)
+    }
+
+    /// Eigener Knopf zum Verschieben – geht immer, auch ohne Ziehen
+    private func moveMenu(_ e: PlanEvent) -> some View {
+        let cal = Calendar.current
+        let tomorrow = cal.date(byAdding: .day, value: 1, to: cal.startOfDay(for: .now))!
+        let nextWeek = cal.date(byAdding: .day, value: 7, to: e.start)!
+        return Menu {
+            Section("Verschieben auf") {
+                if !cal.isDate(e.start, inSameDayAs: tomorrow) && e.start < tomorrow.addingTimeInterval(86400) {
+                    Button { Task { await plan.move(store, e, to: tomorrow) } } label: { Label("Morgen", systemImage: "arrow.right") }
+                }
+                ForEach(days.filter { !cal.isDate($0, inSameDayAs: e.start) && $0 >= cal.startOfDay(for: .now) }, id: \.self) { d in
+                    Button(d.formatted(.dateTime.weekday(.wide).day().month(.abbreviated))) { Task { await plan.move(store, e, to: d) } }
+                }
+                Button { Task { await plan.move(store, e, to: nextWeek) } } label: {
+                    Label("Nächste Woche (" + nextWeek.formatted(.dateTime.weekday(.abbreviated).day().month(.abbreviated)) + ")", systemImage: "calendar.badge.plus")
                 }
             }
-            Button { editing = e } label: { Label("Uhrzeit ändern", systemImage: "clock") }
-            Button(role: .destructive) { Task { await plan.delete(store, e) } } label: { Label("Löschen", systemImage: "trash") }
+            Button { editing = e } label: { Label("Uhrzeit oder Dauer ändern", systemImage: "clock") }
+            Button(role: .destructive) { Task { await plan.delete(store, e) } } label: { Label("Fällt aus – löschen", systemImage: "trash") }
+        } label: {
+            Image(systemName: "arrow.left.arrow.right")
+                .font(.subheadline.weight(.bold))
+                .foregroundStyle(e.sport.color)
+                .frame(width: 38, height: 38)
+                .background(e.sport.color.opacity(0.12), in: Circle())
         }
+        .accessibilityLabel("\(e.title) verschieben")
     }
 }
 
