@@ -20,7 +20,7 @@ struct FitPoint: Identifiable, Hashable {
 
 /// Sportarten, wie die App sie zusammenfasst
 enum Sport: String, CaseIterable, Identifiable {
-    case gym, padel, basketball, rad, schwimmen, laufen, andere
+    case gym, padel, basketball, rad, schwimmen, laufen, gehen, andere
     var id: String { rawValue }
 
     static func of(_ t: HKWorkoutActivityType) -> Sport {
@@ -33,6 +33,7 @@ enum Sport: String, CaseIterable, Identifiable {
         case .cycling, .handCycling: return .rad
         case .swimming, .waterFitness: return .schwimmen
         case .running: return .laufen
+        case .walking, .hiking: return .gehen
         default: return .andere
         }
     }
@@ -45,6 +46,7 @@ enum Sport: String, CaseIterable, Identifiable {
         case .rad: "Rad"
         case .schwimmen: "Schwimmen"
         case .laufen: "Laufen"
+        case .gehen: "Gehen"
         case .andere: "Sonstiges"
         }
     }
@@ -56,6 +58,7 @@ enum Sport: String, CaseIterable, Identifiable {
         case .rad: "figure.outdoor.cycle"
         case .schwimmen: "figure.pool.swim"
         case .laufen: "figure.run"
+        case .gehen: "figure.walk"
         case .andere: "figure.mixed.cardio"
         }
     }
@@ -67,6 +70,7 @@ enum Sport: String, CaseIterable, Identifiable {
         case .rad: Color(red: 0.04, green: 0.52, blue: 1.0)
         case .schwimmen: Color(red: 0.08, green: 0.72, blue: 0.78)
         case .laufen: Color(red: 0.90, green: 0.29, blue: 0.50)
+        case .gehen: Color(red: 0.72, green: 0.52, blue: 0.22)
         case .andere: Color(.systemGray)
         }
     }
@@ -81,6 +85,7 @@ enum Sport: String, CaseIterable, Identifiable {
         case .rad: [.quads: 1, .glutes: 0.6, .hamstrings: 0.5, .calves: 0.6]
         case .schwimmen: [.lats: 0.8, .delts: 0.7, .chest: 0.5, .triceps: 0.5, .traps: 0.4, .abs: 0.4, .quads: 0.3]
         case .laufen: [.quads: 0.7, .calves: 0.8, .hamstrings: 0.6, .glutes: 0.5]
+        case .gehen: [.calves: 0.5, .quads: 0.4, .glutes: 0.3, .hamstrings: 0.3]
         case .andere: [.quads: 0.3, .abs: 0.2]
         }
     }
@@ -286,7 +291,7 @@ final class FitnessModel {
             let distType: HKQuantityType? = switch sport {
                 case .rad: HKQuantityType(.distanceCycling)
                 case .schwimmen: HKQuantityType(.distanceSwimming)
-                case .laufen: HKQuantityType(.distanceWalkingRunning)
+                case .laufen, .gehen: HKQuantityType(.distanceWalkingRunning)
                 default: nil
             }
             let km = distType.flatMap { w.statistics(for: $0)?.sumQuantity()?.doubleValue(for: .meterUnit(with: .kilo)) }
