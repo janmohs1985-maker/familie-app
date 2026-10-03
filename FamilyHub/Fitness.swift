@@ -20,17 +20,19 @@ struct FitPoint: Identifiable, Hashable {
 
 /// Sportarten, wie die App sie zusammenfasst
 enum Sport: String, CaseIterable, Identifiable {
-    case gym, padel, rad, schwimmen, laufen, andere
+    case gym, padel, basketball, rad, schwimmen, laufen, andere
     var id: String { rawValue }
 
     static func of(_ t: HKWorkoutActivityType) -> Sport {
         switch t {
         case .traditionalStrengthTraining, .functionalStrengthTraining, .coreTraining,
              .highIntensityIntervalTraining, .crossTraining, .flexibility: return .gym
-        case .tennis, .racquetball, .squash, .badminton, .pickleball, .tableTennis: return .padel
+        // Padel zeichnet Jan als „Sonstiges“ auf (die Watch kennt kein Padel)
+        case .other, .tennis, .racquetball, .squash, .badminton, .pickleball, .tableTennis: return .padel
+        case .basketball: return .basketball
         case .cycling, .handCycling: return .rad
         case .swimming, .waterFitness: return .schwimmen
-        case .running, .walking, .hiking: return .laufen
+        case .running: return .laufen
         default: return .andere
         }
     }
@@ -39,6 +41,7 @@ enum Sport: String, CaseIterable, Identifiable {
         switch self {
         case .gym: "Gym"
         case .padel: "Padel"
+        case .basketball: "Basketball"
         case .rad: "Rad"
         case .schwimmen: "Schwimmen"
         case .laufen: "Laufen"
@@ -49,6 +52,7 @@ enum Sport: String, CaseIterable, Identifiable {
         switch self {
         case .gym: "dumbbell.fill"
         case .padel: "figure.tennis"
+        case .basketball: "figure.basketball"
         case .rad: "figure.outdoor.cycle"
         case .schwimmen: "figure.pool.swim"
         case .laufen: "figure.run"
@@ -59,6 +63,7 @@ enum Sport: String, CaseIterable, Identifiable {
         switch self {
         case .gym: Color(red: 1.0, green: 0.48, blue: 0.10)
         case .padel: Color(red: 0.12, green: 0.62, blue: 0.33)
+        case .basketball: Color(red: 0.58, green: 0.36, blue: 0.95)
         case .rad: Color(red: 0.04, green: 0.52, blue: 1.0)
         case .schwimmen: Color(red: 0.08, green: 0.72, blue: 0.78)
         case .laufen: Color(red: 0.90, green: 0.29, blue: 0.50)
@@ -72,6 +77,7 @@ enum Sport: String, CaseIterable, Identifiable {
         case .gym: [.quads: 0.7, .glutes: 0.6, .hamstrings: 0.5, .chest: 0.7, .lats: 0.7, .traps: 0.4,
                     .delts: 0.5, .biceps: 0.4, .triceps: 0.4, .lowerback: 0.5, .abs: 0.5, .obliques: 0.4]
         case .padel: [.quads: 0.6, .calves: 0.6, .glutes: 0.4, .delts: 0.6, .forearms: 0.5, .obliques: 0.5, .abs: 0.3]
+        case .basketball: [.quads: 0.8, .calves: 0.8, .glutes: 0.5, .hamstrings: 0.4, .delts: 0.4, .forearms: 0.3, .abs: 0.4, .obliques: 0.3]
         case .rad: [.quads: 1, .glutes: 0.6, .hamstrings: 0.5, .calves: 0.6]
         case .schwimmen: [.lats: 0.8, .delts: 0.7, .chest: 0.5, .triceps: 0.5, .traps: 0.4, .abs: 0.4, .quads: 0.3]
         case .laufen: [.quads: 0.7, .calves: 0.8, .hamstrings: 0.6, .glutes: 0.5]
@@ -244,6 +250,8 @@ final class FitnessModel {
         case .coreTraining: "Rumpftraining"
         case .highIntensityIntervalTraining: "HIIT"
         case .tennis: "Tennis/Padel"
+        case .other: "Padel"
+        case .basketball: "Basketball"
         case .walking: "Gehen"
         case .hiking: "Wandern"
         case .running: "Laufen"

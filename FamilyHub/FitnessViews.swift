@@ -7,7 +7,9 @@ import MapKit
 // MARK: - Fitness-Übersicht (Entwurf 1)
 
 struct FitnessView: View {
+    @Environment(AppStore.self) private var store
     @State private var fit = FitnessModel.shared
+    @State private var plan = GymPlanModel.shared
     @AppStorage("fitStartKg") private var startKg = FitnessConfig.defaultStartKg
     @AppStorage("fitGoalKg") private var goalKg = FitnessConfig.defaultGoalKg
     @State private var showGoal = false
@@ -58,6 +60,7 @@ struct FitnessView: View {
         .refreshable { await fit.refresh(maxAge: 0) }
         .task {
             await fit.refreshIfAllowed()
+            await GymPlanModel.shared.load(store, week: FitnessModel.startOfWeek)
         }
         .sheet(isPresented: $showGoal) { FitnessGoalSheet(startKg: $startKg, goalKg: $goalKg) }
     }
@@ -197,15 +200,22 @@ struct FitnessView: View {
         let days = (0..<7).map { Calendar.current.date(byAdding: .day, value: $0, to: start)! }
         let week = fit.workouts(since: start)
         return VStack(alignment: .leading, spacing: 12) {
-            HStack {
-                Text("Diese Woche").font(.headline)
-                Spacer()
-                Text("\(week.count) Trainings · \(FitFmt.hm(week.map(\.duration).reduce(0, +) / 3600))")
-                    .font(.caption).foregroundStyle(.secondary)
+            NavigationLink { GymPlanView() } label: {
+                HStack {
+                    Text("Diese Woche").font(.headline)
+                    Spacer()
+                    Text("\(week.count) Trainings · \(FitFmt.hm(week.map(\.duration).reduce(0, +) / 3600))")
+                        .font(.caption).foregroundStyle(.secondary)
+                    Text("Plan").font(.subheadline.weight(.semibold)).foregroundStyle(.tint)
+                    Image(systemName: "chevron.right").font(.caption.weight(.bold)).foregroundStyle(.tertiary)
+                }
+                .contentShape(Rectangle())
             }
+            .buttonStyle(.plain)
             HStack(spacing: 4) {
                 ForEach(days, id: \.self) { d in
                     let list = week.filter { Calendar.current.isDate($0.start, inSameDayAs: d) }
+                    let planned = GymPlanModel.shared.events.first { Calendar.current.isDate($0.start, inSameDayAs: d) }
                     let today = Calendar.current.isDateInToday(d)
                     VStack(spacing: 6) {
                         Text(d.formatted(.dateTime.weekday(.abbreviated)))
@@ -215,6 +225,10 @@ struct FitnessView: View {
                                 .fill(list.first.map { AnyShapeStyle($0.sport.color) } ?? AnyShapeStyle(Color(.tertiarySystemFill)))
                             if let s = list.first?.sport {
                                 Image(systemName: s.symbol).font(.system(size: 15, weight: .bold)).foregroundStyle(.white)
+                            } else if let p = planned {
+                                // geplant, noch nicht gemacht
+                                RoundedRectangle(cornerRadius: 12, style: .continuous).strokeBorder(p.sport.color, lineWidth: 2)
+                                Image(systemName: p.sport.symbol).font(.system(size: 14, weight: .bold)).foregroundStyle(p.sport.color)
                             }
                             if list.count > 1 {
                                 Text("\(list.count)").font(.system(size: 9, weight: .heavy)).foregroundStyle(.white)
@@ -229,7 +243,7 @@ struct FitnessView: View {
                 }
             }
             HStack(spacing: 12) {
-                ForEach([Sport.gym, .padel, .rad, .schwimmen], id: \.self) { s in
+                ForEach(Sport.allCases.filter { s in s != .andere && (week.contains { $0.sport == s } || GymPlanModel.shared.events.contains { $0.sport == s }) }, id: \.self) { s in
                     HStack(spacing: 4) {
                         RoundedRectangle(cornerRadius: 3).fill(s.color).frame(width: 9, height: 9)
                         Text("\(s.title) \(week.filter { $0.sport == s }.count)×")
