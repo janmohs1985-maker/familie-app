@@ -115,7 +115,7 @@ extension AppStore {
                                                                      "media_content_type": track.contentType, "enqueue": "replace"])
                 // Rest im Hintergrund anstellen, damit der erste Titel sofort läuft
                 let rest = Array(list.dropFirst(index + 1).filter { $0.canPlay && !$0.canExpand }.prefix(40))
-                let client = self.client
+                let client: HAClient = self.client
                 Task.detached {
                     for t in rest {
                         try? await client.call("media_player", "play_media", ["entity_id": speaker, "media_content_id": t.contentID,
