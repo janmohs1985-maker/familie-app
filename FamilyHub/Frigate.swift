@@ -285,8 +285,10 @@ final class FrigateModel {
         return AVURLAsset(url: url, options: ["AVURLAssetHTTPHeaderFieldsKey": req.allHTTPHeaderFields ?? [:]])
     }
 
-    func vodPath(_ cam: FCam, from: Date, to: Date) -> String {
-        "/api/frigate/\(FrigateConfig.instance)/vod/\(cam.frigateName)/start/\(Int(from.timeIntervalSince1970))/end/\(Int(to.timeIntervalSince1970))/index.m3u8"
+    /// Aufnahme eines Zeitraums als MP4 (Frigate setzt die Aufnahmen zusammen).
+    /// Das VOD-HLS der Integration braucht für jedes Teilstück eine Signatur, die der Player nicht mitschickt.
+    func recordingPath(_ cam: FCam, from: Date, to: Date) -> String {
+        "/api/frigate/\(FrigateConfig.instance)/recording/\(cam.frigateName)/start/\(Int(from.timeIntervalSince1970))/end/\(Int(to.timeIntervalSince1970))"
     }
 
     // MARK: PTZ

@@ -316,6 +316,9 @@ struct CameraDetailView: View {
     @State private var playbackFailed = false
     @State private var center = Date()
     @State private var vodStart: Date?
+    @State private var vodEnd: Date?
+    @State private var triedClip = false
+    @State private var failInfo: String?
     @State private var playing = true
     @State private var speed: Float = 1
     @State private var scrubbing = false
@@ -379,10 +382,16 @@ struct CameraDetailView: View {
                 try? await Task.sleep(for: .milliseconds(500))
                 guard !scrubbing else { continue }
                 if live { center = Date() }
-                else if let s = vodStart {
+                else if let s = vodStart, let item = player.currentItem {
                     let t = player.currentTime().seconds
                     if t.isFinite { center = s.addingTimeInterval(t) }
-                    if player.currentItem?.status == .failed { playbackFailed = true }
+                    if item.status == .failed {
+                        await playbackError(item)
+                    } else if item.status == .readyToPlay, playing, let e = vodEnd,
+                              item.duration.isNumeric, t >= item.duration.seconds - 0.5 {
+                        // Stück zu Ende → das nächste laden, am Ende wieder live
+                        if e < Date().addingTimeInterval(-25) { await play(from: e) } else { await goLive() }
+                    }
                 }
             }
         }
@@ -409,7 +418,14 @@ struct CameraDetailView: View {
             }
             .overlay {
                 if playbackFailed && !live {
-                    Text("Für diese Zeit gibt es keine Aufnahme").videoChip()
+                    VStack(spacing: 4) {
+                        Text("Für diese Zeit gibt es keine Aufnahme")
+                        if let failInfo { Text(failInfo).font(.caption2).opacity(0.8) }
+                    }
+                    .videoChip()
+                } else if !live, player.currentItem?.status == .unknown {
+                    ProgressView().tint(.white).padding(10).background(.ultraThinMaterial, in: Circle())
+                        .environment(\.colorScheme, .dark)
                 }
             }
             .overlay(alignment: .topLeading) {
@@ -613,16 +629,47 @@ struct CameraDetailView: View {
         if t > now.addingTimeInterval(-3) { await goLive(); return }
         UISelectionFeedbackGenerator().selectionChanged()
         live = false
-        playbackFailed = false
         center = t
+        triedClip = false
         await fm.ensureDay(store, t)
-        let end = min(t.addingTimeInterval(3600), now)
-        guard let asset = await fm.asset(store, path: fm.vodPath(cam, from: t, to: end)) else { playbackFailed = true; return }
+        // die letzten Sekunden sind noch nicht gespeichert
+        await play(from: min(t, now.addingTimeInterval(-20)))
+    }
+
+    /// Spielt 5 Minuten Aufnahme ab t (danach geht es automatisch weiter)
+    private func play(from t: Date) async {
+        playbackFailed = false
+        failInfo = nil
+        let end = min(t.addingTimeInterval(300), Date().addingTimeInterval(-10))
+        guard end > t.addingTimeInterval(2),
+              let asset = await fm.asset(store, path: fm.recordingPath(cam, from: t, to: end)) else {
+            playbackFailed = true
+            return
+        }
         vodStart = t
+        vodEnd = end
         player.replaceCurrentItem(with: AVPlayerItem(asset: asset))
         player.isMuted = true
         playing = true
         player.playImmediately(atRate: speed)
+    }
+
+    /// Aufnahme klappt nicht → Clip des Ereignisses an dieser Stelle versuchen, sonst Hinweis
+    private func playbackError(_ item: AVPlayerItem) async {
+        if !triedClip, let ev = fm.events(of: cam).first(where: { e in
+            e.hasClip && center >= e.start.addingTimeInterval(-10) && center <= (e.end ?? Date()).addingTimeInterval(10)
+        }), let asset = await fm.asset(store, path: ev.clipPath) {
+            triedClip = true
+            vodStart = ev.start
+            vodEnd = nil
+            player.replaceCurrentItem(with: AVPlayerItem(asset: asset))
+            player.playImmediately(atRate: speed)
+            return
+        }
+        guard !playbackFailed else { return }
+        playbackFailed = true
+        if let code = item.errorLog()?.events.last?.errorStatusCode, code != 0 { failInfo = "Fehler \(code)" }
+        else if let e = item.error as NSError? { failInfo = "Fehler \(e.code)" }
     }
 
     private func togglePTZManual() {
