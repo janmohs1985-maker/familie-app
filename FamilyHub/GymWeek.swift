@@ -33,7 +33,8 @@ extension GymPlanModel {
         get {
             guard let s = UserDefaults.standard.string(forKey: "gymQuotas"), let d = s.data(using: .utf8),
                   let q = try? JSONDecoder().decode([SportQuota].self, from: d), !q.isEmpty else { return Self.defaultQuotas }
-            return q
+            // neue Sportarten aus der Standardliste ergänzen
+            return q + Self.defaultQuotas.filter { def in !q.contains { $0.sport == def.sport } }
         }
         set {
             if let d = try? JSONEncoder().encode(newValue) { UserDefaults.standard.set(String(decoding: d, as: UTF8.self), forKey: "gymQuotas") }
@@ -74,6 +75,10 @@ extension GymPlanModel {
             // nächste halbe Stunde
             let m = cal.component(.minute, from: .now)
             start = cal.date(byAdding: .minute, value: m < 30 ? 30 - m : 60 - m, to: cal.date(bySetting: .second, value: 0, of: .now) ?? .now) ?? .now
+        }
+        // schon etwas für heute geplant → danach (30 Min Pause)
+        if let lastEnd = events.filter({ cal.isDateInToday($0.start) }).map(\.end).max(), lastEnd > start.addingTimeInterval(-30 * 60) {
+            start = lastEnd.addingTimeInterval(30 * 60)
         }
         await add(store, sport: s, title: Self.title(for: s), start: start, minutes: q?.minutes ?? 60)
     }
@@ -136,6 +141,22 @@ struct GymPlanView: View {
             || (s == .gym && gym.history.contains { cal.isDate($0.start, inSameDayAs: d) })
     }
 
+    /// Wie oft wurde eine Sportart an einem Tag gemacht (mehrere am Tag möglich)
+    private func doneCount(_ s: Sport, on d: Date) -> Int {
+        let health = weekWorkouts.filter { $0.sport == s && cal.isDate($0.start, inSameDayAs: d) }
+        guard s == .gym else { return health.count }
+        let logs = gym.history.filter { log in cal.isDate(log.start, inSameDayAs: d) && !health.contains { gym.log(for: $0)?.id == log.id } }
+        return health.count + logs.count
+    }
+
+    /// Ist genau diese geplante Einheit erledigt? Die ersten k Einheiten einer Sportart am Tag zählen als erledigt,
+    /// wenn k-mal trainiert wurde – so funktionieren auch 2× Padel an einem Tag.
+    private func eventDone(_ e: PlanEvent) -> Bool {
+        let same = plan.events.filter { $0.sport == e.sport && cal.isDate($0.start, inSameDayAs: e.start) }.sorted { $0.start < $1.start }
+        guard let i = same.firstIndex(of: e) else { return false }
+        return i < doneCount(e.sport, on: e.start)
+    }
+
     private func doneCount(_ s: Sport) -> Int {
         let fromHealth = weekWorkouts.filter { $0.sport == s }.count
         guard s == .gym else { return fromHealth }
@@ -145,7 +166,11 @@ struct GymPlanView: View {
     }
 
     private var todayEvent: PlanEvent? {
-        plan.events.first { cal.isDateInToday($0.start) && !isDone($0.sport, on: $0.start) }
+        plan.events.first { cal.isDateInToday($0.start) && !eventDone($0) }
+    }
+    /// weitere offene Einheiten heute nach der aktuellen
+    private var laterToday: [PlanEvent] {
+        plan.events.filter { cal.isDateInToday($0.start) && !eventDone($0) && $0.uid != todayEvent?.uid }
     }
     private var doneToday: [FitWorkout] { weekWorkouts.filter { cal.isDateInToday($0.start) } }
     private var upcoming: [PlanEvent] {
@@ -233,19 +258,61 @@ struct GymPlanView: View {
                                        startPoint: .topLeading, endPoint: .bottomTrailing),
                         in: RoundedRectangle(cornerRadius: 28, style: .continuous))
             .shadow(color: e.sport.color.opacity(0.3), radius: 16, y: 10)
-        } else if let w = doneToday.first {
+        } else if !doneToday.isEmpty {
             HStack(spacing: 14) {
                 Image(systemName: "checkmark.circle.fill").font(.system(size: 40)).foregroundStyle(.green)
                 VStack(alignment: .leading, spacing: 2) {
-                    Text("Heute erledigt").font(.headline)
-                    Text("\(w.name) · \(FitFmt.dur(w.duration))").font(.subheadline).foregroundStyle(.secondary)
+                    Text(doneToday.count > 1 ? "Heute \(doneToday.count)× erledigt" : "Heute erledigt").font(.headline)
+                    Text(doneToday.map { "\($0.name) · \(FitFmt.dur($0.duration))" }.joined(separator: "\n"))
+                        .font(.subheadline).foregroundStyle(.secondary)
                 }
                 Spacer()
+                Menu {
+                    ForEach(Sport.allCases.filter { $0 != .andere }) { s in
+                        Button { Task { await plan.planToday(store, s) } } label: { Label(s.title, systemImage: s.symbol) }
+                    }
+                } label: {
+                    Label("Noch was", systemImage: "plus").font(.caption.weight(.bold))
+                        .padding(.horizontal, 10).frame(minHeight: 34)
+                        .background(Color(.tertiarySystemFill), in: Capsule())
+                }
             }
             .padding(18)
             .cardSurface()
         } else {
             suggestionCard
+        }
+
+        // mehrere Einheiten am Tag: was danach noch kommt und was schon erledigt ist
+        if todayEvent != nil && (!laterToday.isEmpty || !doneToday.isEmpty) {
+            VStack(alignment: .leading, spacing: 0) {
+                ForEach(doneToday) { w in
+                    HStack(spacing: 12) {
+                        Image(systemName: "checkmark.circle.fill").foregroundStyle(.green).frame(width: 22)
+                        Text("Heute schon: \(w.name)").font(.subheadline.weight(.semibold))
+                        Spacer()
+                        Text(FitFmt.dur(w.duration)).font(.caption).foregroundStyle(.secondary)
+                    }
+                    .padding(.horizontal, 16).padding(.vertical, 10)
+                }
+                ForEach(laterToday) { e in
+                    HStack(spacing: 12) {
+                        Image(systemName: e.sport.symbol).foregroundStyle(e.sport.color).frame(width: 22)
+                        VStack(alignment: .leading, spacing: 1) {
+                            Text("Danach: \(e.title)").font(.subheadline.weight(.semibold))
+                            Text(e.start.formatted(date: .omitted, time: .shortened)).font(.caption).foregroundStyle(.secondary)
+                        }
+                        Spacer()
+                        Menu { moveItems(e) } label: {
+                            Image(systemName: "arrow.left.arrow.right").font(.subheadline.weight(.bold)).foregroundStyle(e.sport.color)
+                                .frame(width: 36, height: 36).background(e.sport.color.opacity(0.12), in: Circle())
+                        }
+                    }
+                    .padding(.horizontal, 16).padding(.vertical, 8)
+                }
+            }
+            .padding(.vertical, 4)
+            .cardSurface()
         }
     }
 
@@ -317,7 +384,7 @@ struct GymPlanView: View {
     /// Sportarten mit offenem Kontingent (noch nicht erledigt und nicht verplant), wichtigste zuerst
     private var openSports: [Sport] {
         plan.quotas.filter { $0.count > 0 && $0.fixedWeekday == nil }.compactMap { q -> (Sport, Int)? in
-            let planned = plan.events.filter { $0.sport == q.kind && !isDone(q.kind, on: $0.start) }.count
+            let planned = plan.events.filter { $0.sport == q.kind && !eventDone($0) }.count
             let left = q.count - doneCount(q.kind) - planned
             return left > 0 ? (q.kind, left) : nil
         }
@@ -340,7 +407,7 @@ struct GymPlanView: View {
         for q in plan.quotas {
             let s = q.kind
             let done = doneCount(s)
-            let planned = plan.events.filter { $0.sport == s && !isDone(s, on: $0.start) }
+            let planned = plan.events.filter { $0.sport == s && !eventDone($0) }
             let n = max(q.count, done)
             var pi = 0
             for i in 0..<n {
@@ -354,12 +421,18 @@ struct GymPlanView: View {
                     out.append(Token(id: "\(s.rawValue)\(i)", sport: s, state: 0, event: nil, label: s.title))
                 }
             }
-            // mehr geplant als Ziel (z. B. Laufen frei)
+            // mehr geplant als Ziel (z. B. Padel öfter, Laufen frei)
             for e in planned.dropFirst(pi) {
                 let day = cal.isDateInToday(e.start) ? "heute" : e.start.formatted(.dateTime.weekday(.abbreviated))
                 out.append(Token(id: e.uid, sport: s, state: 1, event: e, label: "\(s.title) · \(day)"))
             }
+            // freie Sportarten (ohne Ziel) immer als „+ Laufen“ anbieten
+            if q.count == 0 {
+                out.append(Token(id: "\(s.rawValue)-frei", sport: s, state: 3, event: nil, label: "+ \(s.title)"))
+            }
         }
+        // jederzeit etwas zusätzlich einplanen
+        out.append(Token(id: "extra", sport: .andere, state: 4, event: nil, label: "+ Extra"))
         return out
     }
 
@@ -367,16 +440,17 @@ struct GymPlanView: View {
         let list = tokens
         let target = plan.quotas.map(\.count).reduce(0, +)
         let done = list.filter { $0.state == 2 }.count
+        let extra = max(0, done - target)
         return VStack(alignment: .leading, spacing: 12) {
             HStack {
                 Text("DIESE WOCHE").font(.caption.weight(.bold)).foregroundStyle(.secondary)
                 Spacer()
-                Text("\(done)/\(target)").font(.subheadline.weight(.heavy)).monospacedDigit()
+                Text("\(min(done, target))/\(target)" + (extra > 0 ? " +\(extra) extra" : "")).font(.subheadline.weight(.heavy)).monospacedDigit()
             }
             FlowLayout(spacing: 8) {
                 ForEach(list) { t in tokenView(t) }
             }
-            Text("Offene Marke antippen = einplanen. Geplante antippen = verschieben. Was du aufzeichnest, wird automatisch abgehakt.")
+            Text("Gestrichelt antippen = einplanen · umrandet = verschieben · „+ Extra“ = zusätzlich (z. B. noch mal Padel). Was du aufzeichnest – auch Laufen –, wird automatisch abgehakt.")
                 .font(.caption).foregroundStyle(.secondary)
         }
         .padding(16)
@@ -397,13 +471,27 @@ struct GymPlanView: View {
                         .overlay(Capsule().strokeBorder(t.sport.color, lineWidth: 2))
                 }
             }
+        case 4:
+            // „+ Extra“: jede Sportart, heute oder an einem anderen Tag
+            Menu {
+                ForEach(Sport.allCases.filter { $0 != .andere }) { s in
+                    Menu {
+                        Button { Task { await plan.planToday(store, s) } } label: { Label("Heute", systemImage: "sun.max") }
+                        Button { pickDayFor = s } label: { Label("Anderer Tag …", systemImage: "calendar") }
+                    } label: { Label(s.title, systemImage: s.symbol) }
+                }
+            } label: {
+                label.foregroundStyle(.primary)
+                    .background(Color(.tertiarySystemFill), in: Capsule())
+            }
         default:
+            // 0 = offen aus dem Wochenziel, 3 = freie Sportart (ohne Ziel)
             Menu {
                 Button { Task { await plan.planToday(store, t.sport) } } label: { Label("Heute", systemImage: "sun.max") }
                 Button { pickDayFor = t.sport } label: { Label("Anderer Tag …", systemImage: "calendar") }
             } label: {
                 label.foregroundStyle(t.sport.color)
-                    .overlay(Capsule().strokeBorder(t.sport.color.opacity(0.6), style: StrokeStyle(lineWidth: 1.5, dash: [4, 3])))
+                    .overlay(Capsule().strokeBorder(t.sport.color.opacity(t.state == 3 ? 0.35 : 0.6), style: StrokeStyle(lineWidth: 1.5, dash: [4, 3])))
             }
         }
     }
@@ -444,6 +532,14 @@ struct GymPlanView: View {
                         } else if let p = planned {
                             RoundedRectangle(cornerRadius: 12, style: .continuous).strokeBorder(p.sport.color, lineWidth: 2)
                             Image(systemName: p.sport.symbol).font(.system(size: 13, weight: .bold)).foregroundStyle(p.sport.color)
+                        }
+                        // mehrere Einheiten am Tag
+                        let n = max(weekWorkouts.filter { cal.isDate($0.start, inSameDayAs: d) }.count,
+                                    plan.events.filter { cal.isDate($0.start, inSameDayAs: d) }.count)
+                        if n > 1 {
+                            Text("\(n)").font(.system(size: 9, weight: .heavy)).foregroundStyle(.white)
+                                .frame(width: 15, height: 15).background(Color.black.opacity(0.55), in: Circle())
+                                .frame(maxWidth: .infinity, maxHeight: .infinity, alignment: .topTrailing).offset(x: 3, y: -3)
                         }
                     }
                     .frame(height: 38)
